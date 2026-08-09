@@ -311,6 +311,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
               <BioRow k="Age" v={p.age} />
               <BioRow k="Draft" v={[p.draftYear, p.draft].filter(Boolean).join(": ")} />
               <BioRow k="Experience" v={experienceOf(p)} />
+              <BioRow k="Bats / Throws" v={p.bt} />
               <BioRow k="College" v={p.college} />
               <BioRow k="Birthplace" v={p.birthplace} />
             </div>
@@ -621,6 +622,12 @@ function currentSalary(p) {
 }
 
 const ROLE_ORDER = ["Batting", "Pitching", "Bullpen", "Bench"];
+const UNIT_LABELS = { Batting: "Batting Order", Pitching: "Pitching Rotation", Bullpen: "Bullpen", Bench: "Bench" };
+// "R/R" -> throws with the right hand -> RHP
+function pitcherHand(p) {
+  const t = String(p.bt || "").trim().split("/").pop().trim().toUpperCase();
+  return t === "R" ? "RHP" : t === "L" ? "LHP" : null;
+}
 // Role wins in baseball (a Bench player keeps his fielding position), then
 // position decides: SP -> Pitching, RP/CP -> Bullpen, everyone else Batting.
 const POS_UNIT = {};
@@ -692,7 +699,7 @@ function TeamsTab({ teams, players, onSelect }) {
       <ListHeader title="Teams" q={q} setQ={setQ} placeholder="Search teams or players…" />
       <div className="px-4 pb-28">
         <div className="flex gap-2 mt-4">
-          {[["all", "All"], ["al", "AL"], ["nl", "NL"]].map(([k, lbl]) => (
+          {[["all", "All"], ["al", "American"], ["nl", "National"]].map(([k, lbl]) => (
             <button key={k} onClick={() => pickConf(k)}
               className={"flex-1 py-2 rounded-full text-xs font-bold transition-colors " + (conf === k
                 ? "bg-blue-600 text-white"
@@ -834,12 +841,12 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
           <Tile value={(team.wins ?? 0) + "-" + (team.losses ?? 0)} label="Record" />
           <Tile
             value={team.ppg != null ? team.ppg.toFixed(1) : "—"}
-            label="PPG"
+            label="RS/G"
             sub={rankOf(teams, team, "ppg", "desc")}
           />
           <Tile
             value={team.oppPpg != null ? team.oppPpg.toFixed(1) : "—"}
-            label="Opp PPG"
+            label="RA/G"
             sub={rankOf(teams, team, "oppPpg", "asc")}
           />
         </div>
@@ -864,14 +871,14 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                   ? "text-white"
                   : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800")}
                 style={roleFilter === r ? { backgroundColor: teamColor(abbr) } : undefined}>
-                {r}
+                {UNIT_LABELS[r] || r}
               </button>
             ))}
           </div>
         )}
         {seg === "roster" && orderedRoles.filter((role) => !roleFilter || role === roleFilter).map((role) => (
           <div key={role}>
-            <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">{role}</div>
+            <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">{UNIT_LABELS[role] || role}</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
               {groups[role]
                 .sort((a, b) => {
@@ -882,7 +889,16 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                 })
                 .map((p) => (
                   <button key={p.id} onClick={() => onSelectPlayer(p)} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-slate-50 dark:active:bg-slate-800">
-                    <span className="w-7 text-center text-[11px] font-extrabold text-slate-400 uppercase shrink-0">{p.pos || "—"}</span>
+                    {(() => {
+                      const num = role === "Batting" && /^\d+$/.test(String(p.sortLabel || "").trim()) ? String(p.sortLabel).trim() : null;
+                      const hand = (role === "Pitching" || role === "Bullpen") ? pitcherHand(p) : null;
+                      return (
+                        <span className="w-10 shrink-0 flex items-center justify-center gap-1">
+                          {num && <span className="text-sm font-extrabold text-slate-700 dark:text-slate-200 tabular-nums">{num}</span>}
+                          <span className="text-[11px] font-extrabold text-slate-400 uppercase">{hand || p.pos || "—"}</span>
+                        </span>
+                      );
+                    })()}
                     <Avatar p={p} />
                     <span className="flex-1 min-w-0">
                       <span className="flex items-center gap-2">
