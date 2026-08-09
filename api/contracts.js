@@ -15,7 +15,8 @@ const TABLES = {
   contracts: "Contracts",
   years: "Contract Years",
   teams: "Teams", // optional - used to resolve linked team names
-  stats: "Stats", // optional - season averages, one row per player per season
+  stats: "Player Stats", // optional - one row per player per season
+  teamStats: "Team Stats", // optional - W/L and run rates per team per season
 };
 
 const FIELDS = {
@@ -233,8 +234,7 @@ export default async function handler(req, res) {
       statRecords = await fetchAll(base, T.stats, token);
     } catch {
       try {
-        statRecords = await fetchAll(base, "2025-2026 Stats", token);
-        impliedSeason = "2025-2026";
+        statRecords = await fetchAll(base, "Stats", token); // pre-rename fallback
       } catch {
         statRecords = [];
       }
@@ -267,6 +267,39 @@ export default async function handler(req, res) {
       teamNameById = {};
       teamsOut = [];
     }
+
+    // Optional "Team Stats" table: one row per team (per season). When
+    // present, its W/L and run rates override the Teams-table columns.
+    try {
+      const tsRecords = await fetchAll(base, T.teamStats, token);
+      const bestByTeam = {};
+      for (const r of tsRecords) {
+        const linkVal = getField(r.fields, ["Team", "Teams", "Team Name"]);
+        let key = null;
+        if (Array.isArray(linkVal) && linkVal[0] && linkVal[0].id) key = linkVal[0].id;
+        else if (linkVal != null) key = "name:" + String(Array.isArray(linkVal) ? (linkVal[0]?.name ?? linkVal[0]) : linkVal).trim().toLowerCase();
+        if (!key) continue;
+        const season = asText(getField(r.fields, ["Season", "Year"]));
+        const prev = bestByTeam[key];
+        if (!prev || String(season) > String(prev.season)) {
+          bestByTeam[key] = {
+            season,
+            wins: coerceNum(getField(r.fields, ["W", "Wins"])),
+            losses: coerceNum(getField(r.fields, ["L", "Losses"])),
+            ppg: coerceNum(getField(r.fields, ["RS/G", "Runs Per Game", "Runs Scored", "RS", "PPG"])),
+            oppPpg: coerceNum(getField(r.fields, ["RA/G", "Runs Against", "Runs Allowed", "RA", "OPP PPG"])),
+          };
+        }
+      }
+      for (const t of teamsOut) {
+        const hit = bestByTeam[t.id] || bestByTeam["name:" + String(t.name).trim().toLowerCase()];
+        if (!hit) continue;
+        if (hit.wins != null) t.wins = hit.wins;
+        if (hit.losses != null) t.losses = hit.losses;
+        if (hit.ppg != null) t.ppg = hit.ppg;
+        if (hit.oppPpg != null) t.oppPpg = hit.oppPpg;
+      }
+    } catch {}
 
     const playerIds = new Set(players.map((p) => p.id));
     const contractIds = new Set(contracts.map((c) => c.id));
