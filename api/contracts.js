@@ -293,8 +293,10 @@ export default async function handler(req, res) {
             season,
             wins: coerceNum(getField(r.fields, ["W", "Wins"])),
             losses: coerceNum(getField(r.fields, ["L", "Losses"])),
-            ppg: coerceNum(getField(r.fields, ["RS/G", "Runs Per Game", "Runs Scored", "RS", "PPG"])),
-            oppPpg: coerceNum(getField(r.fields, ["RA/G", "Runs Against", "Runs Allowed", "RA", "OPP PPG"])),
+            rs: coerceNum(getField(r.fields, ["RS", "Runs Scored", "Runs"])),
+            ra: coerceNum(getField(r.fields, ["RA", "Runs Allowed", "Runs Against"])),
+            ppg: coerceNum(getField(r.fields, ["RS/G", "Runs Per Game"])),
+            oppPpg: coerceNum(getField(r.fields, ["RA/G", "Opp RPG"])),
           };
         }
       }
@@ -303,8 +305,11 @@ export default async function handler(req, res) {
         if (!hit) continue;
         if (hit.wins != null) t.wins = hit.wins;
         if (hit.losses != null) t.losses = hit.losses;
-        if (hit.ppg != null) t.ppg = hit.ppg;
-        if (hit.oppPpg != null) t.oppPpg = hit.oppPpg;
+        if (hit.rs != null) t.rs = hit.rs;
+        if (hit.ra != null) t.ra = hit.ra;
+        const g = (t.wins || 0) + (t.losses || 0);
+        t.ppg = hit.ppg != null ? hit.ppg : (t.rs != null && g > 0 ? Math.round((t.rs / g) * 10) / 10 : t.ppg);
+        t.oppPpg = hit.oppPpg != null ? hit.oppPpg : (t.ra != null && g > 0 ? Math.round((t.ra / g) * 10) / 10 : t.oppPpg);
       }
     } catch {}
 
