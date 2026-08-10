@@ -155,7 +155,7 @@ function Tile({ value, label, sub, accent, valueClass }) {
       <div className={"text-2xl font-extrabold tracking-tight " + (valueClass ? valueClass : accent ? ACCENT_TEXT : "text-slate-900 dark:text-slate-100")}>{value}</div>
       {sub && (
         <div className={"text-[10px] font-bold mt-0.5 " + (typeof sub === "object" && sub.cls ? sub.cls : "text-blue-600 dark:text-blue-400")}>
-          {typeof sub === "object" ? sub.label : sub}
+          {typeof sub === "object" && sub.label !== undefined ? sub.label : sub}
         </div>
       )}
     </div>
@@ -845,14 +845,30 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
         <div className="grid grid-cols-3 gap-2">
           <Tile value={(team.wins ?? 0) + "-" + (team.losses ?? 0)} label="Record" />
           <Tile
-            value={team.ppg != null ? team.ppg.toFixed(1) : "—"}
-            label="RS/G"
-            sub={rankOf(teams, team, "ppg", "desc")}
+            value={team.rs != null ? team.rs : "—"}
+            label="RS"
+            sub={(() => {
+              const r = rankOf(teams, team, "ppg", "desc");
+              return (
+                <span>
+                  {team.ppg != null && <span className="block text-slate-500 dark:text-slate-400">{team.ppg.toFixed(1)} /G</span>}
+                  {r && <span className={"block " + r.cls}>{r.label}</span>}
+                </span>
+              );
+            })()}
           />
           <Tile
-            value={team.oppPpg != null ? team.oppPpg.toFixed(1) : "—"}
-            label="RA/G"
-            sub={rankOf(teams, team, "oppPpg", "asc")}
+            value={team.ra != null ? team.ra : "—"}
+            label="RA"
+            sub={(() => {
+              const r = rankOf(teams, team, "oppPpg", "asc");
+              return (
+                <span>
+                  {team.oppPpg != null && <span className="block text-slate-500 dark:text-slate-400">{team.oppPpg.toFixed(1)} /G</span>}
+                  {r && <span className={"block " + r.cls}>{r.label}</span>}
+                </span>
+              );
+            })()}
           />
         </div>
 
