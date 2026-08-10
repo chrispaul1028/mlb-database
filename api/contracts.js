@@ -436,6 +436,51 @@ export default async function handler(req, res) {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
+    // ── LIVE BATTING ORDER OVERLAY ─────────────────────────────────
+    // On every load, pull the latest official lineup from MLB's free API
+    // for any team with a real roster here (5+ players), and override
+    // Sort Priority in-memory. No Airtable writes, no script needed:
+    // refresh the app and the newest posted lineup is what you see.
+    try {
+      const rosterCounts = {};
+      for (const p of out) {
+        const tn = String(p.teamName || "").trim().toLowerCase();
+        if (tn) rosterCounts[tn] = (rosterCounts[tn] || 0) + 1;
+      }
+      const myTeams = teamsOut.filter((t) => (rosterCounts[String(t.name).trim().toLowerCase()] || 0) >= 5
+        || out.filter((p) => p.teamId === t.id).length >= 5);
+      if (myTeams.length > 0 && myTeams.length <= 6) {
+        const dirRes = await fetch("https://statsapi.mlb.com/api/v1/teams?sportId=1");
+        const dir = await dirRes.json();
+        const today = new Date().toISOString().slice(0, 10);
+        for (const t of myTeams) {
+          const mlbTeam = (dir.teams || []).find((x) => x.name.toLowerCase() === String(t.name).trim().toLowerCase());
+          if (!mlbTeam) continue;
+          const schedRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${mlbTeam.id}&date=${today}`);
+          const sched = await schedRes.json();
+          const game = sched.dates && sched.dates[0] && sched.dates[0].games && sched.dates[0].games[0];
+          if (!game) continue;
+          const boxRes = await fetch(`https://statsapi.mlb.com/api/v1/game/${game.gamePk}/boxscore`);
+          const box = await boxRes.json();
+          const side = box.teams && box.teams.home && box.teams.home.team.id === mlbTeam.id ? "home" : "away";
+          const order = (box.teams && box.teams[side] && box.teams[side].battingOrder) || [];
+          if (!order.length) continue;
+          const orderByName = {};
+          order.forEach((pid, i) => {
+            const pd = box.teams[side].players["ID" + pid];
+            if (pd && pd.person && pd.person.fullName) orderByName[pd.person.fullName.trim().toLowerCase()] = i + 1;
+          });
+          for (const p of out) {
+            const mine = p.teamId === t.id || String(p.teamName || "").trim().toLowerCase() === String(t.name).trim().toLowerCase();
+            if (!mine) continue;
+            const spot = orderByName[p.name.trim().toLowerCase()];
+            if (spot) { p.sort = spot; p.sortLabel = String(spot); }
+            else if (/^\d+$/.test(String(p.sortLabel || "").trim())) { p.sort = null; p.sortLabel = null; }
+          }
+        }
+      }
+    } catch {}
+
     res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
     return res.status(200).json({ apiVersion: "v23.4", players: out, teams: teamsOut });
   } catch (e) {
