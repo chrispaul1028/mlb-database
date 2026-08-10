@@ -452,30 +452,44 @@ export default async function handler(req, res) {
       if (myTeams.length > 0 && myTeams.length <= 6) {
         const dirRes = await fetch("https://statsapi.mlb.com/api/v1/teams?sportId=1");
         const dir = await dirRes.json();
-        const today = new Date().toISOString().slice(0, 10);
+        // Dates in US Eastern - the server runs on UTC, where "today" flips
+        // at 8pm ET and would otherwise look up tomorrow's game.
+        const etDay = (offsetDays) => {
+          const d = new Date(Date.now() - offsetDays * 86400000);
+          return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(d);
+        };
         for (const t of myTeams) {
           const mlbTeam = (dir.teams || []).find((x) => x.name.toLowerCase() === String(t.name).trim().toLowerCase());
           if (!mlbTeam) continue;
-          const schedRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${mlbTeam.id}&date=${today}`);
+          const schedRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${mlbTeam.id}&startDate=${etDay(2)}&endDate=${etDay(0)}`);
           const sched = await schedRes.json();
-          const game = sched.dates && sched.dates[0] && sched.dates[0].games && sched.dates[0].games[0];
-          if (!game) continue;
-          const boxRes = await fetch(`https://statsapi.mlb.com/api/v1/game/${game.gamePk}/boxscore`);
-          const box = await boxRes.json();
-          const side = box.teams && box.teams.home && box.teams.home.team.id === mlbTeam.id ? "home" : "away";
-          const order = (box.teams && box.teams[side] && box.teams[side].battingOrder) || [];
-          if (!order.length) continue;
-          const orderByName = {};
-          order.forEach((pid, i) => {
-            const pd = box.teams[side].players["ID" + pid];
-            if (pd && pd.person && pd.person.fullName) orderByName[pd.person.fullName.trim().toLowerCase()] = i + 1;
-          });
-          for (const p of out) {
-            const mine = p.teamId === t.id || String(p.teamName || "").trim().toLowerCase() === String(t.name).trim().toLowerCase();
-            if (!mine) continue;
-            const spot = orderByName[p.name.trim().toLowerCase()];
-            if (spot) { p.sort = spot; p.sortLabel = String(spot); }
-            else if (/^\d+$/.test(String(p.sortLabel || "").trim())) { p.sort = null; p.sortLabel = null; }
+          const games = (sched.dates || []).flatMap((d) => d.games || []);
+          // Latest lineup: walk backwards from the most recent game
+          for (let gi = games.length - 1; gi >= 0 && gi >= games.length - 3; gi--) {
+            const boxRes = await fetch(`https://statsapi.mlb.com/api/v1/game/${games[gi].gamePk}/boxscore`);
+            const box = await boxRes.json();
+            const side = box.teams && box.teams.home && box.teams.home.team.id === mlbTeam.id ? "home" : "away";
+            const order = (box.teams && box.teams[side] && box.teams[side].battingOrder) || [];
+            if (!order.length) continue;
+            const orderByName = {};
+            const posByName = {};
+            order.forEach((pid, i) => {
+              const pd = box.teams[side].players["ID" + pid];
+              if (pd && pd.person && pd.person.fullName) {
+                const key = pd.person.fullName.trim().toLowerCase();
+                orderByName[key] = i + 1;
+                if (pd.position && pd.position.abbreviation) posByName[key] = pd.position.abbreviation;
+              }
+            });
+            for (const p of out) {
+              const mine = p.teamId === t.id || String(p.teamName || "").trim().toLowerCase() === String(t.name).trim().toLowerCase();
+              if (!mine) continue;
+              const key = p.name.trim().toLowerCase();
+              const spot = orderByName[key];
+              if (spot) { p.sort = spot; p.sortLabel = String(spot); if (posByName[key]) p.gamePos = posByName[key]; }
+              else if (/^\d+$/.test(String(p.sortLabel || "").trim())) { p.sort = null; p.sortLabel = null; }
+            }
+            break; // latest game with a lineup wins
           }
         }
       }
