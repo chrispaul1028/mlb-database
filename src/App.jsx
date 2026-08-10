@@ -404,7 +404,7 @@ function TeamPill({ team }) {
   if (!abbr) return null;
   const logo = TEAM_LOGOS[abbr];
   if (logo) {
-    return <img src={logo} alt={abbr} className="w-8 h-8 rounded-full object-contain bg-white shrink-0" />;
+    return <img src={logo} alt={abbr} className="w-8 h-8 rounded-full object-contain shrink-0" style={{ backgroundColor: teamColor(abbr) }} />;
   }
   return (
     <span className="text-[10px] font-bold text-white px-2 py-1 rounded-full shrink-0" style={{ backgroundColor: teamColor(abbr) }}>
@@ -731,7 +731,7 @@ function TeamsTab({ teams, players, onSelect }) {
             return (
               <button key={t.id} onClick={() => onSelect(t)} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-slate-50 dark:active:bg-slate-800">
                 {t.logo ? (
-                  <img src={t.logo} alt="" className="w-11 h-11 rounded-full object-contain bg-white shrink-0" />
+                  <img src={t.logo} alt="" className="w-11 h-11 rounded-full object-contain shrink-0" style={{ backgroundColor: teamColor(abbr) }} />
                 ) : (
                   <span className="w-11 h-11 rounded-full shrink-0" style={{ backgroundColor: teamColor(abbr) }} />
                 )}
@@ -766,9 +766,9 @@ function StatusBadge({ status }) {
   if (!status) return null;
   const s = String(status).toLowerCase().trim();
   let cls = "bg-slate-100 text-slate-500 dark:text-slate-400";
-  if (s === "ir" || s.includes("injured reserve") || s.includes("out")) cls = "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300";
+  if (s === "ir" || s.includes("injured reserve") || s.includes("out") || s.includes("il") || s.includes("injur") || s.includes("day")) cls = "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300";
   else if (s.includes("active") || s.includes("available")) cls = "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300";
-  else if (s.includes("injur") || s.includes("day") || s.includes("question") || s.includes("doubt")) cls = "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300";
+  else if (s.includes("question") || s.includes("doubt")) cls = "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300";
   return (
     <span className={"shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide " + cls}>
       {status}
@@ -821,7 +821,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
         <button onClick={onBack} className="text-sm font-semibold opacity-80 mb-4">‹ Teams</button>
         <div className="flex items-center gap-4">
           {team.logo ? (
-            <img src={team.logo} alt="" className="w-16 h-16 rounded-full object-contain bg-white shrink-0" />
+            <img src={team.logo} alt="" className="w-16 h-16 rounded-full object-contain shrink-0" style={{ backgroundColor: teamColor(abbr) }} />
           ) : (
             <span className="text-3xl">⚾</span>
           )}
