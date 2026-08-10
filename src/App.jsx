@@ -336,7 +336,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
                       ))}
                     </div>
                     <div className="flex justify-between mt-2">
-                      {[["W", st.w != null ? Math.round(st.w) : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["SO", st.so != null ? Math.round(st.so) : null], ["SV", st.sv != null ? Math.round(st.sv) : null]].map(([lbl, v]) => (
+                      {[["W-L", st.w != null || st.l != null ? `${Math.round(st.w || 0)}-${Math.round(st.l || 0)}` : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["SO", st.so != null ? Math.round(st.so) : null], ["SV", st.sv != null ? Math.round(st.sv) : null]].map(([lbl, v]) => (
                         <span key={lbl} className="flex-1 text-center">
                           <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
                           <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v ?? "—"}</span>
@@ -699,7 +699,7 @@ function TeamsTab({ teams, players, onSelect }) {
       <ListHeader title="Teams" q={q} setQ={setQ} placeholder="Search teams or players…" />
       <div className="px-4 pb-28">
         <div className="flex gap-2 mt-4">
-          {[["all", "All"], ["al", "American"], ["nl", "National"]].map(([k, lbl]) => (
+          {[["all", "All"], ["al", "American League"], ["nl", "National League"]].map(([k, lbl]) => (
             <button key={k} onClick={() => pickConf(k)}
               className={"flex-1 py-2 rounded-full text-xs font-bold transition-colors " + (conf === k
                 ? "bg-blue-600 text-white"
@@ -852,7 +852,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
         </div>
 
         <div className="flex gap-2 mt-4">
-          {[["roster", "Depth Chart"], ["contracts", "Contracts"], ["charts", "Charts"]].map(([k, lbl]) => (
+          {[["roster", "Roster"], ["contracts", "Contracts"], ["charts", "Charts"]].map(([k, lbl]) => (
             <button key={k} onClick={() => setSeg(k)}
               className={"flex-1 py-2 rounded-full text-xs font-bold transition-colors " + (seg === k
                 ? "text-white"
@@ -876,12 +876,13 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
             ))}
           </div>
         )}
-        {seg === "roster" && orderedRoles.filter((role) => !roleFilter || role === roleFilter).map((role) => (
+        {seg === "roster" && (roleFilter ? orderedRoles.filter((role) => role === roleFilter) : ["__all__"]).map((role) => (
           <div key={role}>
-            <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">{UNIT_LABELS[role] || role}</div>
+            <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">{role === "__all__" ? "Roster" : (UNIT_LABELS[role] || role)}</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
-              {groups[role]
+              {(role === "__all__" ? [...roster] : groups[role])
                 .sort((a, b) => {
+                  if (role === "__all__") return String(a.name).localeCompare(String(b.name));
                   if (a.sort != null && b.sort != null) return a.sort - b.sort;
                   if (a.sort != null) return -1;
                   if (b.sort != null) return 1;
@@ -890,11 +891,12 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                 .map((p) => (
                   <button key={p.id} onClick={() => onSelectPlayer(p)} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-slate-50 dark:active:bg-slate-800">
                     {(() => {
-                      const num = role === "Batting" && /^\d+$/.test(String(p.sortLabel || "").trim()) ? String(p.sortLabel).trim() : null;
+                      const showNum = roleFilter === "Batting" && role === "Batting";
+                      const num = showNum && /^\d+$/.test(String(p.sortLabel || "").trim()) ? String(p.sortLabel).trim() : null;
                       const hand = (role === "Pitching" || role === "Bullpen") ? pitcherHand(p) : null;
                       return (
-                        <span className="w-10 shrink-0 flex items-center justify-center gap-1">
-                          {num && <span className="text-sm font-extrabold text-slate-700 dark:text-slate-200 tabular-nums">{num}</span>}
+                        <span className="w-11 shrink-0 flex items-center justify-center gap-1">
+                          {num && <span className="text-[11px] font-extrabold text-slate-400 tabular-nums">{num}</span>}
                           <span className="text-[11px] font-extrabold text-slate-400 uppercase">{hand || p.pos || "—"}</span>
                         </span>
                       );
