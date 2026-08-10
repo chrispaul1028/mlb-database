@@ -277,8 +277,14 @@ export default async function handler(req, res) {
       for (const r of tsRecords) {
         const linkVal = getField(r.fields, ["Team", "Teams", "Team Name"]);
         let key = null;
-        if (Array.isArray(linkVal) && linkVal[0] && linkVal[0].id) key = linkVal[0].id;
-        else if (linkVal != null) key = "name:" + String(Array.isArray(linkVal) ? (linkVal[0]?.name ?? linkVal[0]) : linkVal).trim().toLowerCase();
+        if (Array.isArray(linkVal) && linkVal.length) {
+          const v = linkVal[0];
+          if (typeof v === "string" && v.startsWith("rec")) key = v; // REST link: bare record id
+          else if (v && v.id) key = v.id;
+          else key = "name:" + String(v && v.name != null ? v.name : v).trim().toLowerCase();
+        } else if (linkVal != null) {
+          key = "name:" + String(linkVal).trim().toLowerCase();
+        }
         if (!key) continue;
         const season = asText(getField(r.fields, ["Season", "Year"]));
         const prev = bestByTeam[key];
