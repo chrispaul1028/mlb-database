@@ -441,6 +441,7 @@ export default async function handler(req, res) {
     // for any team with a real roster here (5+ players), and override
     // Sort Priority in-memory. No Airtable writes, no script needed:
     // refresh the app and the newest posted lineup is what you see.
+    const lineupDebug = [];
     try {
       const rosterCounts = {};
       for (const p of out) {
@@ -449,6 +450,7 @@ export default async function handler(req, res) {
       }
       const myTeams = teamsOut.filter((t) => (rosterCounts[String(t.name).trim().toLowerCase()] || 0) >= 5
         || out.filter((p) => p.teamId === t.id).length >= 5);
+      lineupDebug.push("rostered teams: " + (myTeams.map((t) => t.name).join(", ") || "NONE (no team with 5+ players)"));
       if (myTeams.length > 0 && myTeams.length <= 6) {
         const dirRes = await fetch("https://statsapi.mlb.com/api/v1/teams?sportId=1");
         const dir = await dirRes.json();
@@ -460,17 +462,18 @@ export default async function handler(req, res) {
         };
         for (const t of myTeams) {
           const mlbTeam = (dir.teams || []).find((x) => x.name.toLowerCase() === String(t.name).trim().toLowerCase());
-          if (!mlbTeam) continue;
+          if (!mlbTeam) { lineupDebug.push(t.name + ": no MLB team by that name"); continue; }
           const schedRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${mlbTeam.id}&startDate=${etDay(2)}&endDate=${etDay(0)}`);
           const sched = await schedRes.json();
           const games = (sched.dates || []).flatMap((d) => d.games || []);
+          lineupDebug.push(t.name + ": " + games.length + " game(s) between " + etDay(2) + " and " + etDay(0));
           // Latest lineup: walk backwards from the most recent game
           for (let gi = games.length - 1; gi >= 0 && gi >= games.length - 3; gi--) {
             const boxRes = await fetch(`https://statsapi.mlb.com/api/v1/game/${games[gi].gamePk}/boxscore`);
             const box = await boxRes.json();
             const side = box.teams && box.teams.home && box.teams.home.team.id === mlbTeam.id ? "home" : "away";
             const order = (box.teams && box.teams[side] && box.teams[side].battingOrder) || [];
-            if (!order.length) continue;
+            if (!order.length) { lineupDebug.push(t.name + ": game " + games[gi].gamePk + " has no batting order yet"); continue; }
             const orderByName = {};
             const posByName = {};
             order.forEach((pid, i) => {
@@ -489,11 +492,18 @@ export default async function handler(req, res) {
               if (spot) { p.sort = spot; p.sortLabel = String(spot); if (posByName[key]) p.gamePos = posByName[key]; }
               else if (/^\d+$/.test(String(p.sortLabel || "").trim())) { p.sort = null; p.sortLabel = null; }
             }
+            const matched = out.filter((p) => p.sortLabel != null && (p.teamId === t.id || String(p.teamName || "").trim().toLowerCase() === String(t.name).trim().toLowerCase())).length;
+            lineupDebug.push(t.name + ": lineup " + order.length + " spots -> matched " + matched + " players. MLB names: " + Object.keys(orderByName).join(", "));
             break; // latest game with a lineup wins
           }
         }
       }
-    } catch {}
+    } catch (e) { lineupDebug.push("overlay error: " + (e && e.message ? e.message : String(e))); }
+
+    if (req.query && req.query.lineup === "1") {
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(200).json({ lineupDebug });
+    }
 
     res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
     return res.status(200).json({ apiVersion: "v23.4", players: out, teams: teamsOut });
