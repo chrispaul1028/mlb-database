@@ -808,9 +808,14 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
   });
   const payroll = roster.reduce((a, p) => a + currentSalary(p), 0);
 
+  const numericLabel = (p) => /^\d+$/.test(String(p.sortLabel || "").trim());
+  // When a live lineup exists, only tonight's nine stay in Batting Order -
+  // everyone else in the batting unit moves to Bench automatically.
+  const hasLineup = roster.some((p) => unitOf(p) === "Batting" && numericLabel(p));
   const groups = {};
   for (const p of roster) {
-    const role = unitOf(p);
+    let role = unitOf(p);
+    if (role === "Batting" && hasLineup && !numericLabel(p)) role = "Bench";
     (groups[role] ??= []).push(p);
   }
   const orderedRoles = [...ROLE_ORDER.filter((r) => groups[r]), ...(groups["Roster"] ? ["Roster"] : [])];
@@ -917,7 +922,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                       const hand = (role === "Pitching" || role === "Bullpen") ? pitcherHand(p) : null;
                       return (
                         <span className="shrink-0 flex items-center">
-                          <span className="w-4 text-right text-[11px] font-extrabold tabular-nums" style={{ color: teamColor(abbr) }}>{num || ""}</span>
+                          <span className="w-4 text-right text-[11px] font-extrabold tabular-nums text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbr) }}>{num || ""}</span>
                           <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{hand || (role === "Batting" && p.gamePos) || p.pos || "—"}</span>
                         </span>
                       );
