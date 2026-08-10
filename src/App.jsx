@@ -628,6 +628,11 @@ function pitcherHand(p) {
   const t = String(p.bt || "").trim().split("/").pop().trim().toUpperCase();
   return t === "R" ? "RHP" : t === "L" ? "LHP" : null;
 }
+// "L/R" -> bats left -> "L"; switch hitters show "S"
+function batterHand(p) {
+  const b = String(p.bt || "").trim().split("/")[0].trim().toUpperCase();
+  return b === "L" || b === "R" || b === "S" ? b : null;
+}
 // Role wins in baseball (a Bench player keeps his fielding position), then
 // position decides: SP -> Pitching, RP/CP -> Bullpen, everyone else Batting.
 const POS_UNIT = {};
@@ -895,16 +900,21 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                       const num = showNum && /^\d+$/.test(String(p.sortLabel || "").trim()) ? String(p.sortLabel).trim() : null;
                       const hand = (role === "Pitching" || role === "Bullpen") ? pitcherHand(p) : null;
                       return (
-                        <span className="w-11 shrink-0 flex items-center justify-center gap-1">
-                          {num && <span className="text-[11px] font-extrabold text-slate-400 tabular-nums">{num}</span>}
-                          <span className="text-[11px] font-extrabold text-slate-400 uppercase">{hand || p.pos || "—"}</span>
+                        <span className="shrink-0 flex items-center">
+                          <span className="w-4 text-right text-[11px] font-extrabold text-slate-400 tabular-nums">{num || ""}</span>
+                          <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{hand || p.pos || "—"}</span>
                         </span>
                       );
                     })()}
                     <Avatar p={p} />
                     <span className="flex-1 min-w-0">
                       <span className="flex items-center gap-2">
-                        <span className="flex-1 min-w-0 text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{p.name}</span>
+                        <span className="flex-1 min-w-0 text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                          {p.name}
+                          {role === "Batting" && batterHand(p) && (
+                            <span className="text-[11px] font-bold text-slate-400"> ({batterHand(p)})</span>
+                          )}
+                        </span>
                         {p.rating2k != null && <Rating2kBadge r={p.rating2k} />}
                       </span>
                       <span className="flex items-center gap-1.5 mt-0.5">
