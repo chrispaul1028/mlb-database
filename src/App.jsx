@@ -404,7 +404,7 @@ function TeamPill({ team }) {
   if (!abbr) return null;
   const logo = TEAM_LOGOS[abbr];
   if (logo) {
-    return <img src={logo} alt={abbr} className="w-8 h-8 rounded-full object-contain bg-slate-100 dark:bg-slate-800 shrink-0" />;
+    return <img src={logo} alt={abbr} className="w-8 h-8 rounded-full object-contain bg-white shrink-0" />;
   }
   return (
     <span className="text-[10px] font-bold text-white px-2 py-1 rounded-full shrink-0" style={{ backgroundColor: teamColor(abbr) }}>
@@ -731,7 +731,7 @@ function TeamsTab({ teams, players, onSelect }) {
             return (
               <button key={t.id} onClick={() => onSelect(t)} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-slate-50 dark:active:bg-slate-800">
                 {t.logo ? (
-                  <img src={t.logo} alt="" className="w-11 h-11 rounded-full object-contain bg-slate-100 dark:bg-slate-800 shrink-0" />
+                  <img src={t.logo} alt="" className="w-11 h-11 rounded-full object-contain bg-white shrink-0" />
                 ) : (
                   <span className="w-11 h-11 rounded-full shrink-0" style={{ backgroundColor: teamColor(abbr) }} />
                 )}
@@ -821,7 +821,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
         <button onClick={onBack} className="text-sm font-semibold opacity-80 mb-4">‹ Teams</button>
         <div className="flex items-center gap-4">
           {team.logo ? (
-            <img src={team.logo} alt="" className="w-16 h-16 rounded-full object-contain bg-white/20 shrink-0" />
+            <img src={team.logo} alt="" className="w-16 h-16 rounded-full object-contain bg-white shrink-0" />
           ) : (
             <span className="text-3xl">⚾</span>
           )}
@@ -901,7 +901,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                       const hand = (role === "Pitching" || role === "Bullpen") ? pitcherHand(p) : null;
                       return (
                         <span className="shrink-0 flex items-center">
-                          <span className="w-4 text-right text-[11px] font-extrabold text-slate-400 tabular-nums">{num || ""}</span>
+                          <span className="w-4 text-right text-[11px] font-extrabold tabular-nums" style={{ color: teamColor(abbr) }}>{num || ""}</span>
                           <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{hand || p.pos || "—"}</span>
                         </span>
                       );
@@ -911,14 +911,14 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                       <span className="flex items-center gap-2">
                         <span className="flex-1 min-w-0 text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
                           {p.name}
-                          {role === "Batting" && batterHand(p) && (
-                            <span className="text-[11px] font-bold text-slate-400"> ({batterHand(p)})</span>
+                          {cleanNo(p.no) && (
+                            <span className="text-[11px] font-bold text-slate-400"> #{cleanNo(p.no)}</span>
                           )}
                         </span>
                         {p.rating2k != null && <Rating2kBadge r={p.rating2k} />}
                       </span>
                       <span className="flex items-center gap-1.5 mt-0.5">
-                        {cleanNo(p.no) && <span className="text-[11px] text-slate-400 font-medium">#{cleanNo(p.no)}</span>}
+                        {role === "Batting" && batterHand(p) && <span className="text-[11px] text-slate-400 font-bold">{batterHand(p)}</span>}
                         <StatusBadge status={p.status} />
                         <span className="flex-1" />
                         {(() => {
