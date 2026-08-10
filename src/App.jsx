@@ -150,7 +150,7 @@ function ordinal(n) {
 
 function Tile({ value, label, sub, accent, valueClass }) {
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 px-2 py-4 text-center shadow-sm flex flex-col items-center justify-center">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 px-2 py-4 text-center shadow-sm flex flex-col items-center justify-start">
       <div className="text-[10px] font-semibold text-slate-400 tracking-widest uppercase mb-1">{label}</div>
       <div className={"text-2xl font-extrabold tracking-tight " + (valueClass ? valueClass : accent ? ACCENT_TEXT : "text-slate-900 dark:text-slate-100")}>{value}</div>
       {sub && (
@@ -851,8 +851,8 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
               const r = rankOf(teams, team, "ppg", "desc");
               return (
                 <span>
-                  {team.ppg != null && <span className="block text-slate-500 dark:text-slate-400">{team.ppg.toFixed(1)} /G</span>}
-                  {r && <span className={"block " + r.cls}>{r.label}</span>}
+                  {team.ppg != null && <span className="text-slate-500 dark:text-slate-400">{team.ppg.toFixed(1)}</span>}
+                  {r && <span className={"ml-1 " + r.cls}>{r.label}</span>}
                 </span>
               );
             })()}
@@ -864,8 +864,8 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
               const r = rankOf(teams, team, "oppPpg", "asc");
               return (
                 <span>
-                  {team.oppPpg != null && <span className="block text-slate-500 dark:text-slate-400">{team.oppPpg.toFixed(1)} /G</span>}
-                  {r && <span className={"block " + r.cls}>{r.label}</span>}
+                  {team.oppPpg != null && <span className="text-slate-500 dark:text-slate-400">{team.oppPpg.toFixed(1)}</span>}
+                  {r && <span className={"ml-1 " + r.cls}>{r.label}</span>}
                 </span>
               );
             })()}
@@ -918,7 +918,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                       return (
                         <span className="shrink-0 flex items-center">
                           <span className="w-4 text-right text-[11px] font-extrabold tabular-nums" style={{ color: teamColor(abbr) }}>{num || ""}</span>
-                          <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{hand || p.pos || "—"}</span>
+                          <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{hand || (role === "Batting" && p.gamePos) || p.pos || "—"}</span>
                         </span>
                       );
                     })()}
