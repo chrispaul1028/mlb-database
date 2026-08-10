@@ -451,7 +451,7 @@ export default async function handler(req, res) {
       const myTeams = teamsOut.filter((t) => (rosterCounts[String(t.name).trim().toLowerCase()] || 0) >= 5
         || out.filter((p) => p.teamId === t.id).length >= 5);
       lineupDebug.push("rostered teams: " + (myTeams.map((t) => t.name).join(", ") || "NONE (no team with 5+ players)"));
-      if (myTeams.length > 0 && myTeams.length <= 6) {
+      if (myTeams.length > 0) {
         const dirRes = await fetch("https://statsapi.mlb.com/api/v1/teams?sportId=1");
         const dir = await dirRes.json();
         // Dates in US Eastern - the server runs on UTC, where "today" flips
@@ -460,20 +460,24 @@ export default async function handler(req, res) {
           const d = new Date(Date.now() - offsetDays * 86400000);
           return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(d);
         };
-        for (const t of myTeams) {
+        // ONE schedule call for the whole league, then boxscores in parallel.
+        const schedRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=${etDay(2)}&endDate=${etDay(0)}`);
+        const sched = await schedRes.json();
+        const allGames = (sched.dates || []).flatMap((d) => d.games || []);
+        lineupDebug.push(allGames.length + " league game(s) between " + etDay(2) + " and " + etDay(0));
+
+        await Promise.all(myTeams.map(async (t) => {
           const mlbTeam = (dir.teams || []).find((x) => x.name.toLowerCase() === String(t.name).trim().toLowerCase());
-          if (!mlbTeam) { lineupDebug.push(t.name + ": no MLB team by that name"); continue; }
-          const schedRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${mlbTeam.id}&startDate=${etDay(2)}&endDate=${etDay(0)}`);
-          const sched = await schedRes.json();
-          const games = (sched.dates || []).flatMap((d) => d.games || []);
-          lineupDebug.push(t.name + ": " + games.length + " game(s) between " + etDay(2) + " and " + etDay(0));
-          // Latest lineup: walk backwards from the most recent game
-          for (let gi = games.length - 1; gi >= 0 && gi >= games.length - 3; gi--) {
+          if (!mlbTeam) { lineupDebug.push(t.name + ": no MLB team by that name"); return; }
+          const games = allGames.filter((g) =>
+            (g.teams && g.teams.home && g.teams.home.team.id === mlbTeam.id) ||
+            (g.teams && g.teams.away && g.teams.away.team.id === mlbTeam.id));
+          for (let gi = games.length - 1; gi >= 0 && gi >= games.length - 2; gi--) {
             const boxRes = await fetch(`https://statsapi.mlb.com/api/v1/game/${games[gi].gamePk}/boxscore`);
             const box = await boxRes.json();
             const side = box.teams && box.teams.home && box.teams.home.team.id === mlbTeam.id ? "home" : "away";
             const order = (box.teams && box.teams[side] && box.teams[side].battingOrder) || [];
-            if (!order.length) { lineupDebug.push(t.name + ": game " + games[gi].gamePk + " has no batting order yet"); continue; }
+            if (!order.length) continue;
             const orderByName = {};
             const posByName = {};
             order.forEach((pid, i) => {
@@ -484,19 +488,21 @@ export default async function handler(req, res) {
                 if (pd.position && pd.position.abbreviation) posByName[key] = pd.position.abbreviation;
               }
             });
+            let matched = 0;
             for (const p of out) {
               const mine = p.teamId === t.id || String(p.teamName || "").trim().toLowerCase() === String(t.name).trim().toLowerCase();
               if (!mine) continue;
               const key = p.name.trim().toLowerCase();
               const spot = orderByName[key];
-              if (spot) { p.sort = spot; p.sortLabel = String(spot); if (posByName[key]) p.gamePos = posByName[key]; }
+              if (spot) { p.sort = spot; p.sortLabel = String(spot); if (posByName[key]) p.gamePos = posByName[key]; matched++; }
               else if (/^\d+$/.test(String(p.sortLabel || "").trim())) { p.sort = null; p.sortLabel = null; }
             }
-            const matched = out.filter((p) => p.sortLabel != null && (p.teamId === t.id || String(p.teamName || "").trim().toLowerCase() === String(t.name).trim().toLowerCase())).length;
-            lineupDebug.push(t.name + ": lineup " + order.length + " spots -> matched " + matched + " players. MLB names: " + Object.keys(orderByName).join(", "));
-            break; // latest game with a lineup wins
+            lineupDebug.push(t.name + ": matched " + matched + "/" + order.length +
+              (matched < order.length ? " \u00b7 MLB names: " + Object.keys(orderByName).join(", ") : ""));
+            return; // latest game with a lineup wins
           }
-        }
+          lineupDebug.push(t.name + ": no game with a posted lineup in window");
+        }));
       }
     } catch (e) { lineupDebug.push("overlay error: " + (e && e.message ? e.message : String(e))); }
 
