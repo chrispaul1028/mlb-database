@@ -335,6 +335,16 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
                         </span>
                       ))}
                     </div>
+                    {(st.avgVl != null || st.avgVr != null || st.opsVl != null || st.opsVr != null) && (
+                      <div className="flex justify-between mt-2">
+                        {[["AVG vL", st.avgVl != null ? Number(st.avgVl).toFixed(3).replace(/^0/, "") : null], ["OPS vL", st.opsVl != null ? Number(st.opsVl).toFixed(3).replace(/^0/, "") : null], ["AVG vR", st.avgVr != null ? Number(st.avgVr).toFixed(3).replace(/^0/, "") : null], ["OPS vR", st.opsVr != null ? Number(st.opsVr).toFixed(3).replace(/^0/, "") : null]].map(([lbl, v]) => (
+                          <span key={lbl} className="flex-1 text-center">
+                            <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
+                            <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v ?? "—"}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex justify-between mt-2">
                       {[["W-L", st.w != null || st.l != null ? `${Math.round(st.w || 0)}-${Math.round(st.l || 0)}` : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["SO", st.so != null ? Math.round(st.so) : null], ["SV", st.sv != null ? Math.round(st.sv) : null]].map(([lbl, v]) => (
                         <span key={lbl} className="flex-1 text-center">
