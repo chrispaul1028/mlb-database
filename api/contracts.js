@@ -466,6 +466,7 @@ export default async function handler(req, res) {
         const allGames = (sched.dates || []).flatMap((d) => d.games || []);
         lineupDebug.push(allGames.length + " league game(s) between " + etDay(2) + " and " + etDay(0));
 
+        const normName = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
         await Promise.all(myTeams.map(async (t) => {
           const mlbTeam = (dir.teams || []).find((x) => x.name.toLowerCase() === String(t.name).trim().toLowerCase());
           if (!mlbTeam) { lineupDebug.push(t.name + ": no MLB team by that name"); return; }
@@ -483,7 +484,7 @@ export default async function handler(req, res) {
             order.forEach((pid, i) => {
               const pd = box.teams[side].players["ID" + pid];
               if (pd && pd.person && pd.person.fullName) {
-                const key = pd.person.fullName.trim().toLowerCase();
+                const key = normName(pd.person.fullName);
                 orderByName[key] = i + 1;
                 if (pd.position && pd.position.abbreviation) posByName[key] = pd.position.abbreviation;
               }
@@ -492,7 +493,7 @@ export default async function handler(req, res) {
             for (const p of out) {
               const mine = p.teamId === t.id || String(p.teamName || "").trim().toLowerCase() === String(t.name).trim().toLowerCase();
               if (!mine) continue;
-              const key = p.name.trim().toLowerCase();
+              const key = normName(p.name);
               const spot = orderByName[key];
               if (spot) { p.sort = spot; p.sortLabel = String(spot); if (posByName[key]) p.gamePos = posByName[key]; matched++; }
               else if (/^\d+$/.test(String(p.sortLabel || "").trim())) { p.sort = null; p.sortLabel = null; }
