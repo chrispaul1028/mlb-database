@@ -848,7 +848,12 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
 
       <div className="px-4 -mt-3">
         <div className="grid grid-cols-3 gap-2">
-          <Tile value={(team.wins ?? 0) + "-" + (team.losses ?? 0)} label="Record" />
+          <Tile value={(team.wins ?? 0) + "-" + (team.losses ?? 0)} label="Record"
+            sub={team.rs != null && team.ra != null ? (
+              <span className={team.rs - team.ra >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}>
+                {(team.rs - team.ra >= 0 ? "+" : "") + (team.rs - team.ra)}
+              </span>
+            ) : null} />
           <Tile
             value={team.rs != null ? team.rs : "—"}
             label="RS"
@@ -944,11 +949,11 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                         <span className="flex-1" />
                         {(() => {
                           const st = latestStats(p);
-                          if (st && (st.avg != null || st.hr != null || st.era != null || st.w != null || st.sv != null)) {
+                          if (st && (st.avg != null || st.hr != null || st.era != null || st.w != null || st.l != null || st.whip != null || st.sv != null)) {
                             return (
                               <span className="flex gap-2 shrink-0">
-                                {(st.era != null || st.w != null || st.sv != null
-                                  ? [["W", st.w != null ? String(Math.round(st.w)) : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["SO", st.so != null ? String(Math.round(st.so)) : null], ["SV", st.sv != null ? String(Math.round(st.sv)) : null]]
+                                {(st.era != null || st.w != null || st.l != null || st.whip != null || st.sv != null
+                                  ? [["W", st.w != null ? String(Math.round(st.w)) : null], ["L", st.l != null ? String(Math.round(st.l)) : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["WHIP", st.whip != null ? Number(st.whip).toFixed(2) : null]]
                                   : [["G", st.gp != null ? String(Math.round(st.gp)) : null], ["AVG", st.avg != null ? Number(st.avg).toFixed(3).replace(/^0/, "") : null], ["HR", st.hr != null ? String(Math.round(st.hr)) : null], ["RBI", st.rbi != null ? String(Math.round(st.rbi)) : null]]
                                 ).map(([lbl, v]) => (
                                   <span key={lbl} className="w-7 text-center">
