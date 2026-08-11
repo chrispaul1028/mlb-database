@@ -70,6 +70,10 @@ const FIELDS = {
   sSV: ["SV", "Saves"],
   sIP: ["IP", "Innings Pitched", "Innings"],
   sWHIP: ["WHIP"],
+  sAVGvL: ["AVG vL", "AVG vs L", "AVG vs LHP"],
+  sOPSvL: ["OPS vL", "OPS vs L", "OPS vs LHP"],
+  sAVGvR: ["AVG vR", "AVG vs R", "AVG vs RHP"],
+  sOPSvR: ["OPS vR", "OPS vs R", "OPS vs RHP"],
   ySalary: ["Salary", "Amount", "Cap Hit"],
   yType: ["Type", "Year Type", "Guarantee"],
   yDecision: ["Decision", "Option Decision"],
@@ -335,6 +339,10 @@ export default async function handler(req, res) {
         sv: coerceNum(getField(r.fields, FIELDS.sSV)),
         ip: coerceNum(getField(r.fields, FIELDS.sIP)),
         whip: coerceNum(getField(r.fields, FIELDS.sWHIP)),
+        avgVl: coerceNum(getField(r.fields, FIELDS.sAVGvL)),
+        opsVl: coerceNum(getField(r.fields, FIELDS.sOPSvL)),
+        avgVr: coerceNum(getField(r.fields, FIELDS.sAVGvR)),
+        opsVr: coerceNum(getField(r.fields, FIELDS.sOPSvR)),
       });
     }
     for (const [pid, arr] of Object.entries(statsByPlayer)) {
@@ -349,7 +357,7 @@ export default async function handler(req, res) {
       for (const st of arr) {
         // MLB: totals stay as-entered; normalize rate stats typed without
         // the decimal ("312" -> .312) while leaving "0.312" untouched.
-        for (const k of ["avg", "ops"]) {
+        for (const k of ["avg", "ops", "avgVl", "opsVl", "avgVr", "opsVr"]) {
           if (st[k] != null && st[k] > 10) st[k] = st[k] / 1000;
         }
       }
