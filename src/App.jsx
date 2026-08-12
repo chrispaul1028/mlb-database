@@ -268,7 +268,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
               <StatusBadge status={p.status} />
             </div>
             {p.injuryNotes && (
-              <div className="text-xs font-semibold text-red-200 mt-1 truncate">{p.injuryNotes}</div>
+              <div className="text-xs font-bold mt-1 truncate" style={{ color: "#f87171" }}>{p.injuryNotes}</div>
             )}
           </div>
         </div>
@@ -331,18 +331,21 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
             <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Stats</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800">
               {p.stats.map((st, i) => {
+                const isP = ["Pitching", "Bullpen"].includes(unitOf(p));
+                const showBat = !isP || st.avg != null || st.hr != null || st.rbi != null;
+                const showPit = isP || st.era != null || st.w != null || st.sv != null || st.whip != null;
                 const fmtPct = (v) => (v == null ? null : Number(v).toFixed(1) + "%");
                 return (
                   <div key={i} className="px-4 py-3">
                     <div className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{st.season || "—"}</div>
-                    <div className="flex justify-between">
+                    {showBat && <div className="flex justify-between">
                       {[["G", st.gp != null ? Math.round(st.gp) : null], ["AVG", st.avg != null ? Number(st.avg).toFixed(3).replace(/^0/, "") : null], ["HR", st.hr != null ? Math.round(st.hr) : null], ["RBI", st.rbi != null ? Math.round(st.rbi) : null], ["SB", st.sb != null ? Math.round(st.sb) : null]].map(([lbl, v]) => (
                         <span key={lbl} className="flex-1 text-center">
                           <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
                           <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v ?? "—"}</span>
                         </span>
                       ))}
-                    </div>
+                    </div>}
                     {(st.avgVl != null || st.avgVr != null || st.opsVl != null || st.opsVr != null) && (
                       <div className="flex justify-between mt-2">
                         {[["AVG vL", st.avgVl != null ? Number(st.avgVl).toFixed(3).replace(/^0/, "") : null], ["OPS vL", st.opsVl != null ? Number(st.opsVl).toFixed(3).replace(/^0/, "") : null], ["AVG vR", st.avgVr != null ? Number(st.avgVr).toFixed(3).replace(/^0/, "") : null], ["OPS vR", st.opsVr != null ? Number(st.opsVr).toFixed(3).replace(/^0/, "") : null]].map(([lbl, v]) => (
@@ -353,14 +356,14 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
                         ))}
                       </div>
                     )}
-                    <div className="flex justify-between mt-2">
+                    {showPit && <div className="flex justify-between mt-2">
                       {[["W-L", st.w != null || st.l != null ? `${Math.round(st.w || 0)}-${Math.round(st.l || 0)}` : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["SO", st.so != null ? Math.round(st.so) : null], ["SV", st.sv != null ? Math.round(st.sv) : null]].map(([lbl, v]) => (
                         <span key={lbl} className="flex-1 text-center">
                           <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
                           <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v ?? "—"}</span>
                         </span>
                       ))}
-                    </div>
+                    </div>}
                   </div>
                 );
               })}
@@ -657,6 +660,16 @@ const POS_UNIT = {};
 for (const p of ["SP"]) POS_UNIT[p] = "Pitching";
 for (const p of ["RP", "CP", "CL"]) POS_UNIT[p] = "Bullpen";
 for (const p of ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "OF", "DH", "IF", "UT"]) POS_UNIT[p] = "Batting";
+function statusRank(p) {
+  const s = String(p.status || "").toLowerCase();
+  if (s.includes("active") || s.includes("available")) return 0;
+  const m = s.match(/(\d+)\s*-?\s*day/);
+  if (m) return 100 + Number(m[1]);
+  if (s.includes("il") || s.includes("injur") || s.includes("out")) return 400;
+  if (s.includes("minor")) return 900;
+  return 500;
+}
+
 function unitOf(p) {
   if (ROLE_ORDER.includes(p.role)) return p.role;
   const pos = String(p.pos || "").toUpperCase().trim();
@@ -783,7 +796,8 @@ function TeamsTab({ teams, players, onSelect }) {
 function StatusBadge({ status }) {
   if (!status) return null;
   const s = String(status).toLowerCase().trim();
-  const label = String(status).replace(/(\d+)[- ]?Day (Injured List|IL)/i, "IL-$1");
+  const dayMatch = String(status).match(/(\d+)\s*-?\s*day/i);
+  const label = dayMatch && /(il|injur)/i.test(String(status)) ? "IL-" + dayMatch[1] : String(status);
   let cls = "bg-slate-100 text-slate-500 dark:text-slate-400";
   if (s === "ir" || s.includes("injured reserve") || s.includes("out") || s.includes("il") || s.includes("injur") || s.includes("day")) cls = "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300";
   else if (s.includes("active") || s.includes("available")) cls = "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300";
@@ -935,6 +949,10 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
               {(role === "__all__" ? [...roster] : groups[role])
                 .sort((a, b) => {
                   if (role === "__all__") return String(a.name).localeCompare(String(b.name));
+                  if (role === "Bench") {
+                    const r = statusRank(a) - statusRank(b);
+                    if (r !== 0) return r;
+                  }
                   if (a.sort != null && b.sort != null) return a.sort - b.sort;
                   if (a.sort != null) return -1;
                   if (b.sort != null) return 1;
@@ -949,29 +967,24 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                       return (
                         <span className="shrink-0 flex items-center">
                           <span className="w-4 text-right text-[11px] font-extrabold tabular-nums text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbr) }}>{num || ""}</span>
-                          <span className="w-9 shrink-0 flex flex-col items-center justify-center">
-                            <span className="text-[11px] font-extrabold text-slate-400 uppercase">{hand || (role === "Batting" && p.gamePos) || p.pos || "—"}</span>
-                            {role === "Batting" && batterHand(p) && (
-                              <span className="text-[11px] font-extrabold text-slate-400 uppercase">{batterHand(p)}</span>
-                            )}
-                          </span>
+                          <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{hand || (role === "Batting" && p.gamePos) || p.pos || "—"}</span>
                         </span>
                       );
                     })()}
                     <Avatar p={p} />
                     <span className="flex-1 min-w-0">
                       <span className="flex items-center gap-2">
-                        <span className="flex-1 min-w-0 text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                          {cleanNo(p.no) && (
-                            <span className="text-[11px] font-bold text-slate-400">#{cleanNo(p.no)} </span>
-                          )}
+                        <span className="min-w-0 text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
                           {p.name}
+                          {cleanNo(p.no) && (
+                            <span className="text-[11px] font-bold text-slate-400"> #{cleanNo(p.no)}</span>
+                          )}
                         </span>
-                        {p.rating2k != null && <Rating2kBadge r={p.rating2k} />}
-                      </span>
-                      <span className="flex items-center gap-1.5 mt-0.5">
                         {!(role === "Batting" && hasLineup) && <StatusBadge status={p.status} />}
                         <span className="flex-1" />
+                        {p.rating2k != null && <Rating2kBadge r={p.rating2k} />}
+                      </span>
+                      <span className="flex items-center gap-1.5 mt-1">
                         {(() => {
                           const st = latestStats(p);
                           if (st && (st.avg != null || st.hr != null || st.era != null || st.w != null || st.l != null || st.whip != null || st.sv != null)) {
@@ -998,6 +1011,9 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                         <span className="block text-[11px] font-semibold text-red-600 dark:text-red-500 truncate mt-0.5">{p.injuryNotes}</span>
                       )}
                     </span>
+                    {role === "Batting" && batterHand(p) && (
+                      <span className="shrink-0 text-[11px] font-extrabold uppercase text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbr) }}>{batterHand(p)}</span>
+                    )}
                   </button>
                 ))}
             </div>
