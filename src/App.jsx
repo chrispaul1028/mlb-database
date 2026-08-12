@@ -348,9 +348,9 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
                     </div>}
                     {(st.avgVl != null || st.avgVr != null || st.opsVl != null || st.opsVr != null) && (
                       <div className="flex justify-between mt-2">
-                        {[["AVG vL", st.avgVl != null ? Number(st.avgVl).toFixed(3).replace(/^0/, "") : null], ["OPS vL", st.opsVl != null ? Number(st.opsVl).toFixed(3).replace(/^0/, "") : null], ["AVG vR", st.avgVr != null ? Number(st.avgVr).toFixed(3).replace(/^0/, "") : null], ["OPS vR", st.opsVr != null ? Number(st.opsVr).toFixed(3).replace(/^0/, "") : null]].map(([lbl, v]) => (
+                        {[["AVG vs LHP", st.avgVl != null ? Number(st.avgVl).toFixed(3).replace(/^0/, "") : null], ["OPS vs LHP", st.opsVl != null ? Number(st.opsVl).toFixed(3).replace(/^0/, "") : null], ["AVG vs RHP", st.avgVr != null ? Number(st.avgVr).toFixed(3).replace(/^0/, "") : null], ["OPS vs RHP", st.opsVr != null ? Number(st.opsVr).toFixed(3).replace(/^0/, "") : null]].map(([lbl, v]) => (
                           <span key={lbl} className="flex-1 text-center">
-                            <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
+                            <span className="block text-[8px] font-bold text-slate-400">{lbl}</span>
                             <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v ?? "—"}</span>
                           </span>
                         ))}
@@ -989,7 +989,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                       </span>
                       <span className="flex items-center gap-1.5 mt-1">
                         {role !== "Batting" && <StatusBadge status={p.status} />}
-                        {role !== "Batting" && <span className="flex-1" />}
+                        {role !== "Batting" && role !== "Bench" && <span className="flex-1" />}
                         {(() => {
                           const st = latestStats(p);
                           if (st && (st.avg != null || st.hr != null || st.era != null || st.w != null || st.l != null || st.whip != null || st.sv != null)) {
@@ -1016,9 +1016,14 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                         <span className="block text-[11px] font-semibold text-red-600 dark:text-red-500 truncate mt-0.5">{p.injuryNotes}</span>
                       )}
                     </span>
-                    {role === "Batting" && batterHand(p) && (
-                      <span className="shrink-0 text-[11px] font-extrabold uppercase text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbr) }}>{batterHand(p)}</span>
-                    )}
+                    {(() => {
+                      if (role !== "Batting" && role !== "Bench") return null;
+                      const throwsLetter = (() => { const t = String(p.bt || "").split("/").pop().trim().toUpperCase(); return ["L", "R", "S"].includes(t) ? t : null; })();
+                      const h = batterHand(p) || throwsLetter;
+                      return h ? (
+                        <span className="shrink-0 text-[11px] font-extrabold uppercase text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbr) }}>{h}</span>
+                      ) : null;
+                    })()}
                   </button>
                 ))}
             </div>
