@@ -783,13 +783,14 @@ function TeamsTab({ teams, players, onSelect }) {
 function StatusBadge({ status }) {
   if (!status) return null;
   const s = String(status).toLowerCase().trim();
+  const label = String(status).replace(/(\d+)[- ]?Day (Injured List|IL)/i, "IL-$1");
   let cls = "bg-slate-100 text-slate-500 dark:text-slate-400";
   if (s === "ir" || s.includes("injured reserve") || s.includes("out") || s.includes("il") || s.includes("injur") || s.includes("day")) cls = "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300";
   else if (s.includes("active") || s.includes("available")) cls = "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300";
-  else if (s.includes("question") || s.includes("doubt")) cls = "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300";
+  else if (s.includes("minor") || s.includes("question") || s.includes("doubt")) cls = "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300";
   return (
     <span className={"shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide " + cls}>
-      {status}
+      {label}
     </span>
   );
 }
@@ -948,7 +949,12 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                       return (
                         <span className="shrink-0 flex items-center">
                           <span className="w-4 text-right text-[11px] font-extrabold tabular-nums text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbr) }}>{num || ""}</span>
-                          <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{hand || (role === "Batting" && p.gamePos) || p.pos || "—"}</span>
+                          <span className="w-9 shrink-0 flex flex-col items-center justify-center">
+                            <span className="text-[11px] font-extrabold text-slate-400 uppercase">{hand || (role === "Batting" && p.gamePos) || p.pos || "—"}</span>
+                            {role === "Batting" && batterHand(p) && (
+                              <span className="text-[11px] font-extrabold text-slate-400 uppercase">{batterHand(p)}</span>
+                            )}
+                          </span>
                         </span>
                       );
                     })()}
@@ -956,18 +962,14 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                     <span className="flex-1 min-w-0">
                       <span className="flex items-center gap-2">
                         <span className="flex-1 min-w-0 text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                          {p.name}
                           {cleanNo(p.no) && (
-                            <span className="text-[11px] font-bold text-slate-400"> #{cleanNo(p.no)}</span>
+                            <span className="text-[11px] font-bold text-slate-400">#{cleanNo(p.no)} </span>
                           )}
-                          {role === "Batting" && hasLineup && batterHand(p) && (
-                            <span className="text-[11px] font-bold text-slate-400"> · {batterHand(p)}</span>
-                          )}
+                          {p.name}
                         </span>
                         {p.rating2k != null && <Rating2kBadge r={p.rating2k} />}
                       </span>
                       <span className="flex items-center gap-1.5 mt-0.5">
-                        {role === "Batting" && !hasLineup && batterHand(p) && <span className="text-[11px] text-slate-400 font-bold">{batterHand(p)}</span>}
                         {!(role === "Batting" && hasLineup) && <StatusBadge status={p.status} />}
                         <span className="flex-1" />
                         {(() => {
@@ -993,7 +995,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                         })()}
                       </span>
                       {p.injuryNotes && (
-                        <span className="block text-[11px] font-semibold text-red-500 truncate mt-0.5">{p.injuryNotes}</span>
+                        <span className="block text-[11px] font-semibold text-red-600 dark:text-red-500 truncate mt-0.5">{p.injuryNotes}</span>
                       )}
                     </span>
                   </button>
