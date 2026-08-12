@@ -312,7 +312,14 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
               <BioRow k="Age" v={p.age} />
               <BioRow k="Draft" v={[p.draftYear, p.draft].filter(Boolean).join(": ")} />
               <BioRow k="Experience" v={experienceOf(p)} />
-              <BioRow k="Bats / Throws" v={p.bt} />
+              <BioRow
+                k={["Pitching", "Bullpen"].includes(unitOf(p)) ? "Throws" : ["Batting", "Bench"].includes(unitOf(p)) ? "Bats" : "Bats / Throws"}
+                v={(() => {
+                  const parts = String(p.bt || "").split("/").map((x) => x.trim()).filter(Boolean);
+                  if (parts.length < 2) return p.bt;
+                  return ["Pitching", "Bullpen"].includes(unitOf(p)) ? parts[parts.length - 1] : parts[0];
+                })()}
+              />
               <BioRow k="College" v={p.college} />
               <BioRow k="Birthplace" v={p.birthplace} />
             </div>
@@ -953,11 +960,14 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                           {cleanNo(p.no) && (
                             <span className="text-[11px] font-bold text-slate-400"> #{cleanNo(p.no)}</span>
                           )}
+                          {role === "Batting" && hasLineup && batterHand(p) && (
+                            <span className="text-[11px] font-bold text-slate-400"> · {batterHand(p)}</span>
+                          )}
                         </span>
                         {p.rating2k != null && <Rating2kBadge r={p.rating2k} />}
                       </span>
                       <span className="flex items-center gap-1.5 mt-0.5">
-                        {role === "Batting" && batterHand(p) && <span className="text-[11px] text-slate-400 font-bold">{batterHand(p)}</span>}
+                        {role === "Batting" && !hasLineup && batterHand(p) && <span className="text-[11px] text-slate-400 font-bold">{batterHand(p)}</span>}
                         {!(role === "Batting" && hasLineup) && <StatusBadge status={p.status} />}
                         <span className="flex-1" />
                         {(() => {
