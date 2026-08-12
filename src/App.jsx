@@ -148,9 +148,10 @@ function ordinal(n) {
   return n + suffix;
 }
 
-function Tile({ value, label, sub, accent, valueClass }) {
+function Tile({ value, label, sub, accent, valueClass, topColor }) {
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 px-2 py-4 text-center shadow-sm flex flex-col items-center justify-start">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 px-2 py-4 text-center shadow-sm flex flex-col items-center justify-start"
+      style={topColor ? { borderTop: "3px solid " + topColor } : undefined}>
       <div className="text-[10px] font-semibold text-slate-400 tracking-widest uppercase mb-1">{label}</div>
       <div className={"text-2xl font-extrabold tracking-tight " + (valueClass ? valueClass : accent ? ACCENT_TEXT : "text-slate-900 dark:text-slate-100")}>{value}</div>
       {sub && (
@@ -858,13 +859,14 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
 
       <div className="px-4 -mt-3">
         <div className="grid grid-cols-3 gap-2">
-          <Tile value={(team.wins ?? 0) + "-" + (team.losses ?? 0)} label="Record"
+          <Tile topColor={teamColor(abbr)} value={(team.wins ?? 0) + "-" + (team.losses ?? 0)} label="Record"
             sub={team.rs != null && team.ra != null ? (
               <span className={team.rs - team.ra >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}>
                 {(team.rs - team.ra >= 0 ? "+" : "") + (team.rs - team.ra)}
               </span>
             ) : null} />
           <Tile
+            topColor={teamColor(abbr)}
             value={team.rs != null ? team.rs : "—"}
             label="RS"
             sub={(() => {
@@ -878,6 +880,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
             })()}
           />
           <Tile
+            topColor={teamColor(abbr)}
             value={team.ra != null ? team.ra : "—"}
             label="RA"
             sub={(() => {
@@ -955,7 +958,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                       </span>
                       <span className="flex items-center gap-1.5 mt-0.5">
                         {role === "Batting" && batterHand(p) && <span className="text-[11px] text-slate-400 font-bold">{batterHand(p)}</span>}
-                        <StatusBadge status={p.status} />
+                        {!(role === "Batting" && hasLineup) && <StatusBadge status={p.status} />}
                         <span className="flex-1" />
                         {(() => {
                           const st = latestStats(p);
@@ -964,7 +967,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                               <span className="flex gap-2 shrink-0">
                                 {(st.era != null || st.w != null || st.l != null || st.whip != null || st.sv != null
                                   ? [["W", st.w != null ? String(Math.round(st.w)) : null], ["L", st.l != null ? String(Math.round(st.l)) : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["WHIP", st.whip != null ? Number(st.whip).toFixed(2) : null]]
-                                  : [["G", st.gp != null ? String(Math.round(st.gp)) : null], ["AVG", st.avg != null ? Number(st.avg).toFixed(3).replace(/^0/, "") : null], ["HR", st.hr != null ? String(Math.round(st.hr)) : null], ["RBI", st.rbi != null ? String(Math.round(st.rbi)) : null]]
+                                  : [["AVG", st.avg != null ? Number(st.avg).toFixed(3).replace(/^0/, "") : null], ["HR", st.hr != null ? String(Math.round(st.hr)) : null], ["RBI", st.rbi != null ? String(Math.round(st.rbi)) : null], ["OPS", st.ops != null ? Number(st.ops).toFixed(3).replace(/^0/, "") : null]]
                                 ).map(([lbl, v]) => (
                                   <span key={lbl} className="w-7 text-center">
                                     <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
