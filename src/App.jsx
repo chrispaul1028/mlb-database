@@ -7,7 +7,7 @@ import { useState, useMemo, useEffect } from "react";
 const HEADER_COLOR = "team";
 
 // Season used for team payroll totals (must match your Season select format)
-const CURRENT_SEASON = "2025";
+const CURRENT_SEASON = "2026";
 
 // Salary bar colors by year type - change any hex you like.
 const BAR_COLORS = {
