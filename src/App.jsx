@@ -974,17 +974,22 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                     <Avatar p={p} />
                     <span className="flex-1 min-w-0">
                       <span className="flex items-center gap-2">
-                        <span className="min-w-0 text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                        <span className={(role === "Batting" ? "" : "flex-1 ") + "min-w-0 text-sm font-bold text-slate-900 dark:text-slate-100 truncate"}>
+                          {role !== "Batting" && cleanNo(p.no) && (
+                            <span className="text-[11px] font-bold text-slate-400">#{cleanNo(p.no)} </span>
+                          )}
                           {p.name}
-                          {cleanNo(p.no) && (
+                          {role === "Batting" && cleanNo(p.no) && (
                             <span className="text-[11px] font-bold text-slate-400"> #{cleanNo(p.no)}</span>
                           )}
                         </span>
-                        {!(role === "Batting" && hasLineup) && <StatusBadge status={p.status} />}
-                        <span className="flex-1" />
+                        {role === "Batting" && !hasLineup && <StatusBadge status={p.status} />}
+                        {role === "Batting" && <span className="flex-1" />}
                         {p.rating2k != null && <Rating2kBadge r={p.rating2k} />}
                       </span>
                       <span className="flex items-center gap-1.5 mt-1">
+                        {role !== "Batting" && <StatusBadge status={p.status} />}
+                        {role !== "Batting" && <span className="flex-1" />}
                         {(() => {
                           const st = latestStats(p);
                           if (st && (st.avg != null || st.hr != null || st.era != null || st.w != null || st.l != null || st.whip != null || st.sv != null)) {
