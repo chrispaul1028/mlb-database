@@ -995,7 +995,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                           if (st && (st.avg != null || st.hr != null || st.era != null || st.w != null || st.l != null || st.whip != null || st.sv != null)) {
                             return (
                               <span className="flex gap-2 shrink-0">
-                                {(st.era != null || st.w != null || st.l != null || st.whip != null || st.sv != null
+                                {((role === "Pitching" || role === "Bullpen" || (role === "__all__" && ["Pitching", "Bullpen"].includes(unitOf(p))))
                                   ? [["W", st.w != null ? String(Math.round(st.w)) : null], ["L", st.l != null ? String(Math.round(st.l)) : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["WHIP", st.whip != null ? Number(st.whip).toFixed(2) : null]]
                                   : [["AVG", st.avg != null ? Number(st.avg).toFixed(3).replace(/^0/, "") : null], ["HR", st.hr != null ? String(Math.round(st.hr)) : null], ["RBI", st.rbi != null ? String(Math.round(st.rbi)) : null], ["OPS", st.ops != null ? Number(st.ops).toFixed(3).replace(/^0/, "") : null]]
                                 ).map(([lbl, v]) => (
@@ -1020,9 +1020,17 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                       if (role !== "Batting" && role !== "Bench") return null;
                       const throwsLetter = (() => { const t = String(p.bt || "").split("/").pop().trim().toUpperCase(); return ["L", "R", "S"].includes(t) ? t : null; })();
                       const h = batterHand(p) || throwsLetter;
-                      return h ? (
-                        <span className="shrink-0 text-[11px] font-extrabold uppercase text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbr) }}>{h}</span>
-                      ) : null;
+                      const stH = latestStats(p);
+                      const streak = stH && stH.streak != null ? Math.round(stH.streak) : 0;
+                      if (!h && streak < 5) return null;
+                      return (
+                        <span className="shrink-0 flex items-center gap-1.5">
+                          {streak >= 5 && (
+                            <span className="text-[11px] font-extrabold text-orange-500 dark:text-orange-400">🔥{streak}</span>
+                          )}
+                          {h && <span className="text-[11px] font-extrabold uppercase text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbr) }}>{h}</span>}
+                        </span>
+                      );
                     })()}
                   </button>
                 ))}
