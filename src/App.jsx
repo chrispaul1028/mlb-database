@@ -663,7 +663,7 @@ for (const p of ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "OF", "DH", "IF"
 function statusRank(p) {
   const s = String(p.status || "").toLowerCase();
   if (s.includes("active") || s.includes("available")) return 0;
-  const m = s.match(/(\d+)\s*-?\s*day/);
+  const m = s.match(/(\d+)\s*-?\s*day/) || s.match(/il-?(\d+)/);
   if (m) return 100 + Number(m[1]);
   if (s.includes("il") || s.includes("injur") || s.includes("out")) return 400;
   if (s.includes("minor")) return 900;
@@ -796,8 +796,9 @@ function TeamsTab({ teams, players, onSelect }) {
 function StatusBadge({ status }) {
   if (!status) return null;
   const s = String(status).toLowerCase().trim();
-  const dayMatch = String(status).match(/(\d+)\s*-?\s*day/i);
-  const label = dayMatch && /(il|injur)/i.test(String(status)) ? "IL-" + dayMatch[1] : String(status);
+  const raw = String(status);
+  const dayMatch = raw.match(/(\d+)\s*-?\s*day/i) || raw.match(/^il-?(\d+)$/i);
+  const label = dayMatch && /(il|injur)/i.test(raw) ? "IL" + dayMatch[1] : raw;
   let cls = "bg-slate-100 text-slate-500 dark:text-slate-400";
   if (s === "ir" || s.includes("injured reserve") || s.includes("out") || s.includes("il") || s.includes("injur") || s.includes("day")) cls = "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300";
   else if (s.includes("active") || s.includes("available")) cls = "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300";
@@ -975,13 +976,10 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                     <span className="flex-1 min-w-0">
                       <span className="flex items-center gap-2">
                         <span className={(role === "Batting" ? "" : "flex-1 ") + "min-w-0 text-sm font-bold text-slate-900 dark:text-slate-100 truncate"}>
-                          {role !== "Batting" && cleanNo(p.no) && (
+                          {cleanNo(p.no) && (
                             <span className="text-[11px] font-bold text-slate-400">#{cleanNo(p.no)} </span>
                           )}
                           {p.name}
-                          {role === "Batting" && cleanNo(p.no) && (
-                            <span className="text-[11px] font-bold text-slate-400"> #{cleanNo(p.no)}</span>
-                          )}
                         </span>
                         {role === "Batting" && !hasLineup && <StatusBadge status={p.status} />}
                         {role === "Batting" && <span className="flex-1" />}
