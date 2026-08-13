@@ -74,6 +74,7 @@ const FIELDS = {
   sOPSvL: ["OPS vL", "OPS vs L", "OPS vs LHP"],
   sAVGvR: ["AVG vR", "AVG vs R", "AVG vs RHP"],
   sOPSvR: ["OPS vR", "OPS vs R", "OPS vs RHP"],
+  sStreak: ["Hit Streak", "Hitting Streak", "Streak"],
   ySalary: ["Salary", "Amount", "Cap Hit"],
   yType: ["Type", "Year Type", "Guarantee"],
   yDecision: ["Decision", "Option Decision"],
@@ -343,6 +344,7 @@ export default async function handler(req, res) {
         opsVl: coerceNum(getField(r.fields, FIELDS.sOPSvL)),
         avgVr: coerceNum(getField(r.fields, FIELDS.sAVGvR)),
         opsVr: coerceNum(getField(r.fields, FIELDS.sOPSvR)),
+        streak: coerceNum(getField(r.fields, FIELDS.sStreak)),
       });
     }
     for (const [pid, arr] of Object.entries(statsByPlayer)) {
