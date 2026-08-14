@@ -685,11 +685,158 @@ function winPct(t) {
   return w + l > 0 ? w / (w + l) : -1;
 }
 
+function GameDetail({ g, onBack }) {
+  const [side, setSide] = useState("away");
+  const [box, setBox] = useState(null);
+  const [pstats, setPstats] = useState({});
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const b = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json();
+        if (alive) setBox(b);
+      } catch { if (alive) setBox({}); }
+      try {
+        const ids = ["away", "home"].map((k) => g.teams[k].probablePitcher && g.teams[k].probablePitcher.id).filter(Boolean);
+        if (!ids.length) return;
+        const ppl = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${ids.join(",")}&hydrate=stats(group=[pitching],type=[season])`)).json();
+        const yr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date()).slice(0, 4);
+        const outP = {};
+        for (const person of (ppl.people || [])) {
+          const sp = (person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0] && person.stats[0].splits[0].stat) || {};
+          outP[person.id] = { hand: person.pitchHand && person.pitchHand.code, w: sp.wins, l: sp.losses, era: sp.era, ip: sp.inningsPitched, so: sp.strikeOuts, bb: sp.baseOnBalls, hr: sp.homeRuns, whip: sp.whip };
+          try {
+            const gl = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${person.id}/stats?stats=gameLog&season=${yr}&group=pitching`)).json();
+            const splits = (gl.stats && gl.stats[0] && gl.stats[0].splits) || [];
+            outP[person.id].hrL9 = splits.slice(-9).reduce((acc, s) => acc + Number((s.stat && s.stat.homeRuns) || 0), 0);
+          } catch {}
+        }
+        if (alive) setPstats(outP);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [g.gamePk]);
+
+  const abbrOf = (k) => {
+    const nm = (g.teams[k].team && g.teams[k].team.name) || "";
+    return NAME_TO_ABBR[nm.toLowerCase()] || toAbbr(nm) || "";
+  };
+  const state = g.status && g.status.abstractGameState;
+  const timeLabel = state === "Final" ? "Final" : state === "Live" ? "LIVE" :
+    new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
+  const oppKey = side === "away" ? "home" : "away";
+  const pp = g.teams[oppKey].probablePitcher;
+  const ps = pp ? pstats[pp.id] : null;
+  const teamBox = box && box.teams && box.teams[side];
+  const order = (teamBox && teamBox.battingOrder) || [];
+
+  return (
+    <div>
+      <div className="bg-blue-600 px-4 pb-5" style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)" }}>
+        <button onClick={onBack} className="text-white/90 text-sm font-semibold mb-3">‹ Today's Games</button>
+        <div className="flex items-center justify-between">
+          {["away", "home"].map((k) => {
+            const ab = abbrOf(k);
+            const logo = TEAM_LOGOS[ab];
+            const rec = g.teams[k].leagueRecord ? g.teams[k].leagueRecord.wins + "-" + g.teams[k].leagueRecord.losses : "";
+            return (
+              <div key={k} className={"flex items-center gap-3 " + (k === "home" ? "flex-row-reverse text-right" : "")}>
+                {logo ? (
+                  <img src={logo} alt="" className="w-12 h-12 rounded-full object-contain shrink-0" style={{ backgroundColor: teamColor(ab) }} />
+                ) : (
+                  <span className="w-12 h-12 rounded-full shrink-0" style={{ backgroundColor: teamColor(ab) }} />
+                )}
+                <div>
+                  <div className="text-white font-extrabold text-lg leading-tight">{ab}</div>
+                  <div className="text-white/70 text-[11px] font-bold">{rec}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-center gap-4 mt-2">
+          <span className="text-white text-3xl font-extrabold tabular-nums">{g.teams.away.score != null ? g.teams.away.score : "–"}</span>
+          <span className={"text-[11px] font-extrabold " + (state === "Live" ? "text-red-300" : "text-white/70")}>{timeLabel}</span>
+          <span className="text-white text-3xl font-extrabold tabular-nums">{g.teams.home.score != null ? g.teams.home.score : "–"}</span>
+        </div>
+      </div>
+      <div className="px-4 pb-28">
+        <div className="flex gap-2 mt-4">
+          {["away", "home"].map((k) => (
+            <button key={k} onClick={() => setSide(k)}
+              className={"flex-1 py-2 rounded-full text-xs font-bold transition-colors " + (side === k ? "text-white" : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800")}
+              style={side === k ? { backgroundColor: teamColor(abbrOf(k)) } : undefined}>
+              {(g.teams[k].team && g.teams[k].team.name) || (k === "away" ? "Away" : "Home")}
+            </button>
+          ))}
+        </div>
+
+        <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Facing</div>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
+          style={{ borderTop: "3px solid " + teamColor(abbrOf(oppKey)) }}>
+          <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+            {pp ? pp.fullName : "Starter TBD"}
+            {ps && ps.hand && <span className="text-[11px] font-bold text-slate-400"> · {ps.hand}HP</span>}
+          </div>
+          {ps && (
+            <div className="grid grid-cols-4 gap-y-2 mt-2">
+              {[["W-L", (ps.w ?? 0) + "-" + (ps.l ?? 0)], ["ERA", ps.era ?? "—"], ["IP", ps.ip ?? "—"], ["SO", ps.so ?? "—"],
+                ["BB", ps.bb ?? "—"], ["HR", ps.hr ?? "—"], ["WHIP", ps.whip ?? "—"], ["HR L9", ps.hrL9 ?? "—"]].map(([lbl, v]) => (
+                <span key={lbl} className="text-center">
+                  <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
+                  <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">
+          {(g.teams[side].team && g.teams[side].team.name) || ""} Lineup
+        </div>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+          {box == null && <div className="text-center text-sm text-slate-400 py-10">Loading lineup…</div>}
+          {box != null && order.length === 0 && <div className="text-center text-sm text-slate-400 py-10">Lineup not posted yet.</div>}
+          {order.map((pid, i) => {
+            const pd = teamBox.players["ID" + pid] || {};
+            const nm = (pd.person && pd.person.fullName) || "";
+            const pos = (pd.position && pd.position.abbreviation) || "—";
+            const bat = (pd.seasonStats && pd.seasonStats.batting) || {};
+            return (
+              <div key={pid} className="flex items-center gap-3 px-4 py-3">
+                <span className="shrink-0 flex items-center">
+                  <span className="w-4 text-right text-[11px] font-extrabold tabular-nums text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbrOf(side)) }}>{i + 1}</span>
+                  <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{pos}</span>
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                    {pd.jerseyNumber && <span className="text-[11px] font-bold text-slate-400">#{pd.jerseyNumber} </span>}
+                    {nm}
+                  </span>
+                  <span className="flex gap-2 mt-1">
+                    {[["AVG", bat.avg ? String(bat.avg).replace(/^0/, "") : "—"], ["HR", bat.homeRuns ?? "—"], ["RBI", bat.rbi ?? "—"], ["OPS", bat.ops ? String(bat.ops).replace(/^0/, "") : "—"]].map(([lbl, v]) => (
+                      <span key={lbl} className="w-10 text-center">
+                        <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
+                        <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
+                      </span>
+                    ))}
+                  </span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TeamsTab({ teams, players, onSelect }) {
   const [q, setQ] = useState("");
   const [conf, setConf] = useState("all"); // all | east | west
   const [div, setDiv] = useState(null);    // division name or null
   const [games, setGames] = useState(null); // today's scoreboard (fetched live)
+  const [selGame, setSelGame] = useState(null);
   useEffect(() => {
     if (conf !== "today") return;
     let alive = true;
@@ -763,6 +910,7 @@ function TeamsTab({ teams, players, onSelect }) {
       : winPct(b) - winPct(a) || (b.wins ?? 0) - (a.wins ?? 0)
   );
   const pickConf = (k) => { setConf(k); setDiv(null); };
+  if (selGame) return <GameDetail g={selGame} onBack={() => setSelGame(null)} />;
   return (
     <div>
       <ListHeader title="Teams" q={q} setQ={setQ} placeholder="Search teams or players…" />
@@ -835,7 +983,7 @@ function TeamsTab({ teams, players, onSelect }) {
               const timeLabel = state === "Final" ? "Final" : state === "Live" ? "LIVE" :
                 new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
               return (
-                <div key={g.gamePk} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 px-4 py-3">
+                <button key={g.gamePk} onClick={() => setSelGame(g)} className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 px-4 py-3 active:bg-slate-50 dark:active:bg-slate-800">
                   <span className={"w-14 shrink-0 text-center text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
                   <span className="flex-1 min-w-0">
                     {["away", "home"].map((sideKey) => {
@@ -866,7 +1014,7 @@ function TeamsTab({ teams, players, onSelect }) {
                       );
                     })}
                   </span>
-                </div>
+                </button>
               );
             })}
           </div>
