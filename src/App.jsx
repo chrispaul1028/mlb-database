@@ -699,9 +699,16 @@ const PARK_HR_RANK = {
   "Globe Life Field": 30,
 };
 function parkRankColor(rank) {
-  if (rank <= 10) return "text-red-500";
+  if (rank <= 10) return "text-emerald-600 dark:text-emerald-400"; // most HR-friendly
   if (rank <= 20) return "text-amber-500";
-  return "text-emerald-600 dark:text-emerald-400";
+  return "text-red-500"; // toughest parks for homers
+}
+function ordinalize(n) {
+  const j = n % 10, k = n % 100;
+  if (j === 1 && k !== 11) return n + "st";
+  if (j === 2 && k !== 12) return n + "nd";
+  if (j === 3 && k !== 13) return n + "rd";
+  return n + "th";
 }
 
 function GameDetail({ g, players, onBack }) {
@@ -805,7 +812,7 @@ function GameDetail({ g, players, onBack }) {
         </div>
         <div className="flex items-center justify-center gap-4 mt-2">
           <span className="text-white text-3xl font-extrabold tabular-nums">{g.teams.away.score != null ? g.teams.away.score : "–"}</span>
-          <span className={"text-[11px] font-extrabold " + (state === "Live" ? "text-red-300" : "text-white/70")}>{timeLabel}</span>
+          <span className={"text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-white/70")}>{timeLabel}</span>
           <span className="text-white text-3xl font-extrabold tabular-nums">{g.teams.home.score != null ? g.teams.home.score : "–"}</span>
         </div>
       </div>
@@ -823,9 +830,15 @@ function GameDetail({ g, players, onBack }) {
         <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Facing</div>
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
           style={{ borderTop: "3px solid " + teamColor(abbrOf(oppKey)) }}>
-          <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
-            {pp ? pp.fullName : "Starter TBD"}
-            {ps && ps.hand && <span className="text-[11px] font-bold text-slate-400"> · {ps.hand}HP</span>}
+          <div className="flex items-center gap-3">
+            {pp && (
+              <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_120,q_auto/v1/people/" + pp.id + "/headshot/67/current"} alt=""
+                className="w-11 h-11 rounded-full object-cover object-top bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
+            )}
+            <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              {pp ? pp.fullName : "Starter TBD"}
+              {ps && ps.hand && <span className="text-[11px] font-bold text-slate-400"> · {ps.hand}HP</span>}
+            </div>
           </div>
           {ps && (
             <div className="grid grid-cols-4 gap-y-2 mt-2">
@@ -860,7 +873,7 @@ function GameDetail({ g, players, onBack }) {
                   <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{pos}</span>
                 </span>
                 <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_120,q_auto/v1/people/" + pid + "/headshot/67/current"} alt=""
-                  className="w-10 h-10 rounded-full object-cover bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
+                  className="w-11 h-11 rounded-full object-cover object-top bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
                 <span className="flex-1 min-w-0">
                   <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
                     {pd.jerseyNumber && <span className="text-[11px] font-bold text-slate-400">#{pd.jerseyNumber} </span>}
@@ -1074,7 +1087,7 @@ function TeamsTab({ teams, players, onSelect }) {
                       return (
                         <span className="block text-[10px] font-bold text-slate-400 mt-2">
                           {g.venue.name}
-                          {rank && <span className={"ml-1 " + parkRankColor(rank)}>(HR #{rank})</span>}
+                          {rank && <span className={"ml-1 " + parkRankColor(rank)}>(HR Rank: {ordinalize(rank)})</span>}
                         </span>
                       );
                     })()}
