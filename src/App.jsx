@@ -689,6 +689,39 @@ function TeamsTab({ teams, players, onSelect }) {
   const [q, setQ] = useState("");
   const [conf, setConf] = useState("all"); // all | east | west
   const [div, setDiv] = useState(null);    // division name or null
+  const [games, setGames] = useState(null); // today's scoreboard (fetched live)
+  useEffect(() => {
+    if (conf !== "today") return;
+    let alive = true;
+    (async () => {
+      try {
+        const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+        const schedRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${day}&hydrate=team,linescore,probablePitcher`);
+        const sched = await schedRes.json();
+        const gs = ((sched.dates && sched.dates[0] && sched.dates[0].games) || [])
+          .slice().sort((x, y) => new Date(x.gameDate) - new Date(y.gameDate));
+        const ids = [];
+        for (const g of gs) for (const sideKey of ["away", "home"]) {
+          const pp = g.teams[sideKey].probablePitcher;
+          if (pp && pp.id) ids.push(pp.id);
+        }
+        const recs = {};
+        if (ids.length) {
+          const pplRes = await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${ids.join(",")}&hydrate=stats(group=[pitching],type=[season])`);
+          const ppl = await pplRes.json();
+          for (const person of ppl.people || []) {
+            const sp = person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0];
+            if (sp && sp.stat) recs[person.id] = (sp.stat.wins ?? 0) + "-" + (sp.stat.losses ?? 0);
+          }
+        }
+        if (alive) setGames({ gs, recs });
+      } catch {
+        if (alive) setGames({ gs: [], recs: {} });
+      }
+    })();
+    return () => { alive = false; };
+  }, [conf]);
+  const todayLabel = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "2-digit", day: "2-digit" }).format(new Date());
   const s = q.toLowerCase().trim();
   // Direct team-name matches, plus teams of any player whose name matches -
   // searching "Brunson" surfaces the Knicks.
@@ -716,7 +749,7 @@ function TeamsTab({ teams, players, onSelect }) {
   }
   const divisions = conf === "all" ? [] :
     [...new Set(teams.filter((t) => confOf(t) === conf).map((t) => t.division).filter(Boolean))].sort();
-  let list = teams.filter((t) => {
+  let list = conf === "today" ? [] : teams.filter((t) => {
     if (conf !== "all" && confOf(t) !== conf) return false;
     if (div && t.division !== div) return false;
     if (!s) return true;
@@ -744,6 +777,12 @@ function TeamsTab({ teams, players, onSelect }) {
             </button>
           ))}
         </div>
+        <button onClick={() => pickConf(conf === "today" ? "all" : "today")}
+          className={"w-full mt-2 py-2 rounded-full text-xs font-bold transition-colors " + (conf === "today"
+            ? "bg-blue-600 text-white"
+            : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800")}>
+          Today's Games ({todayLabel})
+        </button>
         {divisions.length > 0 && (
           <div className="flex gap-2 mt-2 overflow-x-auto no-scrollbar">
             {divisions.map((d) => (
@@ -786,7 +825,52 @@ function TeamsTab({ teams, players, onSelect }) {
             );
           })}
         </div>
-        {list.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No teams match{q ? ` "${q}"` : " the selected filters"}.</div>}
+        {conf !== "today" && list.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No teams match{q ? ` "${q}"` : " the selected filters"}.</div>}
+        {conf === "today" && (
+          <div className="mt-4 space-y-3">
+            {games == null && <div className="text-center text-sm text-slate-400 py-12">Loading today's games…</div>}
+            {games && games.gs.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
+            {games && games.gs.map((g) => {
+              const state = g.status && g.status.abstractGameState;
+              const timeLabel = state === "Final" ? "Final" : state === "Live" ? "LIVE" :
+                new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
+              return (
+                <div key={g.gamePk} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 px-4 py-3">
+                  <span className={"w-14 shrink-0 text-center text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
+                  <span className="flex-1 min-w-0">
+                    {["away", "home"].map((sideKey) => {
+                      const t = g.teams[sideKey];
+                      const nm = (t.team && t.team.name) || "";
+                      const ab = NAME_TO_ABBR[nm.toLowerCase()] || toAbbr(nm) || "";
+                      const logo = TEAM_LOGOS[ab];
+                      const rec = t.leagueRecord ? t.leagueRecord.wins + "-" + t.leagueRecord.losses : "";
+                      const pp = t.probablePitcher;
+                      const pRec = pp && games.recs[pp.id] ? " (" + games.recs[pp.id] + ")" : "";
+                      return (
+                        <span key={sideKey} className={"flex items-center gap-2 " + (sideKey === "home" ? "mt-2" : "")}>
+                          {logo ? (
+                            <img src={logo} alt="" className="w-7 h-7 rounded-full object-contain shrink-0" style={{ backgroundColor: teamColor(ab) }} />
+                          ) : (
+                            <span className="w-7 h-7 rounded-full shrink-0" style={{ backgroundColor: teamColor(ab) }} />
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                              {nm} <span className="text-[11px] font-bold text-slate-400">({rec})</span>
+                            </span>
+                            <span className="block text-[11px] font-semibold text-slate-400 truncate">
+                              P: {pp ? pp.fullName + pRec : "TBD"}
+                            </span>
+                          </span>
+                          {t.score != null && <span className="text-base font-extrabold tabular-nums text-slate-900 dark:text-slate-100 shrink-0">{t.score}</span>}
+                        </span>
+                      );
+                    })}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
