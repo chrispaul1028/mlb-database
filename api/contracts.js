@@ -480,6 +480,52 @@ export default async function handler(req, res) {
         await Promise.all(myTeams.map(async (t) => {
           const mlbTeam = (dir.teams || []).find((x) => x.name.toLowerCase() === String(t.name).trim().toLowerCase());
           if (!mlbTeam) { lineupDebug.push(t.name + ": no MLB team by that name"); return; }
+
+          // ── LIVE STATUS + INJURY NOTES (same freshness as lineups) ──
+          try {
+            const shortStatus = (desc) => {
+              const d = String(desc || "");
+              if (/^active$/i.test(d)) return "Active";
+              const il = d.match(/(\d+)-day injured list/i);
+              if (il) return "IL" + il[1];
+              if (/60-day/i.test(d)) return "IL60";
+              if (/minor/i.test(d)) return "Minors";
+              return d || null;
+            };
+            const rosterRes = await fetch(`https://statsapi.mlb.com/api/v1/teams/${mlbTeam.id}/roster?rosterType=40Man`);
+            const rosterData = await rosterRes.json();
+            const statusByName = {};
+            for (const e of rosterData.roster || []) {
+              if (e.person && e.person.fullName) statusByName[normName(e.person.fullName)] = shortStatus(e.status && e.status.description);
+            }
+            const notesByName = {};
+            const yr = etDay(0).slice(0, 4);
+            const txRes = await fetch(`https://statsapi.mlb.com/api/v1/transactions?teamId=${mlbTeam.id}&startDate=${yr}-01-01&endDate=${etDay(0)}`);
+            const txData = await txRes.json();
+            for (const tx of txData.transactions || []) {
+              if (!tx.person || !tx.person.fullName || !tx.description) continue;
+              if (!/injured list/i.test(tx.description)) continue;
+              const parts = tx.description.split(". ").map((x) => x.trim()).filter(Boolean);
+              const last = parts[parts.length - 1].replace(/\.$/, "");
+              if (last && !/injured list/i.test(last)) notesByName[normName(tx.person.fullName)] = last;
+            }
+            let statusMatched = 0;
+            for (const p of out) {
+              const mine = p.teamId === t.id || String(p.teamName || "").trim().toLowerCase() === String(t.name).trim().toLowerCase();
+              if (!mine) continue;
+              const liveStatus = statusByName[normName(p.name)];
+              if (!liveStatus) continue;
+              p.status = liveStatus;
+              if (/^il/i.test(liveStatus)) {
+                p.injuryNotes = notesByName[normName(p.name)] || p.injuryNotes || null;
+              } else {
+                p.injuryNotes = null;
+              }
+              statusMatched++;
+            }
+            lineupDebug.push(t.name + ": live status for " + statusMatched + " players");
+          } catch {}
+
           const games = allGames.filter((g) =>
             (g.teams && g.teams.home && g.teams.home.team.id === mlbTeam.id) ||
             (g.teams && g.teams.away && g.teams.away.team.id === mlbTeam.id));
