@@ -704,7 +704,12 @@ const PARK_RANK_NORM = (() => {
   return m;
 })();
 function parkRankFor(name) {
-  return PARK_RANK_NORM[String(name || "").toLowerCase().replace(/\s+/g, " ").trim()] || null;
+  const n = String(name || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (PARK_RANK_NORM[n]) return PARK_RANK_NORM[n];
+  for (const k of Object.keys(PARK_RANK_NORM)) {
+    if (n.includes(k) || k.includes(n)) return PARK_RANK_NORM[k];
+  }
+  return null;
 }
 
 function parkRankColor(rank) {
@@ -836,6 +841,8 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
     ? { id: liveDef.id, fullName: liveDef.name } : null;
   const pp = liveNow || probable;
   const ps = pp ? pstats[pp.id] : null;
+  const nrmPP = pp ? String(pp.fullName || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() : "";
+  const myPP = myByName[nrmPP];
   const teamBox = box && box.teams && box.teams[side];
   const order = (teamBox && teamBox.battingOrder) || [];
 
@@ -890,13 +897,16 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
         </div>
 
         <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(oppKey)) }}>Pitcher</div>
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
+        <button onClick={myPP && onSelectPlayer ? () => onSelectPlayer(myPP.player) : undefined}
+          className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
           style={{ border: "2px solid " + teamColor(abbrOf(oppKey)) }}>
           <div className="flex items-center gap-3">
-            {pp && (
-              <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_120,q_auto/v1/people/" + pp.id + "/headshot/67/current"} alt=""
-                className="w-11 h-11 rounded-full object-cover object-top bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
-            )}
+            {pp && (myPP && myPP.photo ? (
+              <img src={myPP.photo} alt="" className="w-11 h-11 rounded-full object-cover object-top bg-white shrink-0" loading="lazy" />
+            ) : (
+              <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_240,q_auto/v1/people/" + pp.id + "/headshot/67/current"} alt=""
+                className="w-11 h-11 rounded-full object-cover bg-white shrink-0" loading="lazy" />
+            ))}
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
               {(() => {
                 const jn = pp && box && box.teams && box.teams[oppKey] && box.teams[oppKey].players && box.teams[oppKey].players["ID" + pp.id] && box.teams[oppKey].players["ID" + pp.id].jerseyNumber;
@@ -919,7 +929,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
               ))}
             </div>
           )}
-        </div>
+        </button>
 
         <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(side)) }}>
           {(g.teams[side].team && g.teams[side].team.name) || ""} vs {ps && ps.hand === "L" ? "LHP" : "RHP"}
@@ -954,10 +964,10 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
                   <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{pos}</span>
                 </span>
                 {mine && mine.photo ? (
-                  <img src={mine.photo} alt="" className="w-11 h-11 rounded-full object-cover object-top bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
+                  <img src={mine.photo} alt="" className="w-11 h-11 rounded-full object-cover object-top bg-white shrink-0" loading="lazy" />
                 ) : (
                   <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_240,q_auto/v1/people/" + pid + "/headshot/67/current"} alt=""
-                    className="w-11 h-11 rounded-full object-cover bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
+                    className="w-11 h-11 rounded-full object-cover bg-white shrink-0" loading="lazy" />
                 )}
                 <span className="flex-1 min-w-0">
                   <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
@@ -1311,7 +1321,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
           <Tile
             topColor={teamColor(abbr)}
             value={team.rs != null ? team.rs : "—"}
-            label="RS"
+            label="Runs Scored"
             sub={(() => {
               const r = rankOf(teams, team, "ppg", "desc");
               return (
@@ -1325,7 +1335,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
           <Tile
             topColor={teamColor(abbr)}
             value={team.ra != null ? team.ra : "—"}
-            label="RA"
+            label="Runs Allowed"
             sub={(() => {
               const r = rankOf(teams, team, "oppPpg", "asc");
               return (
