@@ -711,22 +711,25 @@ function ordinalize(n) {
   return n + "th";
 }
 
-function GameDetail({ g, players, onBack }) {
+function GameDetail({ g, players, onSelectPlayer, onBack }) {
   const [side, setSide] = useState("away");
   const [box, setBox] = useState(null);
   const [pstats, setPstats] = useState({});
   const [vsHand, setVsHand] = useState({});
+  const [curBatter, setCurBatter] = useState(null);
   useEffect(() => {
     let alive = true;
     (async () => {
       const yr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date()).slice(0, 4);
       const ids = ["away", "home"].map((k) => g.teams[k].probablePitcher && g.teams[k].probablePitcher.id).filter(Boolean);
-      const [b, ppl] = await Promise.all([
+      const [b, ppl, ls] = await Promise.all([
         fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`).then((r) => r.json()).catch(() => ({})),
         ids.length ? fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${ids.join(",")}&hydrate=stats(group=[pitching],type=[season])`).then((r) => r.json()).catch(() => ({})) : Promise.resolve({}),
+        fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/linescore`).then((r) => r.json()).catch(() => ({})),
       ]);
       if (!alive) return;
       setBox(b);
+      setCurBatter((ls && ls.offense && ls.offense.batter && ls.offense.batter.id) || null);
       const outP = {};
       await Promise.all((ppl.people || []).map(async (person) => {
         const sp = (person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0] && person.stats[0].splits[0].stat) || {};
@@ -749,10 +752,15 @@ function GameDetail({ g, players, onBack }) {
           const res = await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${orderIds.join(",")}&hydrate=stats(group=[hitting],type=[statSplits],sitCodes=[${hand}],season=${yr})`);
           const data = await res.json();
           for (const person of data.people || []) {
+            outSplits[person.id] = outSplits[person.id] || {};
+            if (person.batSide && person.batSide.code) outSplits[person.id].bats = person.batSide.code;
             for (const grp of person.stats || []) {
               for (const s of grp.splits || []) {
                 if (s.split && (s.split.code === "vl" || s.split.code === "vr") && s.stat) {
-                  outSplits[person.id] = { avg: s.stat.avg, hr: s.stat.homeRuns, rbi: s.stat.rbi, ops: s.stat.ops };
+                  outSplits[person.id].avg = s.stat.avg;
+                  outSplits[person.id].hr = s.stat.homeRuns;
+                  outSplits[person.id].rbi = s.stat.rbi;
+                  outSplits[person.id].ops = s.stat.ops;
                 }
               }
             }
@@ -763,12 +771,12 @@ function GameDetail({ g, players, onBack }) {
     })();
     return () => { alive = false; };
   }, [g.gamePk]);
-  const streakByName = useMemo(() => {
+  const myByName = useMemo(() => {
     const m = {};
     const nrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
     for (const p of players || []) {
       const st = latestStats(p);
-      if (st && st.streak != null) m[nrm(p.name)] = Math.round(st.streak);
+      m[nrm(p.name)] = { player: p, photo: p.photo || null, streak: st && st.streak != null ? Math.round(st.streak) : 0 };
     }
     return m;
   }, [players]);
@@ -827,7 +835,7 @@ function GameDetail({ g, players, onBack }) {
           ))}
         </div>
 
-        <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Facing</div>
+        <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Pitcher</div>
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
           style={{ borderTop: "3px solid " + teamColor(abbrOf(oppKey)) }}>
           <div className="flex items-center gap-3">
@@ -863,24 +871,41 @@ function GameDetail({ g, players, onBack }) {
             const pd = teamBox.players["ID" + pid] || {};
             const nm = (pd.person && pd.person.fullName) || "";
             const pos = (pd.position && pd.position.abbreviation) || "—";
-            const bat = vsHand[pid] || (pd.seasonStats && pd.seasonStats.batting) || {};
+            const season = (pd.seasonStats && pd.seasonStats.batting) || {};
+            const sp = vsHand[pid] || {};
+            // vs-hand splits where available, season numbers fill any gaps
+            const bat = {
+              avg: sp.avg != null ? sp.avg : season.avg,
+              hr: sp.hr != null ? sp.hr : season.homeRuns,
+              rbi: sp.rbi != null ? sp.rbi : season.rbi,
+              ops: sp.ops != null ? sp.ops : season.ops,
+            };
             const nrm2 = String(nm).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
-            const streak = streakByName[nrm2] || 0;
+            const mine = myByName[nrm2];
+            const streak = (mine && mine.streak) || 0;
+            const isBatting = curBatter === pid && state === "Live";
+            const RowTag = mine && onSelectPlayer ? "button" : "div";
             return (
-              <div key={pid} className="flex items-center gap-3 px-4 py-3">
+              <RowTag key={pid}
+                onClick={mine && onSelectPlayer ? () => onSelectPlayer(mine.player) : undefined}
+                className={"w-full text-left flex items-center gap-3 px-4 py-3 " + (isBatting ? "bg-emerald-100 dark:bg-emerald-900/40" : "")}>
                 <span className="shrink-0 flex items-center">
                   <span className="w-4 text-right text-[11px] font-extrabold tabular-nums text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbrOf(side)) }}>{i + 1}</span>
                   <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{pos}</span>
                 </span>
-                <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_120,q_auto/v1/people/" + pid + "/headshot/67/current"} alt=""
-                  className="w-11 h-11 rounded-full object-cover object-top bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
+                {mine && mine.photo ? (
+                  <img src={mine.photo} alt="" className="w-11 h-11 rounded-full object-cover object-top bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
+                ) : (
+                  <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_240,q_auto/v1/people/" + pid + "/headshot/67/current"} alt=""
+                    className="w-11 h-11 rounded-full object-cover bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
+                )}
                 <span className="flex-1 min-w-0">
                   <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
                     {pd.jerseyNumber && <span className="text-[11px] font-bold text-slate-400">#{pd.jerseyNumber} </span>}
                     {nm}
                   </span>
                   <span className="flex gap-2 mt-1">
-                    {[["AVG", bat.avg ? String(bat.avg).replace(/^0/, "") : "—"], ["HR", bat.homeRuns ?? "—"], ["RBI", bat.rbi ?? "—"], ["OPS", bat.ops ? String(bat.ops).replace(/^0/, "") : "—"]].map(([lbl, v]) => (
+                    {[["AVG", bat.avg ? String(bat.avg).replace(/^0/, "") : "—"], ["HR", bat.hr != null ? bat.hr : "—"], ["RBI", bat.rbi != null ? bat.rbi : "—"], ["OPS", bat.ops ? String(bat.ops).replace(/^0/, "") : "—"]].map(([lbl, v]) => (
                       <span key={lbl} className="w-10 text-center">
                         <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
                         <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
@@ -888,10 +913,15 @@ function GameDetail({ g, players, onBack }) {
                     ))}
                   </span>
                 </span>
-                {streak >= 5 && (
-                  <span className="shrink-0 text-[11px] font-extrabold text-orange-500 dark:text-orange-400">🔥{streak}</span>
-                )}
-              </div>
+                <span className="shrink-0 flex items-center gap-1.5">
+                  {streak >= 5 && (
+                    <span className="text-[11px] font-extrabold text-orange-500 dark:text-orange-400">🔥{streak}</span>
+                  )}
+                  {sp.bats && (
+                    <span className="text-[11px] font-extrabold uppercase text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbrOf(side)) }}>{sp.bats}</span>
+                  )}
+                </span>
+              </RowTag>
             );
           })}
         </div>
@@ -900,7 +930,7 @@ function GameDetail({ g, players, onBack }) {
   );
 }
 
-function TeamsTab({ teams, players, onSelect }) {
+function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
   const [q, setQ] = useState("");
   const [conf, setConf] = useState("all"); // all | east | west
   const [div, setDiv] = useState(null);    // division name or null
@@ -979,7 +1009,7 @@ function TeamsTab({ teams, players, onSelect }) {
       : winPct(b) - winPct(a) || (b.wins ?? 0) - (a.wins ?? 0)
   );
   const pickConf = (k) => { setConf(k); setDiv(null); };
-  if (selGame) return <GameDetail g={selGame} players={players} onBack={() => setSelGame(null)} />;
+  if (selGame) return <GameDetail g={selGame} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)} />;
   return (
     <div>
       <ListHeader title="Teams" q={q} setQ={setQ} placeholder="Search teams or players…" />
@@ -1820,7 +1850,7 @@ export default function App() {
       {!players && !error && <div className="text-center text-sm text-slate-400 pt-24">Loading…</div>}
 
       {players && tab === "teams" && !selTeam && (
-        <TeamsTab teams={teams} players={players} onSelect={setSelTeam} />
+        <TeamsTab teams={teams} players={players} onSelect={setSelTeam} onSelectPlayer={setSel} />
       )}
       {players && tab === "teams" && selTeam && (
         <TeamDetail
