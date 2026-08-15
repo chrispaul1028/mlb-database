@@ -835,9 +835,9 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
           ))}
         </div>
 
-        <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Pitcher</div>
+        <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(oppKey)) }}>Pitcher</div>
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
-          style={{ borderTop: "3px solid " + teamColor(abbrOf(oppKey)) }}>
+          style={{ border: "2px solid " + teamColor(abbrOf(oppKey)) }}>
           <div className="flex items-center gap-3">
             {pp && (
               <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_120,q_auto/v1/people/" + pp.id + "/headshot/67/current"} alt=""
@@ -861,7 +861,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
           )}
         </div>
 
-        <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">
+        <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(side)) }}>
           {(g.teams[side].team && g.teams[side].team.name) || ""} vs {ps && ps.hand === "L" ? "LHP" : "RHP"}
         </div>
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
@@ -888,7 +888,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
             return (
               <RowTag key={pid}
                 onClick={mine && onSelectPlayer ? () => onSelectPlayer(mine.player) : undefined}
-                className={"w-full text-left flex items-center gap-3 px-4 py-3 " + (isBatting ? "bg-emerald-100 dark:bg-emerald-900/40" : "")}>
+                className={"w-full text-left flex items-center gap-3 px-4 py-3 " + (isBatting ? "border-2 border-emerald-500 rounded-2xl bg-emerald-100/60 dark:bg-emerald-900/30" : "")}>
                 <span className="shrink-0 flex items-center">
                   <span className="w-4 text-right text-[11px] font-extrabold tabular-nums text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbrOf(side)) }}>{i + 1}</span>
                   <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{pos}</span>
