@@ -695,14 +695,26 @@ const PARK_HR_RANK = {
   "Chase Field": 16, "Nationals Park": 17, "Busch Stadium": 18, "Target Field": 19,
   "PNC Park": 20, "Kauffman Stadium": 21, "Oriole Park at Camden Yards": 22,
   "Progressive Field": 23, "loanDepot park": 24, "Petco Park": 25, "Oracle Park": 26,
-  "T-Mobile Park": 27, "George M. Steinbrenner Field": 28, "Comerica Park": 29,
+  "T-Mobile Park": 27, "George M. Steinbrenner Field": 28, "Tropicana Field": 27, "Comerica Park": 29,
   "Globe Life Field": 30,
 };
 function parkRankColor(rank) {
   if (rank <= 10) return "text-emerald-600 dark:text-emerald-400"; // most HR-friendly
-  if (rank <= 20) return "text-amber-500";
+  if (rank <= 20) return "text-yellow-400";
   return "text-red-500"; // toughest parks for homers
 }
+function wxEmoji(c) {
+  const s = String(c || "").toLowerCase();
+  if (s.includes("partly")) return "⛅";
+  if (s.includes("sun") || s.includes("clear")) return "☀️";
+  if (s.includes("cloud") || s.includes("overcast")) return "☁️";
+  if (s.includes("storm") || s.includes("thunder")) return "⛈️";
+  if (s.includes("rain") || s.includes("shower") || s.includes("drizzle")) return "🌧️";
+  if (s.includes("snow")) return "❄️";
+  if (s.includes("dome") || s.includes("roof")) return "🏟️";
+  return "🌡️";
+}
+
 function ordinalize(n) {
   const j = n % 10, k = n % 100;
   if (j === 1 && k !== 11) return n + "st";
@@ -734,7 +746,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
       if (!alive) return;
       setBox(b);
       setCurBatter((ls && ls.offense && ls.offense.batter && ls.offense.batter.id) || null);
-      if (ls && ls.currentInningOrdinal) setInning({ half: ls.inningHalf || (ls.isTopInning ? "Top" : "Bot"), ord: ls.currentInningOrdinal });
+      if (ls && ls.currentInning) setInning({ half: (ls.inningHalf || (ls.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "TOP" : "BOT", num: ls.currentInning });
       if (feed && feed.gameData && feed.gameData.weather && feed.gameData.weather.temp) setWx(feed.gameData.weather);
       const lp = ls && ls.defense && ls.defense.pitcher;
       const offTeam = ls && ls.offense && ls.offense.team && ls.offense.team.id;
@@ -847,11 +859,13 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
           <span className={"text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-white/70")}>{timeLabel}</span>
           <span className="text-white text-3xl font-extrabold tabular-nums">{g.teams.home.score != null ? g.teams.home.score : "–"}</span>
         </div>
-        {(inning || wx) && (
+        {state === "Live" && inning && (
+          <div className="text-center text-[11px] font-extrabold text-white/80 mt-1">{inning.half} {inning.num}</div>
+        )}
+        {wx && (
           <div className="text-center text-[11px] font-bold text-white/70 mt-1">
-            {state === "Live" && inning ? inning.half + " " + inning.ord : null}
-            {state === "Live" && inning && wx ? " · " : null}
-            {wx ? wx.temp + "° · " + wx.condition : null}
+            {wxEmoji(wx.condition)} {wx.temp}° · {wx.condition}
+            {wx.wind ? " · 💨 " + wx.wind : ""}
           </div>
         )}
       </div>
@@ -875,6 +889,10 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
                 className="w-11 h-11 rounded-full object-cover object-top bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
             )}
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              {(() => {
+                const jn = pp && box && box.teams && box.teams[oppKey] && box.teams[oppKey].players && box.teams[oppKey].players["ID" + pp.id] && box.teams[oppKey].players["ID" + pp.id].jerseyNumber;
+                return jn ? <span className="text-[11px] font-bold text-slate-400">#{jn} </span> : null;
+              })()}
               {pp ? pp.fullName : "Starter TBD"}
               {ps && ps.hand && <span className="text-[11px] font-bold text-slate-400"> · {ps.hand}HP</span>}
               {liveNow && <span className="ml-2 text-[9px] font-extrabold uppercase tracking-wide text-red-500">Now Pitching</span>}
@@ -1124,9 +1142,9 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
                 <button key={g.gamePk} onClick={() => setSelGame(g)} className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 px-4 py-3 active:bg-slate-50 dark:active:bg-slate-800">
                   <span className="w-14 shrink-0 text-center">
                     <span className={"block text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
-                    {state === "Live" && g.linescore && g.linescore.currentInningOrdinal && (
+                    {state === "Live" && g.linescore && g.linescore.currentInning && (
                       <span className="block text-[10px] font-bold text-slate-400 mt-0.5">
-                        {(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")) + " " + g.linescore.currentInningOrdinal}
+                        {((g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "TOP " : "BOT ") + g.linescore.currentInning}
                       </span>
                     )}
                   </span>
@@ -1165,7 +1183,10 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
                           {g.venue.name}
                           {rank && <span className={"ml-1 " + parkRankColor(rank)}>(HR Rank: {ordinalize(rank)})</span>}
                           {games.wx && games.wx[g.gamePk] && (
-                            <span className="ml-1 text-slate-400">· {games.wx[g.gamePk].temp}° {games.wx[g.gamePk].condition}</span>
+                            <span className="block mt-0.5 text-slate-400">
+                              {wxEmoji(games.wx[g.gamePk].condition)} {games.wx[g.gamePk].temp}° · {games.wx[g.gamePk].condition}
+                              {games.wx[g.gamePk].wind ? " · 💨 " + games.wx[g.gamePk].wind : ""}
+                            </span>
                           )}
                         </span>
                       );
