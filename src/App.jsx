@@ -717,19 +717,28 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
   const [pstats, setPstats] = useState({});
   const [vsHand, setVsHand] = useState({});
   const [curBatter, setCurBatter] = useState(null);
+  const [inning, setInning] = useState(null);
+  const [wx, setWx] = useState(null);
+  const [liveDef, setLiveDef] = useState(null);
   useEffect(() => {
     let alive = true;
     (async () => {
       const yr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date()).slice(0, 4);
       const ids = ["away", "home"].map((k) => g.teams[k].probablePitcher && g.teams[k].probablePitcher.id).filter(Boolean);
-      const [b, ppl, ls] = await Promise.all([
+      const [b, ppl, ls, feed] = await Promise.all([
         fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`).then((r) => r.json()).catch(() => ({})),
         ids.length ? fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${ids.join(",")}&hydrate=stats(group=[pitching],type=[season])`).then((r) => r.json()).catch(() => ({})) : Promise.resolve({}),
         fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/linescore`).then((r) => r.json()).catch(() => ({})),
+        fetch(`https://statsapi.mlb.com/api/v1.1/game/${g.gamePk}/feed/live?fields=gameData,weather,condition,temp,wind`).then((r) => r.json()).catch(() => ({})),
       ]);
       if (!alive) return;
       setBox(b);
       setCurBatter((ls && ls.offense && ls.offense.batter && ls.offense.batter.id) || null);
+      if (ls && ls.currentInningOrdinal) setInning({ half: ls.inningHalf || (ls.isTopInning ? "Top" : "Bot"), ord: ls.currentInningOrdinal });
+      if (feed && feed.gameData && feed.gameData.weather && feed.gameData.weather.temp) setWx(feed.gameData.weather);
+      const lp = ls && ls.defense && ls.defense.pitcher;
+      const offTeam = ls && ls.offense && ls.offense.team && ls.offense.team.id;
+      if (lp && lp.id) setLiveDef({ id: lp.id, name: lp.fullName, offenseTeamId: offTeam });
       const outP = {};
       await Promise.all((ppl.people || []).map(async (person) => {
         const sp = (person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0] && person.stats[0].splits[0].stat) || {};
@@ -740,6 +749,17 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
           outP[person.id].hrL9 = gls.slice(-9).reduce((acc, s) => acc + Number((s.stat && s.stat.homeRuns) || 0), 0);
         } catch {}
       }));
+      // Reliever on the mound who wasn't a probable: pull his season line too
+      const lp2 = ls && ls.defense && ls.defense.pitcher;
+      if (lp2 && lp2.id && !outP[lp2.id]) {
+        try {
+          const extra = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${lp2.id}&hydrate=stats(group=[pitching],type=[season])`)).json();
+          for (const person of extra.people || []) {
+            const sp2 = (person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0] && person.stats[0].splits[0].stat) || {};
+            outP[person.id] = { hand: person.pitchHand && person.pitchHand.code, w: sp2.wins, l: sp2.losses, era: sp2.era, ip: sp2.inningsPitched, so: sp2.strikeOuts, bb: sp2.baseOnBalls, hr: sp2.homeRuns, whip: sp2.whip };
+          }
+        } catch {}
+      }
       if (!alive) return;
       setPstats(outP);
       try {
@@ -789,7 +809,11 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
   const timeLabel = state === "Final" ? "Final" : state === "Live" ? "LIVE" :
     new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
   const oppKey = side === "away" ? "home" : "away";
-  const pp = g.teams[oppKey].probablePitcher;
+  const probable = g.teams[oppKey].probablePitcher;
+  const sideTeamId = g.teams[side].team && g.teams[side].team.id;
+  const liveNow = state === "Live" && liveDef && liveDef.offenseTeamId === sideTeamId && liveDef.id !== (probable && probable.id)
+    ? { id: liveDef.id, fullName: liveDef.name } : null;
+  const pp = liveNow || probable;
   const ps = pp ? pstats[pp.id] : null;
   const teamBox = box && box.teams && box.teams[side];
   const order = (teamBox && teamBox.battingOrder) || [];
@@ -823,6 +847,13 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
           <span className={"text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-white/70")}>{timeLabel}</span>
           <span className="text-white text-3xl font-extrabold tabular-nums">{g.teams.home.score != null ? g.teams.home.score : "–"}</span>
         </div>
+        {(inning || wx) && (
+          <div className="text-center text-[11px] font-bold text-white/70 mt-1">
+            {state === "Live" && inning ? inning.half + " " + inning.ord : null}
+            {state === "Live" && inning && wx ? " · " : null}
+            {wx ? wx.temp + "° · " + wx.condition : null}
+          </div>
+        )}
       </div>
       <div className="px-4 pb-28">
         <div className="flex gap-2 mt-4">
@@ -846,6 +877,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
               {pp ? pp.fullName : "Starter TBD"}
               {ps && ps.hand && <span className="text-[11px] font-bold text-slate-400"> · {ps.hand}HP</span>}
+              {liveNow && <span className="ml-2 text-[9px] font-extrabold uppercase tracking-wide text-red-500">Now Pitching</span>}
             </div>
           </div>
           {ps && (
@@ -960,7 +992,14 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
             if (sp && sp.stat) recs[person.id] = (sp.stat.wins ?? 0) + "-" + (sp.stat.losses ?? 0);
           }
         }
-        if (alive) setGames({ gs, recs });
+        const wxByPk = {};
+        await Promise.all(gs.map(async (gm) => {
+          try {
+            const f = await (await fetch(`https://statsapi.mlb.com/api/v1.1/game/${gm.gamePk}/feed/live?fields=gameData,weather,condition,temp,wind`)).json();
+            if (f && f.gameData && f.gameData.weather && f.gameData.weather.temp) wxByPk[gm.gamePk] = f.gameData.weather;
+          } catch {}
+        }));
+        if (alive) setGames({ gs, recs, wx: wxByPk });
       } catch {
         if (alive) setGames({ gs: [], recs: {} });
       }
@@ -1083,7 +1122,14 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
                 new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
               return (
                 <button key={g.gamePk} onClick={() => setSelGame(g)} className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 px-4 py-3 active:bg-slate-50 dark:active:bg-slate-800">
-                  <span className={"w-14 shrink-0 text-center text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
+                  <span className="w-14 shrink-0 text-center">
+                    <span className={"block text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
+                    {state === "Live" && g.linescore && g.linescore.currentInningOrdinal && (
+                      <span className="block text-[10px] font-bold text-slate-400 mt-0.5">
+                        {(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")) + " " + g.linescore.currentInningOrdinal}
+                      </span>
+                    )}
+                  </span>
                   <span className="flex-1 min-w-0">
                     {["away", "home"].map((sideKey) => {
                       const t = g.teams[sideKey];
@@ -1118,6 +1164,9 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
                         <span className="block text-[10px] font-bold text-slate-400 mt-2">
                           {g.venue.name}
                           {rank && <span className={"ml-1 " + parkRankColor(rank)}>(HR Rank: {ordinalize(rank)})</span>}
+                          {games.wx && games.wx[g.gamePk] && (
+                            <span className="ml-1 text-slate-400">· {games.wx[g.gamePk].temp}° {games.wx[g.gamePk].condition}</span>
+                          )}
                         </span>
                       );
                     })()}
