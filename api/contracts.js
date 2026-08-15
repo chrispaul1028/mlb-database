@@ -17,6 +17,7 @@ const TABLES = {
   teams: "Teams", // optional - used to resolve linked team names
   stats: "Player Stats", // optional - one row per player per season
   teamStats: "Team Stats", // optional - W/L and run rates per team per season
+  statsImport: "Stats Import", // optional - Savant-style extras (Barrel %, HR/9, batted balls)
 };
 
 const FIELDS = {
@@ -315,6 +316,38 @@ export default async function handler(req, res) {
         const g = (t.wins || 0) + (t.losses || 0);
         t.ppg = hit.ppg != null ? hit.ppg : (t.rs != null && g > 0 ? Math.round((t.rs / g) * 10) / 10 : t.ppg);
         t.oppPpg = hit.oppPpg != null ? hit.oppPpg : (t.ra != null && g > 0 ? Math.round((t.ra / g) * 10) / 10 : t.oppPpg);
+      }
+    } catch {}
+
+    // Optional "Stats Import" table: Barrel % / BBE for hitters, HR/9 for
+    // pitchers - attached to players by link or (accent-insensitive) name.
+    try {
+      const impRecords = await fetchAll(base, T.statsImport, token);
+      const normI = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+      const impById = {};
+      const impByName = {};
+      for (const r of impRecords) {
+        const entry = {
+          barrel: coerceNum(getField(r.fields, ["Barrel %", "Barrel%", "Brl%", "Barrel"])),
+          hr9: coerceNum(getField(r.fields, ["HR/9", "HR9", "HR per 9"])),
+          bbe: coerceNum(getField(r.fields, ["Batted Balls", "BBE", "Batted Ball Events"])),
+        };
+        const pv = getField(r.fields, ["Player", "Name"]);
+        if (Array.isArray(pv) && pv.length) {
+          const v = pv[0];
+          if (typeof v === "string" && v.startsWith("rec")) impById[v] = entry;
+          else if (v && v.id) impById[v.id] = entry;
+          else impByName[normI(v && v.name != null ? v.name : v)] = entry;
+        } else if (pv != null) {
+          impByName[normI(pv)] = entry;
+        }
+      }
+      for (const p of out) {
+        const hit = impById[p.id] || impByName[normI(p.name)];
+        if (!hit) continue;
+        if (hit.barrel != null) p.barrel = hit.barrel;
+        if (hit.hr9 != null) p.hr9 = hit.hr9;
+        if (hit.bbe != null) p.bbe = hit.bbe;
       }
     } catch {}
 
