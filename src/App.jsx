@@ -339,7 +339,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
                   <div key={i} className="px-4 py-3">
                     <div className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{st.season || "—"}</div>
                     {showBat && <div className="flex justify-between">
-                      {[["G", st.gp != null ? Math.round(st.gp) : null], ["AVG", st.avg != null ? Number(st.avg).toFixed(3).replace(/^0/, "") : null], ["HR", st.hr != null ? Math.round(st.hr) : null], ["RBI", st.rbi != null ? Math.round(st.rbi) : null], ["SB", st.sb != null ? Math.round(st.sb) : null]].map(([lbl, v]) => (
+                      {[["G", st.gp != null ? Math.round(st.gp) : null], ["AVG", st.avg != null ? Number(st.avg).toFixed(3).replace(/^0/, "") : null], ["HR", st.hr != null ? Math.round(st.hr) : null], ["RBI", st.rbi != null ? Math.round(st.rbi) : null], ["SB", st.sb != null ? Math.round(st.sb) : null], ...(i === 0 && p.barrel != null ? [["BRL%", Number(p.barrel).toFixed(1)]] : []), ...(i === 0 && p.bbe != null ? [["BBE", Math.round(p.bbe)]] : [])].map(([lbl, v]) => (
                         <span key={lbl} className="flex-1 text-center">
                           <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
                           <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v ?? "—"}</span>
@@ -357,7 +357,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
                       </div>
                     )}
                     {showPit && <div className="flex justify-between mt-2">
-                      {[["W-L", st.w != null || st.l != null ? `${Math.round(st.w || 0)}-${Math.round(st.l || 0)}` : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["SO", st.so != null ? Math.round(st.so) : null], ["SV", st.sv != null ? Math.round(st.sv) : null]].map(([lbl, v]) => (
+                      {[["W-L", st.w != null || st.l != null ? `${Math.round(st.w || 0)}-${Math.round(st.l || 0)}` : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["SO", st.so != null ? Math.round(st.so) : null], ["SV", st.sv != null ? Math.round(st.sv) : null], ...(i === 0 && p.hr9 != null ? [["HR/9", Number(p.hr9).toFixed(2)]] : [])].map(([lbl, v]) => (
                         <span key={lbl} className="flex-1 text-center">
                           <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
                           <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v ?? "—"}</span>
@@ -698,6 +698,15 @@ const PARK_HR_RANK = {
   "T-Mobile Park": 27, "George M. Steinbrenner Field": 28, "Tropicana Field": 27, "Comerica Park": 29,
   "Globe Life Field": 30,
 };
+const PARK_RANK_NORM = (() => {
+  const m = {};
+  for (const k of Object.keys(PARK_HR_RANK)) m[k.toLowerCase().replace(/\s+/g, " ").trim()] = PARK_HR_RANK[k];
+  return m;
+})();
+function parkRankFor(name) {
+  return PARK_RANK_NORM[String(name || "").toLowerCase().replace(/\s+/g, " ").trim()] || null;
+}
+
 function parkRankColor(rank) {
   if (rank <= 10) return "text-emerald-600 dark:text-emerald-400"; // most HR-friendly
   if (rank <= 20) return "text-yellow-400";
@@ -808,7 +817,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
     const nrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
     for (const p of players || []) {
       const st = latestStats(p);
-      m[nrm(p.name)] = { player: p, photo: p.photo || null, streak: st && st.streak != null ? Math.round(st.streak) : 0 };
+      m[nrm(p.name)] = { player: p, photo: p.photo || null, streak: st && st.streak != null ? Math.round(st.streak) : 0, barrel: p.barrel, hr9: p.hr9 };
     }
     return m;
   }, [players]);
@@ -901,7 +910,8 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
           {ps && (
             <div className="grid grid-cols-4 gap-y-2 mt-2">
               {[["W-L", (ps.w ?? 0) + "-" + (ps.l ?? 0)], ["ERA", ps.era ?? "—"], ["IP", ps.ip ?? "—"], ["SO", ps.so ?? "—"],
-                ["BB", ps.bb ?? "—"], ["HR", ps.hr ?? "—"], ["WHIP", ps.whip ?? "—"], ["HR L9", ps.hrL9 ?? "—"]].map(([lbl, v]) => (
+                ["BB", ps.bb ?? "—"], ["HR", ps.hr ?? "—"], ["WHIP", ps.whip ?? "—"], ["HR L9", ps.hrL9 ?? "—"],
+                ...(() => { const nrmP = pp ? String(pp.fullName || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() : ""; const mp = myByName[nrmP]; return mp && mp.hr9 != null ? [["HR/9", Number(mp.hr9).toFixed(2)]] : []; })()].map(([lbl, v]) => (
                 <span key={lbl} className="text-center">
                   <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
                   <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
@@ -938,7 +948,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
             return (
               <RowTag key={pid}
                 onClick={mine && onSelectPlayer ? () => onSelectPlayer(mine.player) : undefined}
-                className={"w-full text-left flex items-center gap-3 px-4 py-3 " + (isBatting ? "border-2 border-emerald-500 rounded-2xl bg-emerald-100/60 dark:bg-emerald-900/30" : "")}>
+                className={"w-full text-left flex items-center gap-3 px-4 py-3 " + (isBatting ? "ring-2 ring-inset ring-emerald-400 rounded-2xl bg-emerald-100/60 dark:bg-emerald-900/30" : "")}>
                 <span className="shrink-0 flex items-center">
                   <span className="w-4 text-right text-[11px] font-extrabold tabular-nums text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbrOf(side)) }}>{i + 1}</span>
                   <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{pos}</span>
@@ -955,7 +965,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
                     {nm}
                   </span>
                   <span className="flex gap-2 mt-1">
-                    {[["AVG", bat.avg ? String(bat.avg).replace(/^0/, "") : "—"], ["HR", bat.hr != null ? bat.hr : "—"], ["RBI", bat.rbi != null ? bat.rbi : "—"], ["OPS", bat.ops ? String(bat.ops).replace(/^0/, "") : "—"]].map(([lbl, v]) => (
+                    {[["AVG", bat.avg ? String(bat.avg).replace(/^0/, "") : "—"], ["HR", bat.hr != null ? bat.hr : "—"], ["RBI", bat.rbi != null ? bat.rbi : "—"], ["OPS", bat.ops ? String(bat.ops).replace(/^0/, "") : "—"], ...(mine && mine.barrel != null ? [["BRL%", Number(mine.barrel).toFixed(1)]] : [])].map(([lbl, v]) => (
                       <span key={lbl} className="w-10 text-center">
                         <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
                         <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
@@ -1177,7 +1187,7 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
                       );
                     })}
                     {g.venue && g.venue.name && (() => {
-                      const rank = PARK_HR_RANK[g.venue.name];
+                      const rank = parkRankFor(g.venue.name);
                       return (
                         <span className="block text-[10px] font-bold text-slate-400 mt-2">
                           {g.venue.name}
