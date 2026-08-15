@@ -425,7 +425,7 @@ function TeamPill({ team }) {
   if (!abbr) return null;
   const logo = TEAM_LOGOS[abbr];
   if (logo) {
-    return <img src={logo} alt={abbr} className="w-8 h-8 rounded-full object-contain shrink-0" style={{ backgroundColor: teamColor(abbr) }} />;
+    return <img src={logo} alt={abbr} className="w-8 h-8 rounded-full object-contain bg-white shrink-0" />;
   }
   return (
     <span className="text-[10px] font-bold text-white px-2 py-1 rounded-full shrink-0" style={{ backgroundColor: teamColor(abbr) }}>
@@ -858,7 +858,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
             return (
               <div key={k} className={"flex items-center gap-3 " + (k === "home" ? "flex-row-reverse text-right" : "")}>
                 {logo ? (
-                  <img src={logo} alt="" className="w-12 h-12 rounded-full object-contain shrink-0" style={{ backgroundColor: teamColor(ab) }} />
+                  <img src={logo} alt="" className="w-12 h-12 rounded-full object-contain bg-white shrink-0" />
                 ) : (
                   <span className="w-12 h-12 rounded-full shrink-0" style={{ backgroundColor: teamColor(ab) }} />
                 )}
@@ -983,13 +983,9 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
                     ))}
                   </span>
                 </span>
-                <span className="shrink-0 flex items-center gap-1.5">
-                  {streak >= 5 && (
-                    <span className="text-[11px] font-extrabold text-orange-500 dark:text-orange-400">🔥{streak}</span>
-                  )}
-                  {sp.bats && (
-                    <span className="text-[11px] font-extrabold uppercase text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbrOf(side)) }}>{sp.bats}</span>
-                  )}
+                <span className="shrink-0 flex items-center">
+                  <span className="w-10 text-center text-[11px] font-extrabold text-orange-500 dark:text-orange-400">{streak >= 5 ? "🔥" + streak : ""}</span>
+                  <span className="w-4 text-center text-[11px] font-extrabold uppercase text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbrOf(side)) }}>{sp.bats || ""}</span>
                 </span>
               </RowTag>
             );
@@ -1087,6 +1083,83 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
   );
   const pickConf = (k) => { setConf(k); setDiv(null); };
   if (selGame) return <GameDetail g={selGame} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)} />;
+  if (conf === "today") {
+    return (
+      <div>
+        <div className="bg-blue-600 px-4 pb-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)" }}>
+          <button onClick={() => pickConf("all")} className="text-white/90 text-sm font-semibold">‹ Teams</button>
+          <div className="text-white text-xl font-extrabold mt-1">Today's Games ({todayLabel})</div>
+        </div>
+        <div className="px-4 pb-28">
+          <div className="mt-4 space-y-3">
+            {games == null && <div className="text-center text-sm text-slate-400 py-12">Loading today's games…</div>}
+            {games && games.gs.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
+            {games && games.gs.map((g) => {
+              const state = g.status && g.status.abstractGameState;
+              const timeLabel = state === "Final" ? "Final" : state === "Live" ? "LIVE" :
+                new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
+              return (
+                <button key={g.gamePk} onClick={() => setSelGame(g)} className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 px-4 py-3 active:bg-slate-50 dark:active:bg-slate-800">
+                  <span className="w-14 shrink-0 text-center">
+                    <span className={"block text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
+                    {state === "Live" && g.linescore && g.linescore.currentInning && (
+                      <span className="block text-[10px] font-bold text-slate-400 mt-0.5">
+                        {((g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "TOP " : "BOT ") + g.linescore.currentInning}
+                      </span>
+                    )}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    {["away", "home"].map((sideKey) => {
+                      const t = g.teams[sideKey];
+                      const nm = (t.team && t.team.name) || "";
+                      const ab = NAME_TO_ABBR[nm.toLowerCase()] || toAbbr(nm) || "";
+                      const logo = TEAM_LOGOS[ab];
+                      const rec = t.leagueRecord ? t.leagueRecord.wins + "-" + t.leagueRecord.losses : "";
+                      const pp = t.probablePitcher;
+                      const pRec = pp && games.recs[pp.id] ? " (" + games.recs[pp.id] + ")" : "";
+                      return (
+                        <span key={sideKey} className={"flex items-center gap-2 " + (sideKey === "home" ? "mt-2" : "")}>
+                          {logo ? (
+                            <img src={logo} alt="" className="w-7 h-7 rounded-full object-contain bg-white shrink-0" />
+                          ) : (
+                            <span className="w-7 h-7 rounded-full shrink-0" style={{ backgroundColor: teamColor(ab) }} />
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                              {nm} <span className="text-[11px] font-bold text-slate-400">({rec})</span>
+                            </span>
+                            <span className="block text-[11px] font-semibold text-slate-400 truncate">
+                              P: {pp ? pp.fullName + pRec : "TBD"}
+                            </span>
+                          </span>
+                          {t.score != null && <span className="text-base font-extrabold tabular-nums text-slate-900 dark:text-slate-100 shrink-0">{t.score}</span>}
+                        </span>
+                      );
+                    })}
+                    {g.venue && g.venue.name && (() => {
+                      const rank = parkRankFor(g.venue.name);
+                      return (
+                        <span className="block text-[10px] font-bold text-slate-400 mt-2">
+                          {g.venue.name}
+                          {rank && <span className={"ml-1 " + parkRankColor(rank)}>(HR Rank: {ordinalize(rank)})</span>}
+                          {games.wx && games.wx[g.gamePk] && (
+                            <span className="block mt-0.5 text-slate-400">
+                              {wxEmoji(games.wx[g.gamePk].condition)} {games.wx[g.gamePk].temp}° · {games.wx[g.gamePk].condition}
+                              {games.wx[g.gamePk].wind ? " · 💨 " + games.wx[g.gamePk].wind : ""}
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })()}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div>
       <ListHeader title="Teams" q={q} setQ={setQ} placeholder="Search teams or players…" />
@@ -1125,7 +1198,7 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
             return (
               <button key={t.id} onClick={() => onSelect(t)} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-slate-50 dark:active:bg-slate-800">
                 {t.logo ? (
-                  <img src={t.logo} alt="" className="w-11 h-11 rounded-full object-contain shrink-0" style={{ backgroundColor: teamColor(abbr) }} />
+                  <img src={t.logo} alt="" className="w-11 h-11 rounded-full object-contain bg-white shrink-0" />
                 ) : (
                   <span className="w-11 h-11 rounded-full shrink-0" style={{ backgroundColor: teamColor(abbr) }} />
                 )}
@@ -1150,73 +1223,7 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
           })}
         </div>
         {conf !== "today" && list.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No teams match{q ? ` "${q}"` : " the selected filters"}.</div>}
-        {conf === "today" && (
-          <div className="mt-4 space-y-3">
-            {games == null && <div className="text-center text-sm text-slate-400 py-12">Loading today's games…</div>}
-            {games && games.gs.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
-            {games && games.gs.map((g) => {
-              const state = g.status && g.status.abstractGameState;
-              const timeLabel = state === "Final" ? "Final" : state === "Live" ? "LIVE" :
-                new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
-              return (
-                <button key={g.gamePk} onClick={() => setSelGame(g)} className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 px-4 py-3 active:bg-slate-50 dark:active:bg-slate-800">
-                  <span className="w-14 shrink-0 text-center">
-                    <span className={"block text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
-                    {state === "Live" && g.linescore && g.linescore.currentInning && (
-                      <span className="block text-[10px] font-bold text-slate-400 mt-0.5">
-                        {((g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "TOP " : "BOT ") + g.linescore.currentInning}
-                      </span>
-                    )}
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    {["away", "home"].map((sideKey) => {
-                      const t = g.teams[sideKey];
-                      const nm = (t.team && t.team.name) || "";
-                      const ab = NAME_TO_ABBR[nm.toLowerCase()] || toAbbr(nm) || "";
-                      const logo = TEAM_LOGOS[ab];
-                      const rec = t.leagueRecord ? t.leagueRecord.wins + "-" + t.leagueRecord.losses : "";
-                      const pp = t.probablePitcher;
-                      const pRec = pp && games.recs[pp.id] ? " (" + games.recs[pp.id] + ")" : "";
-                      return (
-                        <span key={sideKey} className={"flex items-center gap-2 " + (sideKey === "home" ? "mt-2" : "")}>
-                          {logo ? (
-                            <img src={logo} alt="" className="w-7 h-7 rounded-full object-contain shrink-0" style={{ backgroundColor: teamColor(ab) }} />
-                          ) : (
-                            <span className="w-7 h-7 rounded-full shrink-0" style={{ backgroundColor: teamColor(ab) }} />
-                          )}
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                              {nm} <span className="text-[11px] font-bold text-slate-400">({rec})</span>
-                            </span>
-                            <span className="block text-[11px] font-semibold text-slate-400 truncate">
-                              P: {pp ? pp.fullName + pRec : "TBD"}
-                            </span>
-                          </span>
-                          {t.score != null && <span className="text-base font-extrabold tabular-nums text-slate-900 dark:text-slate-100 shrink-0">{t.score}</span>}
-                        </span>
-                      );
-                    })}
-                    {g.venue && g.venue.name && (() => {
-                      const rank = parkRankFor(g.venue.name);
-                      return (
-                        <span className="block text-[10px] font-bold text-slate-400 mt-2">
-                          {g.venue.name}
-                          {rank && <span className={"ml-1 " + parkRankColor(rank)}>(HR Rank: {ordinalize(rank)})</span>}
-                          {games.wx && games.wx[g.gamePk] && (
-                            <span className="block mt-0.5 text-slate-400">
-                              {wxEmoji(games.wx[g.gamePk].condition)} {games.wx[g.gamePk].temp}° · {games.wx[g.gamePk].condition}
-                              {games.wx[g.gamePk].wind ? " · 💨 " + games.wx[g.gamePk].wind : ""}
-                            </span>
-                          )}
-                        </span>
-                      );
-                    })()}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+
       </div>
     </div>
   );
@@ -1290,7 +1297,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
         <button onClick={onBack} className="text-sm font-semibold opacity-80 mb-4">‹ Teams</button>
         <div className="flex items-center gap-4">
           {team.logo ? (
-            <img src={team.logo} alt="" className="w-16 h-16 rounded-full object-contain shrink-0" style={{ backgroundColor: teamColor(abbr) }} />
+            <img src={team.logo} alt="" className="w-16 h-16 rounded-full object-contain bg-white shrink-0" />
           ) : (
             <span className="text-3xl">⚾</span>
           )}
@@ -1452,11 +1459,9 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                       const streak = stH && stH.streak != null ? Math.round(stH.streak) : 0;
                       if (!h && streak < 5) return null;
                       return (
-                        <span className="shrink-0 flex items-center gap-1.5">
-                          {streak >= 5 && (
-                            <span className="text-[11px] font-extrabold text-orange-500 dark:text-orange-400">🔥{streak}</span>
-                          )}
-                          {h && <span className="text-[11px] font-extrabold uppercase text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbr) }}>{h}</span>}
+                        <span className="shrink-0 flex items-center">
+                          <span className="w-10 text-center text-[11px] font-extrabold text-orange-500 dark:text-orange-400">{streak >= 5 ? "🔥" + streak : ""}</span>
+                          <span className="w-4 text-center text-[11px] font-extrabold uppercase text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbr) }}>{h || ""}</span>
                         </span>
                       );
                     })()}
