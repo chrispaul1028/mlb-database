@@ -1776,6 +1776,10 @@ const HRB = {
   topN: 10,        // how many targets to rank
   wPitBrl: 0.7,    // weight on the opposing SP's Barrel % against
   wHr9: 6,         // weight on the opposing SP's HR/9
+  // Baselines: pitchers are scored vs league average, so HR-prone SPs
+  // ADD points and stingy SPs SUBTRACT them (missing data = no effect)
+  hr9Base: 1.10,   // ~league-average HR/9
+  pitBrlBase: 8.5, // ~league-average Barrel % against
   parkBonus: 5,    // max park points (rank 1 park = +5, rank 30 = +0)
   projMult: 0.9,   // discount applied when the lineup is only projected
 };
@@ -1934,7 +1938,9 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const hm = meta(h.name);
         const useBrl = brlVsHand(hm, opp && opp.hand);
         if (useBrl == null) continue;
-        let score = useBrl + HRB.wPitBrl * (om.barrel || 0) + HRB.wHr9 * (om.hr9 || 0) + pk;
+        const pitBrlAdj = om.barrel != null ? om.barrel - HRB.pitBrlBase : 0;
+        const hr9Adj = om.hr9 != null ? om.hr9 - HRB.hr9Base : 0;
+        let score = useBrl + HRB.wPitBrl * pitBrlAdj + HRB.wHr9 * hr9Adj + pk;
         if (!s.confirmed) score *= HRB.projMult;
         targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: useBrl, oppBrl: om.barrel, oppHr9: om.hr9, park: rank, score, g: row.g, confirmed: s.confirmed, player: myByName[hrbNrm(h.name)] });
       }
@@ -1998,7 +2004,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </button>
               ))}
             </div>
-            <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score = Brl% + {HRB.wPitBrl}×SP Brl% + {HRB.wHr9}×SP HR/9 + park (max +{HRB.parkBonus}) · projected lineups ×{HRB.projMult}</div>
+            <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score = Brl% + {HRB.wPitBrl}×(SP Brl% − {HRB.pitBrlBase}) + {HRB.wHr9}×(SP HR/9 − {HRB.hr9Base}) + park (max +{HRB.parkBonus}) · stingy SPs now subtract · projected ×{HRB.projMult}</div>
           </>
         )}
         <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-500 dark:text-slate-400">Matchups</div>
