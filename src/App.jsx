@@ -1881,6 +1881,240 @@ function DraftTab({ players, onSelect }) {
   );
 }
 
+// ═══════════════ HR BOARD (betting sheet) ════════════════════════
+// Recreates the Google Sheets HR/parlay board inside the app. One card
+// per game: each team's starting pitcher (hand, Barrel % against, batted
+// balls, HR/9) plus batting spots 1-5 with bat side and Barrel %.
+// CONFIRMED (green) when today's lineup is posted; PROJECTED (amber)
+// falls back to the team's most recent posted lineup. Tap a card to
+// open the full matchup view. Tune every threshold/color rule here:
+const HRB = {
+  minBBE: 120,   // pitcher sample floor (sheet's "min. 120 batted balls")
+  hitGreen: 12,  // hitter Barrel % >= this -> green
+  hitAmber: 8,   // hitter Barrel % >= this -> amber (below -> red)
+  pitGreen: 9.5, // pitcher Barrel % against >= this -> green (HR-prone target)
+  pitRed: 6.5,   // pitcher Barrel % against <= this -> red (avoid)
+  hr9Green: 1.2, // pitcher HR/9 >= this -> green
+  hr9Red: 0.9,   // pitcher HR/9 <= this -> red
+};
+const SPOT_LABELS = ["LEADOFF", "2-HOLE", "3-HOLE", "CLEANUP", "PROTECT"];
+function hrbHitClass(v) {
+  if (v == null) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
+  if (v >= HRB.hitGreen) return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300";
+  if (v >= HRB.hitAmber) return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+  return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
+}
+function hrbPitBrlClass(v) {
+  if (v == null) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
+  if (v >= HRB.pitGreen) return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300";
+  if (v <= HRB.pitRed) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
+  return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+}
+function hrbHr9Class(v) {
+  if (v == null) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
+  if (v >= HRB.hr9Green) return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300";
+  if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
+  return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+}
+const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+
+function HRBoardTab({ players, onSelectPlayer }) {
+  const [data, setData] = useState(null);
+  const [selGame, setSelGame] = useState(null);
+  const myByName = useMemo(() => {
+    const m = {};
+    for (const p of players || []) m[hrbNrm(p.name)] = p;
+    return m;
+  }, [players]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
+        const sched = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${dayStr(0)}&hydrate=team,linescore,probablePitcher,venue`)).json();
+        const gs = ((sched.dates && sched.dates[0] && sched.dates[0].games) || [])
+          .slice().sort((a, b) => new Date(a.gameDate) - new Date(b.gameDate));
+        // Today's boxscores (posted lineups) in parallel
+        const boxes = {};
+        await Promise.all(gs.map(async (g) => {
+          try { boxes[g.gamePk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json(); } catch {}
+        }));
+        // Teams with no lineup yet -> most recent posted lineup (last 3 days)
+        const need = new Set();
+        for (const g of gs) for (const k of ["away", "home"]) {
+          const b = boxes[g.gamePk];
+          const order = b && b.teams && b.teams[k] && b.teams[k].battingOrder;
+          if (!order || !order.length) need.add(g.teams[k].team && g.teams[k].team.id);
+        }
+        const prevByTeam = {};
+        if (need.size) {
+          try {
+            const past = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=${dayStr(3)}&endDate=${dayStr(1)}`)).json();
+            for (const d of past.dates || []) for (const pg of d.games || []) {
+              for (const k of ["away", "home"]) {
+                const tid = pg.teams[k].team && pg.teams[k].team.id;
+                if (!need.has(tid)) continue;
+                const cur = prevByTeam[tid];
+                if (!cur || new Date(pg.gameDate) > new Date(cur.date)) prevByTeam[tid] = { pk: pg.gamePk, side: k, date: pg.gameDate };
+              }
+            }
+            const pks = [...new Set(Object.values(prevByTeam).map((x) => x.pk))];
+            const prevBoxes = {};
+            await Promise.all(pks.map(async (pk) => {
+              try { prevBoxes[pk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${pk}/boxscore`)).json(); } catch {}
+            }));
+            for (const tid of Object.keys(prevByTeam)) prevByTeam[tid].box = prevBoxes[prevByTeam[tid].pk];
+          } catch {}
+        }
+        // Assemble both sides of every game, collecting ids for one
+        // batched people call (bat sides + pitch hands)
+        const ids = new Set();
+        const rows = gs.map((g) => {
+          const sides = {};
+          for (const k of ["away", "home"]) {
+            const t = g.teams[k];
+            const nm = (t.team && t.team.name) || "";
+            const ab = NAME_TO_ABBR[nm.toLowerCase()] || toAbbr(nm) || "";
+            const todayBox = boxes[g.gamePk];
+            let order = (todayBox && todayBox.teams && todayBox.teams[k] && todayBox.teams[k].battingOrder) || [];
+            let pmap = (todayBox && todayBox.teams && todayBox.teams[k] && todayBox.teams[k].players) || {};
+            const confirmed = order.length > 0;
+            if (!confirmed) {
+              const prev = prevByTeam[t.team && t.team.id];
+              if (prev && prev.box && prev.box.teams && prev.box.teams[prev.side]) {
+                order = prev.box.teams[prev.side].battingOrder || [];
+                pmap = prev.box.teams[prev.side].players || {};
+              }
+            }
+            const hitters = order.slice(0, 5).map((pid) => {
+              ids.add(pid);
+              const pd = pmap["ID" + pid] || {};
+              return { id: pid, name: (pd.person && pd.person.fullName) || "" };
+            });
+            const pp = t.probablePitcher || null;
+            if (pp && pp.id) ids.add(pp.id);
+            sides[k] = { name: nm, abbr: ab, confirmed, hitters, pitcher: pp ? { id: pp.id, name: pp.fullName } : null };
+          }
+          return { g, sides };
+        });
+        const all = [...ids];
+        const hands = {};
+        for (let i = 0; i < all.length; i += 90) {
+          const chunk = all.slice(i, i + 90);
+          try {
+            const ppl = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${chunk.join(",")}`)).json();
+            for (const person of ppl.people || []) hands[person.id] = { bat: person.batSide && person.batSide.code, pitch: person.pitchHand && person.pitchHand.code };
+          } catch {}
+        }
+        for (const row of rows) for (const k of ["away", "home"]) {
+          const s = row.sides[k];
+          if (s.pitcher && hands[s.pitcher.id]) s.pitcher.hand = hands[s.pitcher.id].pitch;
+          for (const h of s.hitters) if (hands[h.id]) h.bats = hands[h.id].bat;
+        }
+        if (alive) setData(rows);
+      } catch {
+        if (alive) setData([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+  const todayLabel = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "2-digit", day: "2-digit" }).format(new Date());
+  if (selGame) return <GameDetail g={selGame} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)} />;
+  const meta = (name) => myByName[hrbNrm(name)] || {};
+  return (
+    <div>
+      <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
+        <div className="text-2xl font-extrabold tracking-tight">HR Board ({todayLabel})</div>
+        <div className="text-[11px] font-bold text-white/70 mt-1">SP: Brl% · BBE · HR/9 (min {HRB.minBBE} BBE) — Spots 1-5: Bats · Brl%</div>
+      </div>
+      <div className="px-4 pb-28">
+        <div className="mt-4 space-y-3">
+          {data == null && <div className="text-center text-sm text-slate-400 py-12">Building today's board…</div>}
+          {data && data.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
+          {data && data.map(({ g, sides }) => {
+            const state = g.status && g.status.abstractGameState;
+            const timeLabel = state === "Final" ? "Final" : state === "Live" ? "LIVE" :
+              new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
+            const rank = g.venue && g.venue.name ? parkRankFor(g.venue.name) : null;
+            return (
+              <button key={g.gamePk} onClick={() => setSelGame(g)}
+                className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden active:bg-slate-50 dark:active:bg-slate-800">
+                <div className="flex items-center justify-between px-4 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800">
+                  <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-300">
+                    {sides.away.abbr} @ {sides.home.abbr}
+                    <span className={"ml-2 " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
+                  </span>
+                  {rank && <span className={"text-[10px] font-extrabold " + parkRankColor(rank)}>HR Park: {ordinalize(rank)}</span>}
+                </div>
+                {["away", "home"].map((k) => {
+                  const s = sides[k];
+                  const logo = TEAM_LOGOS[s.abbr];
+                  const pm = s.pitcher ? meta(s.pitcher.name) : {};
+                  const smallSample = pm.bbe != null && pm.bbe < HRB.minBBE;
+                  return (
+                    <div key={k} className={"px-4 py-3 " + (k === "home" ? "border-t border-slate-100 dark:border-slate-800" : "")}>
+                      <div className="flex items-center gap-2">
+                        {logo ? (
+                          <img src={logo} alt="" className="w-6 h-6 rounded-full object-contain bg-white shrink-0" />
+                        ) : (
+                          <span className="w-6 h-6 rounded-full shrink-0" style={{ backgroundColor: teamColor(s.abbr) }} />
+                        )}
+                        <span className="text-sm font-extrabold" style={{ color: teamColor(s.abbr) }}>{s.abbr}</span>
+                        <span className={"ml-auto text-[9px] font-extrabold px-2 py-0.5 rounded-full " + (s.confirmed
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+                          : s.hitters.length
+                            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                            : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500")}>
+                          {s.confirmed ? "CONFIRMED" : s.hitters.length ? "PROJECTED" : "NO LINEUP"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="w-9 text-center text-[10px] font-extrabold text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded px-1 py-0.5 shrink-0">
+                          {s.pitcher && s.pitcher.hand ? s.pitcher.hand + "HP" : "SP"}
+                        </span>
+                        <span className="flex-1 min-w-0 text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                          {s.pitcher ? s.pitcher.name : "TBD"}
+                        </span>
+                        <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + (smallSample ? "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500" : hrbPitBrlClass(pm.barrel))}>
+                          {smallSample ? "N/A" : pm.barrel != null ? Number(pm.barrel).toFixed(1) : "—"}
+                        </span>
+                        <span className="w-9 text-center text-[10px] font-bold text-slate-400 tabular-nums shrink-0">
+                          {pm.bbe != null ? Math.round(pm.bbe) : "—"}
+                        </span>
+                        <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHr9Class(pm.hr9)}>
+                          {pm.hr9 != null ? Number(pm.hr9).toFixed(2) : "—"}
+                        </span>
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {s.hitters.map((h, i) => {
+                          const hm = meta(h.name);
+                          return (
+                            <div key={h.id} className="flex items-center gap-2">
+                              <span className="w-14 text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">{SPOT_LABELS[i]}</span>
+                              <span className="w-4 text-center text-[10px] font-extrabold shrink-0" style={{ color: teamColor(s.abbr) }}>{h.bats || ""}</span>
+                              <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{h.name}</span>
+                              <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(hm.barrel)}>
+                                {hm.barrel != null ? Number(hm.barrel).toFixed(1) : "—"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        {s.hitters.length === 0 && (
+                          <div className="text-[11px] text-slate-400 pl-14">No recent lineup found.</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════ PLACEHOLDER TABS ════════════════════════════════
 function ComingSoon({ icon, title, blurb }) {
   return (
@@ -1901,6 +2135,7 @@ function ComingSoon({ icon, title, blurb }) {
 const TABS = [
   { id: "teams", label: "Teams", icon: "⚾" },
   { id: "players", label: "Players", icon: "👤" },
+  { id: "hrboard", label: "HR Board", icon: "🎯" },
   { id: "stats", label: "Stats", icon: "📊" },
   { id: "contracts", label: "Contracts", icon: "💰" },
   { id: "draft", label: "Draft", icon: "🎓" },
@@ -1955,6 +2190,7 @@ export default function App() {
           onSelectPlayer={setSel}
         />
       )}
+      {players && tab === "hrboard" && <HRBoardTab players={players} onSelectPlayer={setSel} />}
       {players && tab === "players" && <PlayersTab players={players} onSelect={setSel} />}
       {players && tab === "contracts" && <ContractsTab players={players} onSelect={setSel} />}
       {players && tab === "stats" && <StatsTab players={players} onSelect={setSel} />}
