@@ -849,7 +849,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
   return (
     <div>
       <div className="px-4 pb-5" style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)", backgroundColor: teamColor(abbrOf(side)) }}>
-        <button onClick={onBack} className="text-white/90 text-sm font-semibold mb-3">‹ Today's Games</button>
+        <button onClick={onBack} className="text-white/90 text-sm font-semibold mb-3">‹ HR Board</button>
         <div className="flex items-center justify-between">
           {["away", "home"].map((k) => {
             const ab = abbrOf(k);
@@ -1000,47 +1000,6 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
   const [q, setQ] = useState("");
   const [conf, setConf] = useState("all"); // all | east | west
   const [div, setDiv] = useState(null);    // division name or null
-  const [games, setGames] = useState(null); // today's scoreboard (fetched live)
-  const [selGame, setSelGame] = useState(null);
-  useEffect(() => {
-    if (conf !== "today") return;
-    let alive = true;
-    (async () => {
-      try {
-        const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-        const schedRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${day}&hydrate=team,linescore,probablePitcher,venue`);
-        const sched = await schedRes.json();
-        const gs = ((sched.dates && sched.dates[0] && sched.dates[0].games) || [])
-          .slice().sort((x, y) => new Date(x.gameDate) - new Date(y.gameDate));
-        const ids = [];
-        for (const g of gs) for (const sideKey of ["away", "home"]) {
-          const pp = g.teams[sideKey].probablePitcher;
-          if (pp && pp.id) ids.push(pp.id);
-        }
-        const recs = {};
-        if (ids.length) {
-          const pplRes = await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${ids.join(",")}&hydrate=stats(group=[pitching],type=[season])`);
-          const ppl = await pplRes.json();
-          for (const person of ppl.people || []) {
-            const sp = person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0];
-            if (sp && sp.stat) recs[person.id] = (sp.stat.wins ?? 0) + "-" + (sp.stat.losses ?? 0);
-          }
-        }
-        const wxByPk = {};
-        await Promise.all(gs.map(async (gm) => {
-          try {
-            const f = await (await fetch(`https://statsapi.mlb.com/api/v1.1/game/${gm.gamePk}/feed/live?fields=gameData,weather,condition,temp,wind`)).json();
-            if (f && f.gameData && f.gameData.weather && f.gameData.weather.temp) wxByPk[gm.gamePk] = f.gameData.weather;
-          } catch {}
-        }));
-        if (alive) setGames({ gs, recs, wx: wxByPk });
-      } catch {
-        if (alive) setGames({ gs: [], recs: {} });
-      }
-    })();
-    return () => { alive = false; };
-  }, [conf]);
-  const todayLabel = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "2-digit", day: "2-digit" }).format(new Date());
   const s = q.toLowerCase().trim();
   // Direct team-name matches, plus teams of any player whose name matches -
   // searching "Brunson" surfaces the Knicks.
@@ -1068,7 +1027,7 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
   }
   const divisions = conf === "all" ? [] :
     [...new Set(teams.filter((t) => confOf(t) === conf).map((t) => t.division).filter(Boolean))].sort();
-  let list = conf === "today" ? [] : teams.filter((t) => {
+  let list = teams.filter((t) => {
     if (conf !== "all" && confOf(t) !== conf) return false;
     if (div && t.division !== div) return false;
     if (!s) return true;
@@ -1082,84 +1041,6 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
       : winPct(b) - winPct(a) || (b.wins ?? 0) - (a.wins ?? 0)
   );
   const pickConf = (k) => { setConf(k); setDiv(null); };
-  if (selGame) return <GameDetail g={selGame} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)} />;
-  if (conf === "today") {
-    return (
-      <div>
-        <div className="bg-blue-600 px-4 pb-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)" }}>
-          <button onClick={() => pickConf("all")} className="text-white/90 text-sm font-semibold">‹ Teams</button>
-          <div className="text-white text-xl font-extrabold mt-1">Today's Games ({todayLabel})</div>
-        </div>
-        <div className="px-4 pb-28">
-          <div className="mt-4 space-y-3">
-            {games == null && <div className="text-center text-sm text-slate-400 py-12">Loading today's games…</div>}
-            {games && games.gs.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
-            {games && games.gs.map((g) => {
-              const state = g.status && g.status.abstractGameState;
-              const timeLabel = state === "Final" ? "Final" : state === "Live" ? "LIVE" :
-                new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
-              return (
-                <button key={g.gamePk} onClick={() => setSelGame(g)} className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 px-4 py-3 active:bg-slate-50 dark:active:bg-slate-800">
-                  <span className="w-14 shrink-0 text-center">
-                    <span className={"block text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
-                    {state === "Live" && g.linescore && g.linescore.currentInning && (
-                      <span className="block text-[10px] font-bold text-slate-400 mt-0.5">
-                        {((g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "TOP " : "BOT ") + g.linescore.currentInning}
-                      </span>
-                    )}
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    {["away", "home"].map((sideKey) => {
-                      const t = g.teams[sideKey];
-                      const nm = (t.team && t.team.name) || "";
-                      const ab = NAME_TO_ABBR[nm.toLowerCase()] || toAbbr(nm) || "";
-                      const logo = TEAM_LOGOS[ab];
-                      const rec = t.leagueRecord ? t.leagueRecord.wins + "-" + t.leagueRecord.losses : "";
-                      const pp = t.probablePitcher;
-                      const pRec = pp && games.recs[pp.id] ? " (" + games.recs[pp.id] + ")" : "";
-                      return (
-                        <span key={sideKey} className={"flex items-center gap-2 " + (sideKey === "home" ? "mt-2" : "")}>
-                          {logo ? (
-                            <img src={logo} alt="" className="w-7 h-7 rounded-full object-contain bg-white shrink-0" />
-                          ) : (
-                            <span className="w-7 h-7 rounded-full shrink-0" style={{ backgroundColor: teamColor(ab) }} />
-                          )}
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                              {nm} <span className="text-[11px] font-bold text-slate-400">({rec})</span>
-                            </span>
-                            <span className="block text-[11px] font-semibold text-slate-400 truncate">
-                              P: {pp ? pp.fullName + pRec : "TBD"}
-                            </span>
-                          </span>
-                          {t.score != null && <span className="text-base font-extrabold tabular-nums text-slate-900 dark:text-slate-100 shrink-0">{t.score}</span>}
-                        </span>
-                      );
-                    })}
-                    {g.venue && g.venue.name && (() => {
-                      const rank = parkRankFor(g.venue.name);
-                      return (
-                        <span className="block text-[10px] font-bold text-slate-400 mt-2">
-                          {g.venue.name}
-                          {rank && <span className={"ml-1 " + parkRankColor(rank)}>(HR Rank: {ordinalize(rank)})</span>}
-                          {games.wx && games.wx[g.gamePk] && (
-                            <span className="block mt-0.5 text-slate-400">
-                              {wxEmoji(games.wx[g.gamePk].condition)} {games.wx[g.gamePk].temp}° · {games.wx[g.gamePk].condition}
-                              {games.wx[g.gamePk].wind ? " · 💨 " + games.wx[g.gamePk].wind : ""}
-                            </span>
-                          )}
-                        </span>
-                      );
-                    })()}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  }
   return (
     <div>
       <ListHeader title="Teams" q={q} setQ={setQ} placeholder="Search teams or players…" />
@@ -1174,12 +1055,6 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
             </button>
           ))}
         </div>
-        <button onClick={() => pickConf(conf === "today" ? "all" : "today")}
-          className={"w-full mt-2 py-2 rounded-full text-xs font-bold transition-colors " + (conf === "today"
-            ? "bg-blue-600 text-white"
-            : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800")}>
-          Today's Games ({todayLabel})
-        </button>
         {divisions.length > 0 && (
           <div className="flex gap-2 mt-2 overflow-x-auto no-scrollbar">
             {divisions.map((d) => (
@@ -1222,7 +1097,7 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
             );
           })}
         </div>
-        {conf !== "today" && list.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No teams match{q ? ` "${q}"` : " the selected filters"}.</div>}
+        {list.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No teams match{q ? ` "${q}"` : " the selected filters"}.</div>}
 
       </div>
     </div>
@@ -1896,6 +1771,13 @@ const HRB = {
   pitRed: 6.5,   // pitcher Barrel % against <= this -> red (avoid)
   hr9Green: 1.2, // pitcher HR/9 >= this -> green
   hr9Red: 0.9,   // pitcher HR/9 <= this -> red
+  // ── Top Targets score = hitter Brl% + wPitBrl*(SP Brl% against)
+  //    + wHr9*(SP HR/9) + park bonus, x projMult if lineup unconfirmed ──
+  topN: 10,        // how many targets to rank
+  wPitBrl: 0.7,    // weight on the opposing SP's Barrel % against
+  wHr9: 6,         // weight on the opposing SP's HR/9
+  parkBonus: 5,    // max park points (rank 1 park = +5, rank 30 = +0)
+  projMult: 0.9,   // discount applied when the lineup is only projected
 };
 const SPOT_LABELS = ["LEADOFF", "2-HOLE", "3-HOLE", "CLEANUP", "PROTECT"];
 function hrbHitClass(v) {
@@ -2021,6 +1903,28 @@ function HRBoardTab({ players, onSelectPlayer }) {
   const todayLabel = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "2-digit", day: "2-digit" }).format(new Date());
   if (selGame) return <GameDetail g={selGame} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)} />;
   const meta = (name) => myByName[hrbNrm(name)] || {};
+  // Rank every hitter on the slate: own Brl% + opposing SP's HR-proneness
+  // + park, discounted if the lineup is only projected.
+  const targets = [];
+  for (const row of data || []) {
+    const rank = row.g.venue && row.g.venue.name ? parkRankFor(row.g.venue.name) : null;
+    const pk = rank != null ? ((31 - rank) / 30) * HRB.parkBonus : 0;
+    for (const k of ["away", "home"]) {
+      const s = row.sides[k];
+      const opp = row.sides[k === "away" ? "home" : "away"].pitcher;
+      const om = opp ? meta(opp.name) : {};
+      for (let i = 0; i < s.hitters.length; i++) {
+        const h = s.hitters[i];
+        const hm = meta(h.name);
+        if (hm.barrel == null) continue;
+        let score = hm.barrel + HRB.wPitBrl * (om.barrel || 0) + HRB.wHr9 * (om.hr9 || 0) + pk;
+        if (!s.confirmed) score *= HRB.projMult;
+        targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: hm.barrel, oppBrl: om.barrel, oppHr9: om.hr9, park: rank, score, g: row.g, confirmed: s.confirmed, player: myByName[hrbNrm(h.name)] });
+      }
+    }
+  }
+  targets.sort((a, b) => b.score - a.score);
+  const top = targets.slice(0, HRB.topN);
   return (
     <div>
       <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
@@ -2028,13 +1932,57 @@ function HRBoardTab({ players, onSelectPlayer }) {
         <div className="text-[11px] font-bold text-white/70 mt-1">SP: Brl% · BBE · HR/9 (min {HRB.minBBE} BBE) — Spots 1-5: Bats · Brl%</div>
       </div>
       <div className="px-4 pb-28">
-        <div className="mt-4 space-y-3">
+        {top.length > 0 && (
+          <>
+            <div className="text-[11px] font-bold tracking-widest uppercase mt-4 mb-2 px-1 text-slate-500 dark:text-slate-400">🎯 Top Targets</div>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+              {top.map((t, i) => (
+                <button key={t.h.id + "-" + t.g.gamePk} onClick={() => setSelGame(t.g)}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
+                  <span className="w-5 text-center text-[11px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
+                  <img src={(t.player && t.player.photo) || "https://img.mlbstatic.com/mlb-photos/image/upload/w_240,q_auto/v1/people/" + t.h.id + "/headshot/67/current"}
+                    alt="" className="w-9 h-9 rounded-full object-cover object-top bg-white shrink-0" loading="lazy" />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                      <span className="font-extrabold" style={{ color: teamColor(t.side.abbr) }}>{t.side.abbr}</span>
+                      {" "}{t.h.bats ? t.h.bats + " " : ""}{t.h.name}
+                      {!t.confirmed && <span className="ml-1 text-[8px] font-extrabold text-amber-500 uppercase">proj</span>}
+                    </span>
+                    <span className="block text-[10px] font-semibold text-slate-400 truncate">
+                      vs {t.oppHand ? t.oppHand + "HP " : ""}{t.opp ? t.opp.name : "TBD"}
+                      {t.park != null && <span className={"ml-1 " + parkRankColor(t.park)}>· {ordinalize(t.park)} park</span>}
+                    </span>
+                  </span>
+                  <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(t.brl)}>
+                    {Number(t.brl).toFixed(1)}
+                  </span>
+                  <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHr9Class(t.oppHr9)}>
+                    {t.oppHr9 != null ? Number(t.oppHr9).toFixed(2) : "—"}
+                  </span>
+                  <span className="w-9 text-center shrink-0">
+                    <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
+                    <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{t.score.toFixed(1)}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score = Brl% + {HRB.wPitBrl}×SP Brl% + {HRB.wHr9}×SP HR/9 + park (max +{HRB.parkBonus}) · projected lineups ×{HRB.projMult}</div>
+          </>
+        )}
+        <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-500 dark:text-slate-400">Matchups</div>
+        <div className="space-y-3">
           {data == null && <div className="text-center text-sm text-slate-400 py-12">Building today's board…</div>}
           {data && data.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
           {data && data.map(({ g, sides }) => {
             const state = g.status && g.status.abstractGameState;
-            const timeLabel = state === "Final" ? "Final" : state === "Live" ? "LIVE" :
-              new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
+            const aScore = g.teams.away.score, hScore = g.teams.home.score;
+            const scoreStr = aScore != null && hScore != null ? aScore + "-" + hScore : "";
+            const inn = g.linescore && g.linescore.currentInning
+              ? ((g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "TOP " : "BOT ") + g.linescore.currentInning
+              : "";
+            const timeLabel = state === "Final" ? "Final " + scoreStr
+              : state === "Live" ? "LIVE " + scoreStr + (inn ? " · " + inn : "")
+              : new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
             const rank = g.venue && g.venue.name ? parkRankFor(g.venue.name) : null;
             return (
               <button key={g.gamePk} onClick={() => setSelGame(g)}
