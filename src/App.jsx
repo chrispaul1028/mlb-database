@@ -1779,7 +1779,6 @@ const HRB = {
   parkBonus: 5,    // max park points (rank 1 park = +5, rank 30 = +0)
   projMult: 0.9,   // discount applied when the lineup is only projected
 };
-const SPOT_LABELS = ["LEADOFF", "2-HOLE", "3-HOLE", "CLEANUP", "PROTECT"];
 function hrbHitClass(v) {
   if (v == null) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
   if (v >= HRB.hitGreen) return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300";
@@ -2013,7 +2012,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </div>
                 {(g.venue && g.venue.name) || wx ? (
                   <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-slate-100 dark:border-slate-800">
-                    <span className="text-[10px] font-bold text-slate-400 truncate">🏟 {(g.venue && g.venue.name) || ""}</span>
+                    <span className="text-[10px] font-bold text-slate-400 truncate">{(g.venue && g.venue.name) || ""}</span>
                     {wx && (
                       <span className="text-[10px] font-bold text-slate-400 shrink-0">
                         {wxEmoji(wx.condition)} {wx.temp}°{wx.wind ? " · 💨 " + wx.wind : ""}
@@ -2074,7 +2073,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           const hb = brlVsHand(hm, oppHand);
                           return (
                             <div key={h.id} className="flex items-center gap-2">
-                              <span className="w-14 text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">{SPOT_LABELS[i]}</span>
+                              <span className="w-4 text-center text-[10px] font-extrabold text-slate-300 dark:text-slate-600 tabular-nums shrink-0">{i + 1}</span>
                               <span className="w-4 text-center text-[10px] font-extrabold shrink-0" style={{ color: teamColor(s.abbr) }}>{h.bats || ""}</span>
                               <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{h.name}</span>
                               <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(hb)}>
@@ -2086,7 +2085,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           );
                         })}
                         {s.hitters.length === 0 && (
-                          <div className="text-[11px] text-slate-400 pl-14">No recent lineup found.</div>
+                          <div className="text-[11px] text-slate-400 pl-6">No recent lineup found.</div>
                         )}
                       </div>
                     </div>
