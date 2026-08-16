@@ -322,8 +322,11 @@ export default async function handler(req, res) {
     // Optional "Stats Import" table: Barrel % / BBE for hitters, HR/9 for
     // pitchers - attached to players by link or (accent-insensitive) name.
     const importOnly = [];
+    const importDebug = { tableName: T.statsImport, rows: 0, attachedToPlayers: 0, importOnly: 0, sampleFields: [], error: null };
     try {
       const impRecords = await fetchAll(base, T.statsImport, token);
+      importDebug.rows = impRecords.length;
+      if (impRecords.length) importDebug.sampleFields = Object.keys(impRecords[0].fields || {});
       const normI = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
       const impById = {};
       const impByName = {};
@@ -350,6 +353,7 @@ export default async function handler(req, res) {
         const hit = impById[p.id] || impByName[normI(p.name)];
         if (!hit) continue;
         claimed.add(hit);
+        importDebug.attachedToPlayers++;
         if (hit.barrel != null) p.barrel = hit.barrel;
         if (hit.brlL != null) p.brlL = hit.brlL;
         if (hit.brlR != null) p.brlR = hit.brlR;
@@ -374,7 +378,14 @@ export default async function handler(req, res) {
           hr9: entry.hr9, bbe: entry.bbe,
         });
       }
-    } catch {}
+    } catch (e) {
+      importDebug.error = String((e && e.message) || e);
+    }
+    importDebug.importOnly = importOnly.length;
+    if (req.query && req.query.debug === "imports") {
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(200).json(importDebug);
+    }
 
     const playerIds = new Set(players.map((p) => p.id));
     const contractIds = new Set(contracts.map((c) => c.id));
