@@ -319,73 +319,6 @@ export default async function handler(req, res) {
       }
     } catch {}
 
-    // Optional "Stats Import" table: Barrel % / BBE for hitters, HR/9 for
-    // pitchers - attached to players by link or (accent-insensitive) name.
-    const importOnly = [];
-    const importDebug = { tableName: T.statsImport, rows: 0, attachedToPlayers: 0, importOnly: 0, sampleFields: [], error: null };
-    try {
-      const impRecords = await fetchAll(base, T.statsImport, token);
-      importDebug.rows = impRecords.length;
-      if (impRecords.length) importDebug.sampleFields = Object.keys(impRecords[0].fields || {});
-      const normI = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
-      const impById = {};
-      const impByName = {};
-      for (const r of impRecords) {
-        const entry = {
-          barrel: coerceNum(getField(r.fields, ["Barrel %", "Barrel%", "Brl%", "Barrel"])),
-          brlL: coerceNum(getField(r.fields, ["Barrel % vs LHP", "Barrel% vs LHP", "Brl% vs L", "Barrel vs LHP"])),
-          brlR: coerceNum(getField(r.fields, ["Barrel % vs RHP", "Barrel% vs RHP", "Brl% vs R", "Barrel vs RHP"])),
-          hr9: coerceNum(getField(r.fields, ["HR/9", "HR9", "HR per 9"])),
-          bbe: coerceNum(getField(r.fields, ["Batted Balls", "BBE", "Batted Ball Events"])),
-        };
-        const pv = getField(r.fields, ["Player", "Name"]);
-        if (Array.isArray(pv) && pv.length) {
-          const v = pv[0];
-          if (typeof v === "string" && v.startsWith("rec")) impById[v] = entry;
-          else if (v && v.id) impById[v.id] = entry;
-          else impByName[normI(v && v.name != null ? v.name : v)] = entry;
-        } else if (pv != null) {
-          impByName[normI(pv)] = entry;
-        }
-      }
-      const claimed = new Set();
-      for (const p of out) {
-        const hit = impById[p.id] || impByName[normI(p.name)];
-        if (!hit) continue;
-        claimed.add(hit);
-        importDebug.attachedToPlayers++;
-        if (hit.barrel != null) p.barrel = hit.barrel;
-        if (hit.brlL != null) p.brlL = hit.brlL;
-        if (hit.brlR != null) p.brlR = hit.brlR;
-        if (hit.hr9 != null) p.hr9 = hit.hr9;
-        if (hit.bbe != null) p.bbe = hit.bbe;
-      }
-      // League-wide coverage: Stats Import rows with no matching Players
-      // record still ship to the app (name + numbers only) so the HR
-      // Board can show data for every lineup, not just rostered players.
-      for (const r of impRecords) {
-        const pv = getField(r.fields, ["Player", "Name"]);
-        const nameStr = Array.isArray(pv)
-          ? (pv[0] && pv[0].name) || null
-          : typeof pv === "string" && !pv.startsWith("rec") ? pv : null;
-        if (!nameStr) continue;
-        const entry = impByName[normI(nameStr)];
-        if (!entry || claimed.has(entry)) continue;
-        importOnly.push({
-          name: nameStr,
-          team: getField(r.fields, ["Team", "Tm"]) || null,
-          barrel: entry.barrel, brlL: entry.brlL, brlR: entry.brlR,
-          hr9: entry.hr9, bbe: entry.bbe,
-        });
-      }
-    } catch (e) {
-      importDebug.error = String((e && e.message) || e);
-    }
-    importDebug.importOnly = importOnly.length;
-    if (req.query && req.query.debug === "imports") {
-      res.setHeader("Cache-Control", "no-store");
-      return res.status(200).json(importDebug);
-    }
 
     const playerIds = new Set(players.map((p) => p.id));
     const contractIds = new Set(contracts.map((c) => c.id));
@@ -520,6 +453,74 @@ export default async function handler(req, res) {
     // for any team with a real roster here (5+ players), and override
     // Sort Priority in-memory. No Airtable writes, no script needed:
     // refresh the app and the newest posted lineup is what you see.
+    // Optional "Stats Import" table: Barrel % / BBE for hitters, HR/9 for
+    // pitchers - attached to players by link or (accent-insensitive) name.
+    const importOnly = [];
+    const importDebug = { tableName: T.statsImport, rows: 0, attachedToPlayers: 0, importOnly: 0, sampleFields: [], error: null };
+    try {
+      const impRecords = await fetchAll(base, T.statsImport, token);
+      importDebug.rows = impRecords.length;
+      if (impRecords.length) importDebug.sampleFields = Object.keys(impRecords[0].fields || {});
+      const normI = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+      const impById = {};
+      const impByName = {};
+      for (const r of impRecords) {
+        const entry = {
+          barrel: coerceNum(getField(r.fields, ["Barrel %", "Barrel%", "Brl%", "Barrel"])),
+          brlL: coerceNum(getField(r.fields, ["Barrel % vs LHP", "Barrel% vs LHP", "Brl% vs L", "Barrel vs LHP"])),
+          brlR: coerceNum(getField(r.fields, ["Barrel % vs RHP", "Barrel% vs RHP", "Brl% vs R", "Barrel vs RHP"])),
+          hr9: coerceNum(getField(r.fields, ["HR/9", "HR9", "HR per 9"])),
+          bbe: coerceNum(getField(r.fields, ["Batted Balls", "BBE", "Batted Ball Events"])),
+        };
+        const pv = getField(r.fields, ["Player", "Name"]);
+        if (Array.isArray(pv) && pv.length) {
+          const v = pv[0];
+          if (typeof v === "string" && v.startsWith("rec")) impById[v] = entry;
+          else if (v && v.id) impById[v.id] = entry;
+          else impByName[normI(v && v.name != null ? v.name : v)] = entry;
+        } else if (pv != null) {
+          impByName[normI(pv)] = entry;
+        }
+      }
+      const claimed = new Set();
+      for (const p of out) {
+        const hit = impById[p.id] || impByName[normI(p.name)];
+        if (!hit) continue;
+        claimed.add(hit);
+        importDebug.attachedToPlayers++;
+        if (hit.barrel != null) p.barrel = hit.barrel;
+        if (hit.brlL != null) p.brlL = hit.brlL;
+        if (hit.brlR != null) p.brlR = hit.brlR;
+        if (hit.hr9 != null) p.hr9 = hit.hr9;
+        if (hit.bbe != null) p.bbe = hit.bbe;
+      }
+      // League-wide coverage: Stats Import rows with no matching Players
+      // record still ship to the app (name + numbers only) so the HR
+      // Board can show data for every lineup, not just rostered players.
+      for (const r of impRecords) {
+        const pv = getField(r.fields, ["Player", "Name"]);
+        const nameStr = Array.isArray(pv)
+          ? (pv[0] && pv[0].name) || null
+          : typeof pv === "string" && !pv.startsWith("rec") ? pv : null;
+        if (!nameStr) continue;
+        const entry = impByName[normI(nameStr)];
+        if (!entry || claimed.has(entry)) continue;
+        importOnly.push({
+          name: nameStr,
+          team: getField(r.fields, ["Team", "Tm"]) || null,
+          barrel: entry.barrel, brlL: entry.brlL, brlR: entry.brlR,
+          hr9: entry.hr9, bbe: entry.bbe,
+        });
+      }
+    } catch (e) {
+      importDebug.error = String((e && e.message) || e);
+    }
+    importDebug.importOnly = importOnly.length;
+    if (req.query && req.query.debug === "imports") {
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(200).json(importDebug);
+    }
+
     const lineupDebug = [];
     try {
       const rosterCounts = {};
@@ -638,7 +639,7 @@ export default async function handler(req, res) {
     }
 
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
-    return res.status(200).json({ apiVersion: "v23.5", players: out, teams: teamsOut, imports: importOnly });
+    return res.status(200).json({ apiVersion: "v23.6", players: out, teams: teamsOut, imports: importOnly });
   } catch (e) {
     return res.status(500).json({ error: String(e.message || e) });
   }
