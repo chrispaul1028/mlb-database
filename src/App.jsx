@@ -1811,6 +1811,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
   const [selGame, setSelGame] = useState(null);
   const myByName = useMemo(() => {
     const m = {};
+    // Import-only players first, so rostered Players records win conflicts
+    for (const p of window.__imports || []) m[hrbNrm(p.name)] = p;
     for (const p of players || []) m[hrbNrm(p.name)] = p;
     return m;
   }, [players]);
@@ -2138,7 +2140,7 @@ export default function App() {
       .then((r) => r.json())
       .then((d) => { if (d.error) setError(d.error); else {
         for (const t of d.teams || []) { const a = t.abbr || toAbbr(t.name); if (a && t.logo) TEAM_LOGOS[a] = t.logo; }
-        setPlayers(d.players); setTeams(d.teams || []);
+        setPlayers(d.players); setTeams(d.teams || []); window.__imports = d.imports || [];
       } })
       .catch((e) => setError(String(e)));
   }, []);
