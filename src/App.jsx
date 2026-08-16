@@ -1942,6 +1942,14 @@ function HRBoardTab({ players, onSelectPlayer }) {
   }
   targets.sort((a, b) => b.score - a.score);
   const top = targets.slice(0, HRB.topN);
+  // Hide the BBE column entirely until batted-ball data exists in Airtable
+  const hasBbe = (data || []).some(({ sides }) =>
+    ["away", "home"].some((k) => {
+      const s = sides[k];
+      const pm = s.pitcher ? meta(s.pitcher.name) : {};
+      return pm.bbe != null;
+    })
+  );
   return (
     <div>
       <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
@@ -1959,9 +1967,11 @@ function HRBoardTab({ players, onSelectPlayer }) {
                   <img src={(t.player && t.player.photo) || "https://img.mlbstatic.com/mlb-photos/image/upload/w_240,q_auto/v1/people/" + t.h.id + "/headshot/67/current"}
                     alt="" className="w-9 h-9 rounded-full object-cover object-top bg-white shrink-0" loading="lazy" />
                   <span className="flex-1 min-w-0">
-                    <span className="block text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                      <span className="font-extrabold" style={{ color: teamColor(t.side.abbr) }}>{t.side.abbr}</span>
-                      {" "}{t.h.bats ? t.h.bats + " " : ""}{t.h.name}
+                    <span className="flex items-center gap-1 text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                      {TEAM_LOGOS[t.side.abbr]
+                        ? <img src={TEAM_LOGOS[t.side.abbr]} alt={t.side.abbr} className="w-4 h-4 rounded-full object-contain bg-white shrink-0" />
+                        : <span className="font-extrabold" style={{ color: teamColor(t.side.abbr) }}>{t.side.abbr}</span>}
+                      <span className="truncate">{t.h.bats ? t.h.bats + " " : ""}{t.h.name}</span>
                       {!t.confirmed && <span className="ml-1 text-[8px] font-extrabold text-amber-500 uppercase">proj</span>}
                     </span>
                     <span className="block text-[10px] font-semibold text-slate-400 truncate">
@@ -1969,11 +1979,17 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       {t.park != null && <span className={"ml-1 " + parkRankColor(t.park)}>· {ordinalize(t.park)} park</span>}
                     </span>
                   </span>
-                  <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(t.brl)}>
-                    {Number(t.brl).toFixed(1)}
+                  <span className="w-11 text-center shrink-0">
+                    <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
+                    <span className={"block text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums " + hrbHitClass(t.brl)}>
+                      {Number(t.brl).toFixed(1)}
+                    </span>
                   </span>
-                  <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHr9Class(t.oppHr9)}>
-                    {t.oppHr9 != null ? Number(t.oppHr9).toFixed(2) : "—"}
+                  <span className="w-11 text-center shrink-0">
+                    <span className="block text-[7px] font-bold text-slate-400 uppercase">SP HR9</span>
+                    <span className={"block text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums " + hrbHr9Class(t.oppHr9)}>
+                      {t.oppHr9 != null ? Number(t.oppHr9).toFixed(2) : "—"}
+                    </span>
                   </span>
                   <span className="w-9 text-center shrink-0">
                     <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
@@ -2008,11 +2024,13 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     {sides.away.abbr} @ {sides.home.abbr}
                     <span className={"ml-2 " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
                   </span>
-                  {rank && <span className={"text-[10px] font-extrabold " + parkRankColor(rank)}>HR Park: {ordinalize(rank)}</span>}
                 </div>
                 {(g.venue && g.venue.name) || wx ? (
                   <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-slate-100 dark:border-slate-800">
-                    <span className="text-[10px] font-bold text-slate-400 truncate">{(g.venue && g.venue.name) || ""}</span>
+                    <span className="text-[10px] font-bold text-slate-400 truncate">
+                      {(g.venue && g.venue.name) || ""}
+                      {rank != null && <span className={"font-extrabold " + parkRankColor(rank)}> ({ordinalize(rank)})</span>}
+                    </span>
                     {wx && (
                       <span className="text-[10px] font-bold text-slate-400 shrink-0">
                         {wxEmoji(wx.condition)} {wx.temp}°{wx.wind ? " · 💨 " + wx.wind : ""}
@@ -2023,7 +2041,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 <div className="flex items-center gap-2 px-4 pt-2 -mb-1">
                   <span className="flex-1" />
                   <span className="w-11 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">Brl%</span>
-                  <span className="w-9 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">BBE</span>
+                  {hasBbe && <span className="w-9 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">BBE</span>}
                   <span className="w-11 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">HR/9</span>
                 </div>
                 {["away", "home"].map((k) => {
@@ -2060,9 +2078,11 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + (smallSample ? "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500" : hrbPitBrlClass(pm.barrel))}>
                           {smallSample ? "N/A" : pm.barrel != null ? Number(pm.barrel).toFixed(1) : "—"}
                         </span>
-                        <span className="w-9 text-center text-[10px] font-bold text-slate-400 tabular-nums shrink-0">
-                          {pm.bbe != null ? Math.round(pm.bbe) : "—"}
-                        </span>
+                        {hasBbe && (
+                          <span className="w-9 text-center text-[10px] font-bold text-slate-400 tabular-nums shrink-0">
+                            {pm.bbe != null ? Math.round(pm.bbe) : "—"}
+                          </span>
+                        )}
                         <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHr9Class(pm.hr9)}>
                           {pm.hr9 != null ? Number(pm.hr9).toFixed(2) : "—"}
                         </span>
@@ -2079,7 +2099,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                               <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(hb)}>
                                 {hb != null ? Number(hb).toFixed(1) : "—"}
                               </span>
-                              <span className="w-9 shrink-0" />
+                              {hasBbe && <span className="w-9 shrink-0" />}
                               <span className="w-11 shrink-0" />
                             </div>
                           );
