@@ -329,6 +329,8 @@ export default async function handler(req, res) {
       for (const r of impRecords) {
         const entry = {
           barrel: coerceNum(getField(r.fields, ["Barrel %", "Barrel%", "Brl%", "Barrel"])),
+          brlL: coerceNum(getField(r.fields, ["Barrel % vs LHP", "Barrel% vs LHP", "Brl% vs L", "Barrel vs LHP"])),
+          brlR: coerceNum(getField(r.fields, ["Barrel % vs RHP", "Barrel% vs RHP", "Brl% vs R", "Barrel vs RHP"])),
           hr9: coerceNum(getField(r.fields, ["HR/9", "HR9", "HR per 9"])),
           bbe: coerceNum(getField(r.fields, ["Batted Balls", "BBE", "Batted Ball Events"])),
         };
@@ -346,6 +348,8 @@ export default async function handler(req, res) {
         const hit = impById[p.id] || impByName[normI(p.name)];
         if (!hit) continue;
         if (hit.barrel != null) p.barrel = hit.barrel;
+        if (hit.brlL != null) p.brlL = hit.brlL;
+        if (hit.brlR != null) p.brlR = hit.brlR;
         if (hit.hr9 != null) p.hr9 = hit.hr9;
         if (hit.bbe != null) p.bbe = hit.bbe;
       }
