@@ -1816,11 +1816,20 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const sched = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${dayStr(0)}&hydrate=team,linescore,probablePitcher,venue`)).json();
         const gs = ((sched.dates && sched.dates[0] && sched.dates[0].games) || [])
           .slice().sort((a, b) => new Date(a.gameDate) - new Date(b.gameDate));
-        // Today's boxscores (posted lineups) in parallel
+        // Today's boxscores (posted lineups) + weather in parallel
         const boxes = {};
-        await Promise.all(gs.map(async (g) => {
-          try { boxes[g.gamePk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json(); } catch {}
-        }));
+        const wxByPk = {};
+        await Promise.all(gs.flatMap((g) => [
+          (async () => {
+            try { boxes[g.gamePk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json(); } catch {}
+          })(),
+          (async () => {
+            try {
+              const f = await (await fetch(`https://statsapi.mlb.com/api/v1.1/game/${g.gamePk}/feed/live?fields=gameData,weather,condition,temp,wind`)).json();
+              if (f && f.gameData && f.gameData.weather && f.gameData.weather.temp) wxByPk[g.gamePk] = f.gameData.weather;
+            } catch {}
+          })(),
+        ]));
         // Teams with no lineup yet -> most recent posted lineup (last 3 days)
         const need = new Set();
         for (const g of gs) for (const k of ["away", "home"]) {
@@ -1877,7 +1886,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
             if (pp && pp.id) ids.add(pp.id);
             sides[k] = { name: nm, abbr: ab, confirmed, hitters, pitcher: pp ? { id: pp.id, name: pp.fullName } : null };
           }
-          return { g, sides };
+          return { g, sides, wx: wxByPk[g.gamePk] || null };
         });
         const all = [...ids];
         const hands = {};
@@ -1929,7 +1938,6 @@ function HRBoardTab({ players, onSelectPlayer }) {
     <div>
       <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
         <div className="text-2xl font-extrabold tracking-tight">HR Board ({todayLabel})</div>
-        <div className="text-[11px] font-bold text-white/70 mt-1">SP: Brl% · BBE · HR/9 (min {HRB.minBBE} BBE) — Spots 1-5: Bats · Brl%</div>
       </div>
       <div className="px-4 pb-28">
         {top.length > 0 && (
@@ -1973,7 +1981,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         <div className="space-y-3">
           {data == null && <div className="text-center text-sm text-slate-400 py-12">Building today's board…</div>}
           {data && data.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
-          {data && data.map(({ g, sides }) => {
+          {data && data.map(({ g, sides, wx }) => {
             const state = g.status && g.status.abstractGameState;
             const aScore = g.teams.away.score, hScore = g.teams.home.score;
             const scoreStr = aScore != null && hScore != null ? aScore + "-" + hScore : "";
@@ -1993,6 +2001,22 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     <span className={"ml-2 " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
                   </span>
                   {rank && <span className={"text-[10px] font-extrabold " + parkRankColor(rank)}>HR Park: {ordinalize(rank)}</span>}
+                </div>
+                {(g.venue && g.venue.name) || wx ? (
+                  <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] font-bold text-slate-400 truncate">🏟 {(g.venue && g.venue.name) || ""}</span>
+                    {wx && (
+                      <span className="text-[10px] font-bold text-slate-400 shrink-0">
+                        {wxEmoji(wx.condition)} {wx.temp}°{wx.wind ? " · 💨 " + wx.wind : ""}
+                      </span>
+                    )}
+                  </div>
+                ) : null}
+                <div className="flex items-center gap-2 px-4 pt-2 -mb-1">
+                  <span className="flex-1" />
+                  <span className="w-11 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">Brl%</span>
+                  <span className="w-9 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">BBE</span>
+                  <span className="w-11 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">HR/9</span>
                 </div>
                 {["away", "home"].map((k) => {
                   const s = sides[k];
@@ -2044,6 +2068,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
                               <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(hm.barrel)}>
                                 {hm.barrel != null ? Number(hm.barrel).toFixed(1) : "—"}
                               </span>
+                              <span className="w-9 shrink-0" />
+                              <span className="w-11 shrink-0" />
                             </div>
                           );
                         })}
