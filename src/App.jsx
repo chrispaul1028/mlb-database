@@ -1799,6 +1799,12 @@ function hrbHr9Class(v) {
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+// Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
+// when it exists in Airtable, otherwise fall back to overall Barrel %.
+const brlVsHand = (hm, hand) =>
+  hand === "L" ? (hm.brlL != null ? hm.brlL : hm.barrel)
+  : hand === "R" ? (hm.brlR != null ? hm.brlR : hm.barrel)
+  : hm.barrel;
 
 function HRBoardTab({ players, onSelectPlayer }) {
   const [data, setData] = useState(null);
@@ -1925,10 +1931,11 @@ function HRBoardTab({ players, onSelectPlayer }) {
       for (let i = 0; i < s.hitters.length; i++) {
         const h = s.hitters[i];
         const hm = meta(h.name);
-        if (hm.barrel == null) continue;
-        let score = hm.barrel + HRB.wPitBrl * (om.barrel || 0) + HRB.wHr9 * (om.hr9 || 0) + pk;
+        const useBrl = brlVsHand(hm, opp && opp.hand);
+        if (useBrl == null) continue;
+        let score = useBrl + HRB.wPitBrl * (om.barrel || 0) + HRB.wHr9 * (om.hr9 || 0) + pk;
         if (!s.confirmed) score *= HRB.projMult;
-        targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: hm.barrel, oppBrl: om.barrel, oppHr9: om.hr9, park: rank, score, g: row.g, confirmed: s.confirmed, player: myByName[hrbNrm(h.name)] });
+        targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: useBrl, oppBrl: om.barrel, oppHr9: om.hr9, park: rank, score, g: row.g, confirmed: s.confirmed, player: myByName[hrbNrm(h.name)] });
       }
     }
   }
@@ -2022,6 +2029,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
                   const s = sides[k];
                   const logo = TEAM_LOGOS[s.abbr];
                   const pm = s.pitcher ? meta(s.pitcher.name) : {};
+                  const oppSP = sides[k === "away" ? "home" : "away"].pitcher;
+                  const oppHand = oppSP && oppSP.hand;
                   const smallSample = pm.bbe != null && pm.bbe < HRB.minBBE;
                   return (
                     <div key={k} className={"px-4 py-3 " + (k === "home" ? "border-t border-slate-100 dark:border-slate-800" : "")}>
@@ -2060,13 +2069,14 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       <div className="mt-2 space-y-1">
                         {s.hitters.map((h, i) => {
                           const hm = meta(h.name);
+                          const hb = brlVsHand(hm, oppHand);
                           return (
                             <div key={h.id} className="flex items-center gap-2">
                               <span className="w-14 text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">{SPOT_LABELS[i]}</span>
                               <span className="w-4 text-center text-[10px] font-extrabold shrink-0" style={{ color: teamColor(s.abbr) }}>{h.bats || ""}</span>
                               <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{h.name}</span>
-                              <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(hm.barrel)}>
-                                {hm.barrel != null ? Number(hm.barrel).toFixed(1) : "—"}
+                              <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(hb)}>
+                                {hb != null ? Number(hb).toFixed(1) : "—"}
                               </span>
                               <span className="w-9 shrink-0" />
                               <span className="w-11 shrink-0" />
