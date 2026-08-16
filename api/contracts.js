@@ -321,6 +321,7 @@ export default async function handler(req, res) {
 
     // Optional "Stats Import" table: Barrel % / BBE for hitters, HR/9 for
     // pitchers - attached to players by link or (accent-insensitive) name.
+    const importOnly = [];
     try {
       const impRecords = await fetchAll(base, T.statsImport, token);
       const normI = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
@@ -344,14 +345,34 @@ export default async function handler(req, res) {
           impByName[normI(pv)] = entry;
         }
       }
+      const claimed = new Set();
       for (const p of out) {
         const hit = impById[p.id] || impByName[normI(p.name)];
         if (!hit) continue;
+        claimed.add(hit);
         if (hit.barrel != null) p.barrel = hit.barrel;
         if (hit.brlL != null) p.brlL = hit.brlL;
         if (hit.brlR != null) p.brlR = hit.brlR;
         if (hit.hr9 != null) p.hr9 = hit.hr9;
         if (hit.bbe != null) p.bbe = hit.bbe;
+      }
+      // League-wide coverage: Stats Import rows with no matching Players
+      // record still ship to the app (name + numbers only) so the HR
+      // Board can show data for every lineup, not just rostered players.
+      for (const r of impRecords) {
+        const pv = getField(r.fields, ["Player", "Name"]);
+        const nameStr = Array.isArray(pv)
+          ? (pv[0] && pv[0].name) || null
+          : typeof pv === "string" && !pv.startsWith("rec") ? pv : null;
+        if (!nameStr) continue;
+        const entry = impByName[normI(nameStr)];
+        if (!entry || claimed.has(entry)) continue;
+        importOnly.push({
+          name: nameStr,
+          team: getField(r.fields, ["Team", "Tm"]) || null,
+          barrel: entry.barrel, brlL: entry.brlL, brlR: entry.brlR,
+          hr9: entry.hr9, bbe: entry.bbe,
+        });
       }
     } catch {}
 
@@ -605,8 +626,8 @@ export default async function handler(req, res) {
       return res.status(200).json({ lineupDebug });
     }
 
-    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
-    return res.status(200).json({ apiVersion: "v23.4", players: out, teams: teamsOut });
+    res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
+    return res.status(200).json({ apiVersion: "v23.5", players: out, teams: teamsOut, imports: importOnly });
   } catch (e) {
     return res.status(500).json({ error: String(e.message || e) });
   }
