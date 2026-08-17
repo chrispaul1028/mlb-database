@@ -1921,8 +1921,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
             const ppl = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${chunk.join(",")}&hydrate=stats(group=[pitching],type=[season])`)).json();
             for (const person of ppl.people || []) {
               const sp = person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0];
-              const rec = sp && sp.stat && sp.stat.wins != null ? sp.stat.wins + "-" + (sp.stat.losses ?? 0) : null;
-              hands[person.id] = { bat: person.batSide && person.batSide.code, pitch: person.pitchHand && person.pitchHand.code, rec };
+              const hra = sp && sp.stat && sp.stat.homeRuns != null ? sp.stat.homeRuns : null;
+              hands[person.id] = { bat: person.batSide && person.batSide.code, pitch: person.pitchHand && person.pitchHand.code, hra };
             }
           } catch {}
         }
@@ -1930,7 +1930,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
           const s = row.sides[k];
           if (s.pitcher && hands[s.pitcher.id]) {
             s.pitcher.hand = hands[s.pitcher.id].pitch;
-            s.pitcher.rec = hands[s.pitcher.id].rec;
+            s.pitcher.hra = hands[s.pitcher.id].hra;
           }
           for (const h of s.hitters) if (hands[h.id]) h.bats = hands[h.id].bat;
         }
@@ -2001,7 +2001,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const spotF = 1 - HRB.spotDrop * i;
         let score = 100 * hitR * pitR * hr9R * parkF * spotF * wxF;
         if (!s.confirmed) score *= HRB.projMult;
-        targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: useBrl, oppBrl: om.barrel, oppHr9: om.hr9, park: rank, score, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed, player: myByName[hrbNrm(h.name)] });
+        targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: useBrl, oppBrl: om.barrel, oppHr9: om.hr9, park: rank, score, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
       }
     }
   }
@@ -2031,7 +2031,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                   <span className="flex items-center gap-2">
                   <span className="w-5 text-center text-[11px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
                   <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_240,q_auto/v1/people/" + t.h.id + "/headshot/67/current"}
-                    alt="" className="w-9 h-9 rounded-full object-cover object-top bg-white shrink-0" loading="lazy" />
+                    alt="" className="w-9 h-9 rounded-full object-contain bg-white shrink-0" loading="lazy" />
                   <span className="flex-1 min-w-0">
                     <span className="flex items-center gap-1 text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
                       {TEAM_LOGOS[t.side.abbr]
@@ -2042,7 +2042,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     </span>
                     <span className="block text-[10px] font-semibold text-slate-400 truncate">
                       vs {t.oppHand ? t.oppHand + "HP " : ""}{t.opp ? t.opp.name : "TBD"}
-                      {t.opp && t.opp.rec && <span className="text-slate-500"> ({t.opp.rec})</span>}
+                      {t.opp && t.opp.hra != null && <span className="text-slate-500"> · {t.opp.hra} HR allowed</span>}
                     </span>
                   </span>
                   <span className="w-11 text-center shrink-0">
