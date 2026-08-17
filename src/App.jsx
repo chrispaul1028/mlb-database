@@ -2042,7 +2042,6 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     </span>
                     <span className="block text-[10px] font-semibold text-slate-400 truncate">
                       vs {t.oppHand ? t.oppHand + "HP " : ""}{t.opp ? t.opp.name : "TBD"}
-                      {t.opp && t.opp.hra != null && <span className="text-slate-500"> · {t.opp.hra} HR allowed</span>}
                     </span>
                   </span>
                   <span className="w-11 text-center shrink-0">
