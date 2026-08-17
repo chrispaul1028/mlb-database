@@ -904,8 +904,8 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
             {pp && (myPP && myPP.photo ? (
               <img src={myPP.photo} alt="" className="w-11 h-11 rounded-full object-cover object-top bg-white shrink-0" loading="lazy" />
             ) : (
-              <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_240,q_auto/v1/people/" + pp.id + "/headshot/67/current"} alt=""
-                className="w-11 h-11 rounded-full object-cover bg-white shrink-0" loading="lazy" />
+              <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + pp.id + "/headshot/silo/current"} alt=""
+                className="w-11 h-11 rounded-full object-cover object-top bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
             ))}
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
               {(() => {
@@ -966,8 +966,8 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
                 {mine && mine.photo ? (
                   <img src={mine.photo} alt="" className="w-11 h-11 rounded-full object-cover object-top bg-white shrink-0" loading="lazy" />
                 ) : (
-                  <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_240,q_auto/v1/people/" + pid + "/headshot/67/current"} alt=""
-                    className="w-11 h-11 rounded-full object-cover bg-white shrink-0" loading="lazy" />
+                  <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + pid + "/headshot/silo/current"} alt=""
+                    className="w-11 h-11 rounded-full object-cover object-top bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
                 )}
                 <span className="flex-1 min-w-0">
                   <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
@@ -2029,7 +2029,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 <button key={t.h.id + "-" + t.g.gamePk} onClick={() => setSelGame(t.g)}
                   className="w-full text-left px-3 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
                   <span className="flex items-center gap-2">
-                  <span className="w-5 text-center text-[11px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
+                  <span className="w-4 text-center text-[11px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
                   <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + t.h.id + "/headshot/silo/current"}
                     alt="" className="w-9 h-9 rounded-full object-cover object-top shrink-0"
                     style={{ backgroundColor: teamColor(t.side.abbr) + "26" }} loading="lazy" />
@@ -2045,15 +2045,22 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       vs {t.oppHand ? t.oppHand + "HP " : ""}{t.opp ? t.opp.name : "TBD"}
                     </span>
                   </span>
-                  <span className="w-11 text-center shrink-0">
+                  <span className="w-10 text-center shrink-0">
                     <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
-                    <span className={"block text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums " + hrbHitClass(t.brl)}>
+                    <span className={"block text-[10px] font-extrabold rounded px-0.5 py-0.5 tabular-nums " + hrbHitClass(t.brl)}>
                       {Number(t.brl).toFixed(1)}
                     </span>
                   </span>
-                  <span className="w-11 text-center shrink-0">
+                  <span className="w-px h-7 bg-slate-200 dark:bg-slate-700 shrink-0" />
+                  <span className="w-10 text-center shrink-0">
+                    <span className="block text-[7px] font-bold text-slate-400 uppercase">SP Brl</span>
+                    <span className={"block text-[10px] font-extrabold rounded px-0.5 py-0.5 tabular-nums " + hrbPitBrlClass(t.oppBrl)}>
+                      {t.oppBrl != null ? Number(t.oppBrl).toFixed(1) : "—"}
+                    </span>
+                  </span>
+                  <span className="w-10 text-center shrink-0">
                     <span className="block text-[7px] font-bold text-slate-400 uppercase">SP HR9</span>
-                    <span className={"block text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums " + hrbHr9Class(t.oppHr9)}>
+                    <span className={"block text-[10px] font-extrabold rounded px-0.5 py-0.5 tabular-nums " + hrbHr9Class(t.oppHr9)}>
                       {t.oppHr9 != null ? Number(t.oppHr9).toFixed(2) : "—"}
                     </span>
                   </span>
