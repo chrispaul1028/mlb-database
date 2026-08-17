@@ -1785,6 +1785,10 @@ const HRB = {
   eHr9: 0.5,       // exponent on SP HR/9 ratio
   parkSwing: 0.12, // park factor range: rank 1 = x1.12 ... rank 30 = x0.88
   spotDrop: 0.015, // score decay per lineup spot (fewer PAs hitting lower)
+  shrinkK: 60,     // sample-size regression: stats behave as if K extra
+                   // league-average batted balls were mixed in. Small
+                   // samples pull hard toward average; 300+ BBE barely move.
+                   // Activates per-player only when Batted Balls has data.
   projMult: 0.9,   // discount applied when the lineup is only projected
 };
 function hrbHitClass(v) {
@@ -1943,9 +1947,21 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const hm = meta(h.name);
         const useBrl = brlVsHand(hm, opp && opp.hand);
         if (useBrl == null) continue;
-        const hitR = Math.pow(capped(useBrl / HRB.lgHitBrl), HRB.eHit);
-        const pitR = om.barrel != null ? Math.pow(capped(om.barrel / HRB.lgPitBrl), HRB.ePitBrl) : 1;
-        const hr9R = om.hr9 != null ? Math.pow(capped(om.hr9 / HRB.lgHr9), HRB.eHr9) : 1;
+        // Sample-size regression (empirical Bayes): blend toward league
+        // average weighted by batted balls. No BBE data = no change.
+        const shrink = (v, lg, n) => (v != null && n != null && n > 0) ? (v * n + lg * HRB.shrinkK) / (n + HRB.shrinkK) : v;
+        // Split samples are smaller than the season total: hitters see
+        // roughly 70% RHP / 30% LHP, so scale BBE when using a split.
+        const effBbe = hm.bbe == null ? null
+          : opp && opp.hand === "L" && hm.brlL != null ? hm.bbe * 0.3
+          : opp && opp.hand === "R" && hm.brlR != null ? hm.bbe * 0.7
+          : hm.bbe;
+        const adjBrl = shrink(useBrl, HRB.lgHitBrl, effBbe);
+        const adjPitBrl = shrink(om.barrel, HRB.lgPitBrl, om.bbe);
+        const adjHr9 = shrink(om.hr9, HRB.lgHr9, om.bbe);
+        const hitR = Math.pow(capped(adjBrl / HRB.lgHitBrl), HRB.eHit);
+        const pitR = adjPitBrl != null ? Math.pow(capped(adjPitBrl / HRB.lgPitBrl), HRB.ePitBrl) : 1;
+        const hr9R = adjHr9 != null ? Math.pow(capped(adjHr9 / HRB.lgHr9), HRB.eHr9) : 1;
         const spotF = 1 - HRB.spotDrop * i;
         let score = 100 * hitR * pitR * hr9R * parkF * spotF;
         if (!s.confirmed) score *= HRB.projMult;
@@ -2011,7 +2027,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </button>
               ))}
             </div>
-            <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score: 100 = league-avg matchup. Hitter Brl%, SP Brl% against & SP HR/9 as capped ratios to league avg, multiplied with park + lineup spot · projected ×{HRB.projMult}</div>
+            <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score: 100 = league-avg matchup. Hitter Brl%, SP Brl% against & SP HR/9 as capped ratios to league avg (small samples regressed by BBE), multiplied with park + lineup spot · projected ×{HRB.projMult}</div>
           </>
         )}
         <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-500 dark:text-slate-400">Matchups</div>
