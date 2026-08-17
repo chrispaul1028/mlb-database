@@ -1915,13 +1915,20 @@ function HRBoardTab({ players, onSelectPlayer }) {
         for (let i = 0; i < all.length; i += 90) {
           const chunk = all.slice(i, i + 90);
           try {
-            const ppl = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${chunk.join(",")}`)).json();
-            for (const person of ppl.people || []) hands[person.id] = { bat: person.batSide && person.batSide.code, pitch: person.pitchHand && person.pitchHand.code };
+            const ppl = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${chunk.join(",")}&hydrate=stats(group=[pitching],type=[season])`)).json();
+            for (const person of ppl.people || []) {
+              const sp = person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0];
+              const rec = sp && sp.stat && sp.stat.wins != null ? sp.stat.wins + "-" + (sp.stat.losses ?? 0) : null;
+              hands[person.id] = { bat: person.batSide && person.batSide.code, pitch: person.pitchHand && person.pitchHand.code, rec };
+            }
           } catch {}
         }
         for (const row of rows) for (const k of ["away", "home"]) {
           const s = row.sides[k];
-          if (s.pitcher && hands[s.pitcher.id]) s.pitcher.hand = hands[s.pitcher.id].pitch;
+          if (s.pitcher && hands[s.pitcher.id]) {
+            s.pitcher.hand = hands[s.pitcher.id].pitch;
+            s.pitcher.rec = hands[s.pitcher.id].rec;
+          }
           for (const h of s.hitters) if (hands[h.id]) h.bats = hands[h.id].bat;
         }
         if (alive) setData(rows);
@@ -2019,8 +2026,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     </span>
                     <span className="block text-[10px] font-semibold text-slate-400 truncate">
                       vs {t.oppHand ? t.oppHand + "HP " : ""}{t.opp ? t.opp.name : "TBD"}
-                      {t.oppBrl != null && <span className="text-slate-500"> · {Number(t.oppBrl).toFixed(1)} Brl</span>}
-                      {t.oppBbe != null && <span className="text-slate-500"> · {Math.round(t.oppBbe)} BBE</span>}
+                      {t.opp && t.opp.rec && <span className="text-slate-500"> ({t.opp.rec})</span>}
                     </span>
                   </span>
                   <span className="w-11 text-center shrink-0">
