@@ -1771,16 +1771,20 @@ const HRB = {
   pitRed: 6.5,   // pitcher Barrel % against <= this -> red (avoid)
   hr9Green: 1.2, // pitcher HR/9 >= this -> green
   hr9Red: 0.9,   // pitcher HR/9 <= this -> red
-  // ── Top Targets score = hitter Brl% + wPitBrl*(SP Brl% against)
-  //    + wHr9*(SP HR/9) + park bonus, x projMult if lineup unconfirmed ──
+  // ── Top Targets: MULTIPLICATIVE score, 100 = league-average matchup ──
+  // Each factor is a ratio to league average (capped so one freak stat
+  // can't dominate), and they MULTIPLY: a stingy pitcher shrinks the
+  // whole score instead of just adding less. Missing data = ratio of 1.
   topN: 10,        // how many targets to rank
-  wPitBrl: 0.7,    // weight on the opposing SP's Barrel % against
-  wHr9: 6,         // weight on the opposing SP's HR/9
-  // Baselines: pitchers are scored vs league average, so HR-prone SPs
-  // ADD points and stingy SPs SUBTRACT them (missing data = no effect)
-  hr9Base: 1.10,   // ~league-average HR/9
-  pitBrlBase: 8.5, // ~league-average Barrel % against
-  parkBonus: 5,    // max park points (rank 1 park = +5, rank 30 = +0)
+  lgHitBrl: 8.5,   // league-average hitter Barrel %
+  lgPitBrl: 8.5,   // league-average pitcher Barrel % against
+  lgHr9: 1.10,     // league-average HR/9
+  capRatio: 2.5,   // max any single ratio can contribute
+  eHit: 1.0,       // exponent on the hitter's barrel ratio
+  ePitBrl: 0.5,    // exponent on SP Brl%-against ratio
+  eHr9: 0.5,       // exponent on SP HR/9 ratio
+  parkSwing: 0.12, // park factor range: rank 1 = x1.12 ... rank 30 = x0.88
+  spotDrop: 0.015, // score decay per lineup spot (fewer PAs hitting lower)
   projMult: 0.9,   // discount applied when the lineup is only projected
 };
 function hrbHitClass(v) {
@@ -1888,7 +1892,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 pmap = prev.box.teams[prev.side].players || {};
               }
             }
-            const hitters = order.slice(0, 5).map((pid) => {
+            const hitters = order.slice(0, 9).map((pid) => {
               ids.add(pid);
               const pd = pmap["ID" + pid] || {};
               return { id: pid, name: (pd.person && pd.person.fullName) || "" };
@@ -1926,9 +1930,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
   // Rank every hitter on the slate: own Brl% + opposing SP's HR-proneness
   // + park, discounted if the lineup is only projected.
   const targets = [];
+  const capped = (r) => Math.min(Math.max(r, 0.2), HRB.capRatio);
   for (const row of data || []) {
     const rank = row.g.venue && row.g.venue.name ? parkRankFor(row.g.venue.name) : null;
-    const pk = rank != null ? ((31 - rank) / 30) * HRB.parkBonus : 0;
+    const parkF = rank != null ? 1 + ((15.5 - rank) / 14.5) * HRB.parkSwing : 1;
     for (const k of ["away", "home"]) {
       const s = row.sides[k];
       const opp = row.sides[k === "away" ? "home" : "away"].pitcher;
@@ -1938,9 +1943,11 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const hm = meta(h.name);
         const useBrl = brlVsHand(hm, opp && opp.hand);
         if (useBrl == null) continue;
-        const pitBrlAdj = om.barrel != null ? om.barrel - HRB.pitBrlBase : 0;
-        const hr9Adj = om.hr9 != null ? om.hr9 - HRB.hr9Base : 0;
-        let score = useBrl + HRB.wPitBrl * pitBrlAdj + HRB.wHr9 * hr9Adj + pk;
+        const hitR = Math.pow(capped(useBrl / HRB.lgHitBrl), HRB.eHit);
+        const pitR = om.barrel != null ? Math.pow(capped(om.barrel / HRB.lgPitBrl), HRB.ePitBrl) : 1;
+        const hr9R = om.hr9 != null ? Math.pow(capped(om.hr9 / HRB.lgHr9), HRB.eHr9) : 1;
+        const spotF = 1 - HRB.spotDrop * i;
+        let score = 100 * hitR * pitR * hr9R * parkF * spotF;
         if (!s.confirmed) score *= HRB.projMult;
         targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: useBrl, oppBrl: om.barrel, oppHr9: om.hr9, park: rank, score, g: row.g, confirmed: s.confirmed, player: myByName[hrbNrm(h.name)] });
       }
@@ -1999,19 +2006,27 @@ function HRBoardTab({ players, onSelectPlayer }) {
                   </span>
                   <span className="w-9 text-center shrink-0">
                     <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
-                    <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{t.score.toFixed(1)}</span>
+                    <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{Math.round(t.score)}</span>
                   </span>
                 </button>
               ))}
             </div>
-            <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score = Brl% + {HRB.wPitBrl}×(SP Brl% − {HRB.pitBrlBase}) + {HRB.wHr9}×(SP HR/9 − {HRB.hr9Base}) + park (max +{HRB.parkBonus}) · stingy SPs now subtract · projected ×{HRB.projMult}</div>
+            <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score: 100 = league-avg matchup. Hitter Brl%, SP Brl% against & SP HR/9 as capped ratios to league avg, multiplied with park + lineup spot · projected ×{HRB.projMult}</div>
           </>
         )}
         <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-500 dark:text-slate-400">Matchups</div>
         <div className="space-y-3">
           {data == null && <div className="text-center text-sm text-slate-400 py-12">Building today's board…</div>}
           {data && data.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
-          {data && data.map(({ g, sides, wx }) => {
+          {data && [...data]
+            .sort((a, b) => {
+              const pri = (g) => {
+                const st = g.status && g.status.abstractGameState;
+                return st === "Live" ? 0 : st === "Final" ? 2 : 1;
+              };
+              return pri(a.g) - pri(b.g);
+            })
+            .map(({ g, sides, wx }) => {
             const state = g.status && g.status.abstractGameState;
             const aScore = g.teams.away.score, hScore = g.teams.home.score;
             const scoreStr = aScore != null && hScore != null ? aScore + "-" + hScore : "";
