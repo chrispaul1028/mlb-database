@@ -1813,6 +1813,7 @@ function hrbHr9Class(v) {
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
 // when it exists in Airtable, otherwise fall back to overall Barrel %.
 const brlVsHand = (hm, hand) =>
@@ -1825,9 +1826,11 @@ function HRBoardTab({ players, onSelectPlayer }) {
   const [selGame, setSelGame] = useState(null);
   const myByName = useMemo(() => {
     const m = {};
-    // Import-only players first, so rostered Players records win conflicts
-    for (const p of window.__imports || []) m[hrbNrm(p.name)] = p;
-    for (const p of players || []) m[hrbNrm(p.name)] = p;
+    // Keep ALL records sharing a name (e.g. both Max Muncys); meta()
+    // resolves by team. Imports first so rostered records win ties.
+    const add = (p) => { const k = hrbNrm(p.name); (m[k] = m[k] || []).push(p); };
+    for (const p of window.__imports || []) add(p);
+    for (const p of players || []) add(p);
     return m;
   }, [players]);
   useEffect(() => {
@@ -1940,7 +1943,19 @@ function HRBoardTab({ players, onSelectPlayer }) {
   }, []);
   const todayLabel = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "2-digit", day: "2-digit" }).format(new Date());
   if (selGame) return <GameDetail g={selGame} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)} />;
-  const meta = (name) => myByName[hrbNrm(name)] || {};
+  const meta = (name, abbr) => {
+    const list = myByName[hrbNrm(name)];
+    if (!list || !list.length) return {};
+    if (list.length > 1 && abbr) {
+      const a = String(abbr).toLowerCase();
+      const full = (ABBR_TO_NAME[abbr] || "").toLowerCase();
+      for (let idx = list.length - 1; idx >= 0; idx--) {
+        const t = String(list[idx].team || list[idx].teamName || "").toLowerCase();
+        if (t && (t === a || (full && (t === full || t.includes(full) || full.includes(t))))) return list[idx];
+      }
+    }
+    return list[list.length - 1];
+  };
   // Rank every hitter on the slate: own Brl% + opposing SP's HR-proneness
   // + park, discounted if the lineup is only projected.
   const targets = [];
@@ -1960,11 +1975,12 @@ function HRBoardTab({ players, onSelectPlayer }) {
     })();
     for (const k of ["away", "home"]) {
       const s = row.sides[k];
-      const opp = row.sides[k === "away" ? "home" : "away"].pitcher;
-      const om = opp ? meta(opp.name) : {};
+      const oppSide = row.sides[k === "away" ? "home" : "away"];
+      const opp = oppSide.pitcher;
+      const om = opp ? meta(opp.name, oppSide.abbr) : {};
       for (let i = 0; i < s.hitters.length; i++) {
         const h = s.hitters[i];
-        const hm = meta(h.name);
+        const hm = meta(h.name, s.abbr);
         const useBrl = brlVsHand(hm, opp && opp.hand);
         if (useBrl == null) continue;
         // Sample-size regression (empirical Bayes): blend toward league
@@ -1995,7 +2011,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
   const hasBbe = (data || []).some(({ sides }) =>
     ["away", "home"].some((k) => {
       const s = sides[k];
-      const pm = s.pitcher ? meta(s.pitcher.name) : {};
+      const pm = s.pitcher ? meta(s.pitcher.name, s.abbr) : {};
       return pm.bbe != null;
     })
   );
@@ -2014,7 +2030,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                   className="w-full text-left px-3 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
                   <span className="flex items-center gap-2">
                   <span className="w-5 text-center text-[11px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
-                  <img src={(t.player && t.player.photo) || "https://img.mlbstatic.com/mlb-photos/image/upload/w_240,q_auto/v1/people/" + t.h.id + "/headshot/67/current"}
+                  <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_240,q_auto/v1/people/" + t.h.id + "/headshot/67/current"}
                     alt="" className="w-9 h-9 rounded-full object-cover object-top bg-white shrink-0" loading="lazy" />
                   <span className="flex-1 min-w-0">
                     <span className="flex items-center gap-1 text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
@@ -2117,7 +2133,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 {["away", "home"].map((k) => {
                   const s = sides[k];
                   const logo = TEAM_LOGOS[s.abbr];
-                  const pm = s.pitcher ? meta(s.pitcher.name) : {};
+                  const pm = s.pitcher ? meta(s.pitcher.name, s.abbr) : {};
                   const oppSP = sides[k === "away" ? "home" : "away"].pitcher;
                   const oppHand = oppSP && oppSP.hand;
                   const smallSample = pm.bbe != null && pm.bbe < HRB.minBBE;
@@ -2159,7 +2175,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       </div>
                       <div className="mt-2 space-y-1">
                         {s.hitters.map((h, i) => {
-                          const hm = meta(h.name);
+                          const hm = meta(h.name, s.abbr);
                           const hb = brlVsHand(hm, oppHand);
                           return (
                             <div key={h.id} className="flex items-center gap-2">
