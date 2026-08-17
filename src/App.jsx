@@ -1978,7 +1978,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const spotF = 1 - HRB.spotDrop * i;
         let score = 100 * hitR * pitR * hr9R * parkF * spotF * wxF;
         if (!s.confirmed) score *= HRB.projMult;
-        targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: useBrl, oppBrl: om.barrel, oppHr9: om.hr9, park: rank, score, g: row.g, wx: row.wx, confirmed: s.confirmed, player: myByName[hrbNrm(h.name)] });
+        targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: useBrl, oppBrl: om.barrel, oppHr9: om.hr9, park: rank, score, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed, player: myByName[hrbNrm(h.name)] });
       }
     }
   }
@@ -2019,6 +2019,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     </span>
                     <span className="block text-[10px] font-semibold text-slate-400 truncate">
                       vs {t.oppHand ? t.oppHand + "HP " : ""}{t.opp ? t.opp.name : "TBD"}
+                      {t.oppBrl != null && <span className="text-slate-500"> · {Number(t.oppBrl).toFixed(1)} Brl</span>}
+                      {t.oppBbe != null && <span className="text-slate-500"> · {Math.round(t.oppBbe)} BBE</span>}
                     </span>
                   </span>
                   <span className="w-11 text-center shrink-0">
