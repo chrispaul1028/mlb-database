@@ -1790,6 +1790,9 @@ const HRB = {
                    // samples pull hard toward average; 300+ BBE barely move.
                    // Activates per-player only when Batted Balls has data.
   projMult: 0.9,   // discount applied when the lineup is only projected
+  // Weather (applied only when data exists; domes stay neutral):
+  wxTempPer: 0.004, // +0.4% per °F above 72 (capped ±8%)
+  wxWindPer: 0.012, // ±1.2% per mph blowing out/in (capped ±12%)
 };
 function hrbHitClass(v) {
   if (v == null) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
@@ -1938,6 +1941,16 @@ function HRBoardTab({ players, onSelectPlayer }) {
   for (const row of data || []) {
     const rank = row.g.venue && row.g.venue.name ? parkRankFor(row.g.venue.name) : null;
     const parkF = rank != null ? 1 + ((15.5 - rank) / 14.5) * HRB.parkSwing : 1;
+    const wxF = (() => {
+      const w = row.wx;
+      if (!w || w.temp == null) return 1;
+      let f = 1 + Math.max(-0.08, Math.min(0.08, (Number(w.temp) - 72) * HRB.wxTempPer));
+      const wind = String(w.wind || "").toLowerCase();
+      const mph = parseFloat(wind) || 0;
+      if (wind.includes("out")) f += Math.min(0.12, mph * HRB.wxWindPer);
+      else if (wind.includes("in")) f -= Math.min(0.12, mph * HRB.wxWindPer);
+      return Math.max(0.8, Math.min(1.25, f));
+    })();
     for (const k of ["away", "home"]) {
       const s = row.sides[k];
       const opp = row.sides[k === "away" ? "home" : "away"].pitcher;
@@ -1963,9 +1976,9 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const pitR = adjPitBrl != null ? Math.pow(capped(adjPitBrl / HRB.lgPitBrl), HRB.ePitBrl) : 1;
         const hr9R = adjHr9 != null ? Math.pow(capped(adjHr9 / HRB.lgHr9), HRB.eHr9) : 1;
         const spotF = 1 - HRB.spotDrop * i;
-        let score = 100 * hitR * pitR * hr9R * parkF * spotF;
+        let score = 100 * hitR * pitR * hr9R * parkF * spotF * wxF;
         if (!s.confirmed) score *= HRB.projMult;
-        targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: useBrl, oppBrl: om.barrel, oppHr9: om.hr9, park: rank, score, g: row.g, confirmed: s.confirmed, player: myByName[hrbNrm(h.name)] });
+        targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: useBrl, oppBrl: om.barrel, oppHr9: om.hr9, park: rank, score, g: row.g, wx: row.wx, confirmed: s.confirmed, player: myByName[hrbNrm(h.name)] });
       }
     }
   }
@@ -1991,7 +2004,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
               {top.map((t, i) => (
                 <button key={t.h.id + "-" + t.g.gamePk} onClick={() => setSelGame(t.g)}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
+                  className="w-full text-left px-3 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
+                  <span className="flex items-center gap-2">
                   <span className="w-5 text-center text-[11px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
                   <img src={(t.player && t.player.photo) || "https://img.mlbstatic.com/mlb-photos/image/upload/w_240,q_auto/v1/people/" + t.h.id + "/headshot/67/current"}
                     alt="" className="w-9 h-9 rounded-full object-cover object-top bg-white shrink-0" loading="lazy" />
@@ -2005,7 +2019,6 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     </span>
                     <span className="block text-[10px] font-semibold text-slate-400 truncate">
                       vs {t.oppHand ? t.oppHand + "HP " : ""}{t.opp ? t.opp.name : "TBD"}
-                      {t.park != null && <span className={"ml-1 " + parkRankColor(t.park)}>· {ordinalize(t.park)} park</span>}
                     </span>
                   </span>
                   <span className="w-11 text-center shrink-0">
@@ -2024,10 +2037,22 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
                     <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{Math.round(t.score)}</span>
                   </span>
+                  </span>
+                  <span className="flex items-center justify-between gap-2 mt-1 pl-7">
+                    <span className="text-[10px] font-semibold text-slate-400 truncate">
+                      {(t.g.venue && t.g.venue.name) || ""}
+                      {t.park != null && <span className={"font-extrabold " + parkRankColor(t.park)}> ({ordinalize(t.park)})</span>}
+                    </span>
+                    {t.wx && (
+                      <span className="text-[10px] font-semibold text-slate-400 shrink-0">
+                        {wxEmoji(t.wx.condition)} {t.wx.temp}°{t.wx.wind ? " · 💨 " + t.wx.wind : ""}
+                      </span>
+                    )}
+                  </span>
                 </button>
               ))}
             </div>
-            <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score: 100 = league-avg matchup. Hitter Brl%, SP Brl% against & SP HR/9 as capped ratios to league avg (small samples regressed by BBE), multiplied with park + lineup spot · projected ×{HRB.projMult}</div>
+            <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score: 100 = league-avg matchup. Hitter Brl%, SP Brl% against & SP HR/9 as capped ratios to league avg (small samples regressed by BBE), multiplied with park + lineup spot + weather (temp/wind) · projected ×{HRB.projMult}</div>
           </>
         )}
         <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-500 dark:text-slate-400">Matchups</div>
@@ -2196,6 +2221,11 @@ export default function App() {
       .then((r) => r.json())
       .then((d) => { if (d.error) setError(d.error); else {
         for (const t of d.teams || []) { const a = t.abbr || toAbbr(t.name); if (a && t.logo) TEAM_LOGOS[a] = t.logo; }
+        // Different data sources abbreviate some teams differently
+        for (const [x, y] of [["CWS","CHW"],["ARI","AZ"],["WSH","WSN"],["SF","SFG"],["SD","SDP"],["TB","TBR"],["KC","KCR"],["OAK","ATH"]]) {
+          if (TEAM_LOGOS[x] && !TEAM_LOGOS[y]) TEAM_LOGOS[y] = TEAM_LOGOS[x];
+          if (TEAM_LOGOS[y] && !TEAM_LOGOS[x]) TEAM_LOGOS[x] = TEAM_LOGOS[y];
+        }
         setPlayers(d.players); setTeams(d.teams || []); window.__imports = d.imports || [];
       } })
       .catch((e) => setError(String(e)));
