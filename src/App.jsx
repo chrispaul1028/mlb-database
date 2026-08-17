@@ -2030,8 +2030,9 @@ function HRBoardTab({ players, onSelectPlayer }) {
                   className="w-full text-left px-3 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
                   <span className="flex items-center gap-2">
                   <span className="w-5 text-center text-[11px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
-                  <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/w_240,q_auto/v1/people/" + t.h.id + "/headshot/67/current"}
-                    alt="" className="w-9 h-9 rounded-full object-contain bg-white shrink-0" loading="lazy" />
+                  <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + t.h.id + "/headshot/silo/current"}
+                    alt="" className="w-9 h-9 rounded-full object-cover object-top shrink-0"
+                    style={{ backgroundColor: teamColor(t.side.abbr) + "26" }} loading="lazy" />
                   <span className="flex-1 min-w-0">
                     <span className="flex items-center gap-1 text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
                       {TEAM_LOGOS[t.side.abbr]
