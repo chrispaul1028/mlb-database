@@ -1818,7 +1818,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v55";
+const HRB_VERSION = "v56";
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
@@ -2044,45 +2044,43 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 <button key={t.h.id + "-" + t.g.gamePk} onClick={() => setSelGame(t.g)}
                   className="w-full text-left px-3 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
                   <span className="flex items-center gap-2">
-                  <span className="w-4 text-center text-[11px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
-                  <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + t.h.id + "/headshot/silo/current"}
-                    alt="" className="w-9 h-9 rounded-full object-cover object-top shrink-0"
-                    style={{ backgroundColor: teamColor(t.side.abbr) + "26" }} loading="lazy" />
-                  <span className="flex-1 min-w-0">
-                    <span className="flex items-center gap-1 text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                      {TEAM_LOGOS[t.side.abbr]
-                        ? <img src={TEAM_LOGOS[t.side.abbr]} alt={t.side.abbr} className="w-4 h-4 rounded-full object-contain bg-white shrink-0" />
-                        : <span className="font-extrabold" style={{ color: teamColor(t.side.abbr) }}>{t.side.abbr}</span>}
-                      <span className="truncate">{t.h.bats ? t.h.bats + " " : ""}{t.h.name}</span>
-                      {!t.confirmed && <span className="ml-1 text-[8px] font-extrabold text-amber-500 uppercase">proj</span>}
+                    <span className="w-4 text-center text-[11px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
+                    <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + t.h.id + "/headshot/silo/current"}
+                      alt="" className="w-9 h-9 rounded-full object-cover object-top shrink-0"
+                      style={{ backgroundColor: teamColor(t.side.abbr) + "26" }} loading="lazy" />
+                    {TEAM_LOGOS[t.side.abbr] && <img src={TEAM_LOGOS[t.side.abbr]} alt={t.side.abbr} className="w-4 h-4 rounded-full object-contain bg-white shrink-0" />}
+                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap shrink-0">
+                      {t.h.bats ? t.h.bats + " " : ""}{t.h.name}
                     </span>
-                    <span className="block text-[10px] font-semibold text-slate-400 truncate">
+                    {!t.confirmed && <span className="text-[8px] font-extrabold text-amber-500 uppercase shrink-0">proj</span>}
+                    <span className="ml-auto min-w-0 text-[10px] font-semibold text-slate-400 truncate text-right">
                       vs {t.oppHand ? t.oppHand + "HP " : ""}{t.opp ? t.opp.name : "TBD"}
                     </span>
                   </span>
-                  <span className="w-10 text-center shrink-0">
-                    <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
-                    <span className={"block text-[10px] font-extrabold rounded px-0.5 py-0.5 tabular-nums " + hrbHitClass(t.brl)}>
-                      {Number(t.brl).toFixed(1)}
+                  <span className="flex items-center gap-2 mt-1.5 pl-7">
+                    <span className="w-12 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
+                      <span className={"block text-[10px] font-extrabold rounded px-0.5 py-0.5 tabular-nums " + hrbHitClass(t.brl)}>
+                        {Number(t.brl).toFixed(1)}
+                      </span>
                     </span>
-                  </span>
-                  <span className="w-px h-7 bg-slate-200 dark:bg-slate-700 shrink-0" />
-                  <span className="w-10 text-center shrink-0">
-                    <span className="block text-[7px] font-bold text-slate-400 uppercase">SP Brl</span>
-                    <span className={"block text-[10px] font-extrabold rounded px-0.5 py-0.5 tabular-nums " + hrbPitBrlClass(t.oppBrl)}>
-                      {t.oppBrl != null ? Number(t.oppBrl).toFixed(1) : "—"}
+                    <span className="w-px h-7 bg-slate-200 dark:bg-slate-700 shrink-0" />
+                    <span className="w-12 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">SP Brl</span>
+                      <span className={"block text-[10px] font-extrabold rounded px-0.5 py-0.5 tabular-nums " + hrbPitBrlClass(t.oppBrl)}>
+                        {t.oppBrl != null ? Number(t.oppBrl).toFixed(1) : "—"}
+                      </span>
                     </span>
-                  </span>
-                  <span className="w-10 text-center shrink-0">
-                    <span className="block text-[7px] font-bold text-slate-400 uppercase">SP HR9</span>
-                    <span className={"block text-[10px] font-extrabold rounded px-0.5 py-0.5 tabular-nums " + hrbHr9Class(t.oppHr9)}>
-                      {t.oppHr9 != null ? Number(t.oppHr9).toFixed(2) : "—"}
+                    <span className="w-12 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">SP HR9</span>
+                      <span className={"block text-[10px] font-extrabold rounded px-0.5 py-0.5 tabular-nums " + hrbHr9Class(t.oppHr9)}>
+                        {t.oppHr9 != null ? Number(t.oppHr9).toFixed(2) : "—"}
+                      </span>
                     </span>
-                  </span>
-                  <span className="w-9 text-center shrink-0">
-                    <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
-                    <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{Math.round(t.score)}</span>
-                  </span>
+                    <span className="ml-auto w-10 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
+                      <span className="block text-[12px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{Math.round(t.score)}</span>
+                    </span>
                   </span>
                   <span className="flex items-center justify-between gap-2 mt-1 pl-7">
                     <span className="text-[10px] font-semibold text-slate-400 truncate">
@@ -2202,7 +2200,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           return (
                             <div key={h.id} className="flex items-center gap-2">
                               <span className="w-4 text-center text-[10px] font-extrabold text-slate-300 dark:text-slate-600 tabular-nums shrink-0">{i + 1}</span>
-                              <span className="w-4 text-center text-[10px] font-extrabold shrink-0" style={{ color: teamColor(s.abbr) }}>{h.bats || ""}</span>
+                              <span className="w-4 text-center text-[10px] font-extrabold text-slate-500 dark:text-slate-200 shrink-0">{h.bats || ""}</span>
                               <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{h.name}</span>
                               <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(hb)}>
                                 {hb != null ? Number(hb).toFixed(1) : "—"}
