@@ -1792,6 +1792,8 @@ const HRB = {
                    // samples pull hard toward average; 300+ BBE barely move.
                    // Activates per-player only when Batted Balls has data.
   projMult: 0.9,   // discount applied when the lineup is only projected
+  unknownSP: 0.85, // discount when the opposing SP has NO barrel/HR9 data
+                   // (a blind matchup shouldn't rank beside a proven one)
   // Weather (applied only when data exists; domes stay neutral):
   wxTempPer: 0.004, // +0.4% per °F above 72 (capped ±8%)
   wxWindPer: 0.012, // ±1.2% per mph blowing out/in (capped ±12%)
@@ -1814,7 +1816,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v53";
+const HRB_VERSION = "v54";
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
@@ -2003,6 +2005,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const hr9R = adjHr9 != null ? Math.pow(capped(adjHr9 / HRB.lgHr9), HRB.eHr9) : 1;
         const spotF = 1 - HRB.spotDrop * i;
         let score = 100 * hitR * pitR * hr9R * parkF * spotF * wxF;
+        if (om.barrel == null && om.hr9 == null) score *= HRB.unknownSP;
         if (!s.confirmed) score *= HRB.projMult;
         targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: adjBrl, brlRaw: useBrl, oppBrl: adjPitBrl, oppHr9: adjHr9, park: rank, score, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
       }
@@ -2051,7 +2054,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                   <span className="w-10 text-center shrink-0">
                     <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
                     <span className={"block text-[10px] font-extrabold rounded px-0.5 py-0.5 tabular-nums " + hrbHitClass(t.brl)}>
-                      {(t.brlRaw != null && Math.abs(t.brlRaw - t.brl) > 0.5 ? "~" : "") + Number(t.brl).toFixed(1)}
+                      {Number(t.brl).toFixed(1)}
                     </span>
                   </span>
                   <span className="w-px h-7 bg-slate-200 dark:bg-slate-700 shrink-0" />
