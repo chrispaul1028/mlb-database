@@ -1776,6 +1776,8 @@ const HRB = {
   // can't dominate), and they MULTIPLY: a stingy pitcher shrinks the
   // whole score instead of just adding less. Missing data = ratio of 1.
   topN: 10,        // how many targets to rank
+  maxPerTeam: 2,   // diversity cap: at most this many hitters per team
+                   // in Top Targets (spreads picks across games)
   lgHitBrl: 8.5,   // league-average hitter Barrel %
   lgPitBrl: 8.5,   // league-average pitcher Barrel % against
   lgHr9: 1.10,     // league-average HR/9
@@ -1816,7 +1818,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v54";
+const HRB_VERSION = "v55";
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
@@ -2012,7 +2014,14 @@ function HRBoardTab({ players, onSelectPlayer }) {
     }
   }
   targets.sort((a, b) => b.score - a.score);
-  const top = targets.slice(0, HRB.topN);
+  const top = [];
+  const perTeam = {};
+  for (const t of targets) {
+    if ((perTeam[t.side.abbr] || 0) >= HRB.maxPerTeam) continue;
+    perTeam[t.side.abbr] = (perTeam[t.side.abbr] || 0) + 1;
+    top.push(t);
+    if (top.length >= HRB.topN) break;
+  }
   // Hide the BBE column entirely until batted-ball data exists in Airtable
   const hasBbe = (data || []).some(({ sides }) =>
     ["away", "home"].some((k) => {
