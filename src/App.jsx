@@ -1785,6 +1785,8 @@ const HRB = {
   eHr9: 0.5,       // exponent on SP HR/9 ratio
   parkSwing: 0.12, // park factor range: rank 1 = x1.12 ... rank 30 = x0.88
   spotDrop: 0.015, // score decay per lineup spot (fewer PAs hitting lower)
+  assumeBBE: 40,   // players with NO batted-ball data are treated as
+                   // having this small a sample (unproven != trustworthy)
   shrinkK: 60,     // sample-size regression: stats behave as if K extra
                    // league-average batted balls were mixed in. Small
                    // samples pull hard toward average; 300+ BBE barely move.
@@ -1992,9 +1994,9 @@ function HRBoardTab({ players, onSelectPlayer }) {
           : opp && opp.hand === "L" && hm.brlL != null ? hm.bbe * 0.3
           : opp && opp.hand === "R" && hm.brlR != null ? hm.bbe * 0.7
           : hm.bbe;
-        const adjBrl = shrink(useBrl, HRB.lgHitBrl, effBbe);
-        const adjPitBrl = shrink(om.barrel, HRB.lgPitBrl, om.bbe);
-        const adjHr9 = shrink(om.hr9, HRB.lgHr9, om.bbe);
+        const adjBrl = shrink(useBrl, HRB.lgHitBrl, effBbe != null ? effBbe : HRB.assumeBBE);
+        const adjPitBrl = shrink(om.barrel, HRB.lgPitBrl, om.bbe != null ? om.bbe : HRB.assumeBBE);
+        const adjHr9 = shrink(om.hr9, HRB.lgHr9, om.bbe != null ? om.bbe : HRB.assumeBBE);
         const hitR = Math.pow(capped(adjBrl / HRB.lgHitBrl), HRB.eHit);
         const pitR = adjPitBrl != null ? Math.pow(capped(adjPitBrl / HRB.lgPitBrl), HRB.ePitBrl) : 1;
         const hr9R = adjHr9 != null ? Math.pow(capped(adjHr9 / HRB.lgHr9), HRB.eHr9) : 1;
