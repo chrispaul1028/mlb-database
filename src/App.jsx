@@ -899,13 +899,14 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
         <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(oppKey)) }}>Pitcher</div>
         <button onClick={myPP && onSelectPlayer ? () => onSelectPlayer(myPP.player) : undefined}
           className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
-          style={{ border: "2px solid " + teamColor(abbrOf(oppKey)) }}>
+          style={{ borderLeft: "4px solid " + teamColor(abbrOf(oppKey)) }}>
           <div className="flex items-center gap-3">
             {pp && (myPP && myPP.photo ? (
               <img src={myPP.photo} alt="" className="w-11 h-11 rounded-full object-cover object-top bg-white shrink-0" loading="lazy" />
             ) : (
               <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + pp.id + "/headshot/silo/current"} alt=""
-                className="w-11 h-11 rounded-full object-cover object-top bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
+                className="w-11 h-11 rounded-full object-cover object-top shrink-0"
+                style={{ backgroundColor: teamColor(abbrOf(oppKey)) + "26" }} loading="lazy" />
             ))}
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
               {(() => {
@@ -921,10 +922,18 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
             <div className="grid grid-cols-4 gap-y-2 mt-2">
               {[["W-L", (ps.w ?? 0) + "-" + (ps.l ?? 0)], ["ERA", ps.era ?? "—"], ["IP", ps.ip ?? "—"], ["SO", ps.so ?? "—"],
                 ["BB", ps.bb ?? "—"], ["HR", ps.hr ?? "—"], ["WHIP", ps.whip ?? "—"], ["HR L9", ps.hrL9 ?? "—"],
-                ...(() => { const nrmP = pp ? String(pp.fullName || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() : ""; const mp = myByName[nrmP]; return mp && mp.hr9 != null ? [["HR/9", Number(mp.hr9).toFixed(2)]] : []; })()].map(([lbl, v]) => (
+                ...(() => {
+                  const nrmP = pp ? String(pp.fullName || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() : "";
+                  const mp = myByName[nrmP];
+                  const extra = [];
+                  if (mp && mp.barrel != null) extra.push(["BRL%", Number(mp.barrel).toFixed(1)]);
+                  if (mp && mp.bbe != null) extra.push(["BBE", Math.round(mp.bbe)]);
+                  if (mp && mp.hr9 != null) extra.push(["HR/9", Number(mp.hr9).toFixed(2)]);
+                  return extra;
+                })()].map(([lbl, v]) => (
                 <span key={lbl} className="text-center">
                   <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
-                  <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
+                  <span className={"block text-xs font-extrabold tabular-nums " + (lbl === "BRL%" ? "rounded px-1 mx-auto w-fit " + hrbPitBrlClass(parseFloat(v)) : lbl === "HR/9" ? "rounded px-1 mx-auto w-fit " + hrbHr9Class(parseFloat(v)) : "text-slate-800 dark:text-slate-100")}>{v}</span>
                 </span>
               ))}
             </div>
@@ -978,7 +987,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
                     {[["AVG", bat.avg ? String(bat.avg).replace(/^0/, "") : "—"], ["HR", bat.hr != null ? bat.hr : "—"], ["RBI", bat.rbi != null ? bat.rbi : "—"], ["OPS", bat.ops ? String(bat.ops).replace(/^0/, "") : "—"], ...(mine && mine.barrel != null ? [["BRL%", Number(mine.barrel).toFixed(1)]] : [])].map(([lbl, v]) => (
                       <span key={lbl} className="w-10 text-center">
                         <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
-                        <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
+                        <span className={"block text-[11px] font-extrabold tabular-nums " + (lbl === "BRL%" ? "rounded px-0.5 " + hrbHitClass(parseFloat(v)) : "text-slate-800 dark:text-slate-100")}>{v}</span>
                       </span>
                     ))}
                   </span>
@@ -1783,8 +1792,8 @@ const HRB = {
   lgHr9: 1.10,     // league-average HR/9
   capRatio: 2.5,   // max any single ratio can contribute
   eHit: 1.0,       // exponent on the hitter's barrel ratio
-  ePitBrl: 0.5,    // exponent on SP Brl%-against ratio
-  eHr9: 0.5,       // exponent on SP HR/9 ratio
+  ePitBrl: 0.65,   // exponent on SP Brl%-against ratio (red flags sting harder)
+  eHr9: 0.65,      // exponent on SP HR/9 ratio (red flags sting harder)
   parkSwing: 0.12, // park factor range: rank 1 = x1.12 ... rank 30 = x0.88
   spotDrop: 0.015, // score decay per lineup spot (fewer PAs hitting lower)
   assumeBBE: 40,   // players with NO batted-ball data are treated as
@@ -1818,7 +1827,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v58";
+const HRB_VERSION = "v60";
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
@@ -1831,6 +1840,8 @@ const brlVsHand = (hm, hand) =>
 function HRBoardTab({ players, onSelectPlayer }) {
   const [data, setData] = useState(null);
   const [selGame, setSelGame] = useState(null);
+  const [openPks, setOpenPks] = useState({});   // matchup accordion state
+  const [streaks, setStreaks] = useState({});   // hitter id -> current hit streak
   const myByName = useMemo(() => {
     const m = {};
     // Keep ALL records sharing a name (e.g. both Max Muncys); meta()
@@ -1845,7 +1856,17 @@ function HRBoardTab({ players, onSelectPlayer }) {
     (async () => {
       try {
         const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
-        const sched = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${dayStr(0)}&hydrate=team,linescore,probablePitcher,venue`)).json();
+        const [sched, standings] = await Promise.all([
+          (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${dayStr(0)}&hydrate=team,linescore,probablePitcher,venue`)).json(),
+          fetch("https://statsapi.mlb.com/api/v1/standings?leagueId=103,104").then((r) => r.json()).catch(() => ({})),
+        ]);
+        const teamRec = {};
+        for (const rec of standings.records || []) for (const tr of rec.teamRecords || []) {
+          teamRec[tr.team.id] = {
+            rec: (tr.wins ?? "") + "-" + (tr.losses ?? ""),
+            streak: (tr.streak && tr.streak.streakCode) || "",
+          };
+        }
         const gs = ((sched.dates && sched.dates[0] && sched.dates[0].games) || [])
           .slice().sort((a, b) => new Date(a.gameDate) - new Date(b.gameDate));
         // Today's boxscores (posted lineups) + weather in parallel
@@ -1916,7 +1937,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
             });
             const pp = t.probablePitcher || null;
             if (pp && pp.id) ids.add(pp.id);
-            sides[k] = { name: nm, abbr: ab, confirmed, hitters, pitcher: pp ? { id: pp.id, name: pp.fullName } : null };
+            const tr = teamRec[t.team && t.team.id] || {};
+            sides[k] = { name: nm, abbr: ab, confirmed, hitters, rec: tr.rec || "", streak: tr.streak || "", pitcher: pp ? { id: pp.id, name: pp.fullName } : null };
           }
           return { g, sides, wx: wxByPk[g.gamePk] || null };
         });
@@ -2019,7 +2041,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         let score = 100 * hitR * pitR * hr9R * parkF * spotF * wxF;
         if (om.barrel == null && om.hr9 == null) score *= HRB.unknownSP;
         if (!s.confirmed) score *= HRB.projMult;
-        targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: adjBrl, brlRaw: useBrl, oppBrl: adjPitBrl, oppHr9: adjHr9, park: rank, score, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
+        targets.push({ h, spot: i, side: s, opp, oppAbbr: oppSide.abbr, oppHand: opp && opp.hand, brl: adjBrl, brlRaw: useBrl, oppBrl: adjPitBrl, oppHr9: adjHr9, park: rank, score, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
       }
     }
   }
@@ -2033,6 +2055,31 @@ function HRBoardTab({ players, onSelectPlayer }) {
     if (top.length >= HRB.topN) break;
   }
   // Hide the BBE column entirely until batted-ball data exists in Airtable
+  const topIdsKey = top.map((t) => t.h.id).join(",");
+  useEffect(() => {
+    if (!topIdsKey) return;
+    let alive = true;
+    (async () => {
+      const ids = topIdsKey.split(",").filter((id) => streaks[id] == null);
+      const out = {};
+      await Promise.all(ids.map(async (pid) => {
+        try {
+          const gl = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${pid}/stats?stats=gameLog&group=hitting`)).json();
+          const splits = (gl.stats && gl.stats[0] && gl.stats[0].splits) || [];
+          let n = 0;
+          for (let j = splits.length - 1; j >= 0; j--) {
+            const st = splits[j].stat || {};
+            if ((st.atBats ?? 0) === 0) continue; // skip games without an AB
+            if ((st.hits ?? 0) > 0) n++;
+            else break;
+          }
+          out[pid] = n;
+        } catch { out[pid] = 0; }
+      }));
+      if (alive && Object.keys(out).length) setStreaks((s) => ({ ...s, ...out }));
+    })();
+    return () => { alive = false; };
+  }, [topIdsKey]);
   const hasBbe = (data || []).some(({ sides }) =>
     ["away", "home"].some((k) => {
       const s = sides[k];
@@ -2063,11 +2110,18 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       {t.h.bats ? t.h.bats + " " : ""}{t.h.name}
                     </span>
                     {!t.confirmed && <span className="text-[8px] font-extrabold text-amber-500 uppercase shrink-0">proj</span>}
-                    <span className="ml-auto min-w-0 text-[10px] font-semibold text-slate-400 truncate text-right">
-                      vs {t.oppHand ? t.oppHand + "HP " : ""}{t.opp ? t.opp.name : "TBD"}
+                    <span className="ml-auto min-w-0 flex items-center justify-end gap-1">
+                      {TEAM_LOGOS[t.oppAbbr] && <img src={TEAM_LOGOS[t.oppAbbr]} alt={t.oppAbbr} className="w-3.5 h-3.5 rounded-full object-contain bg-white shrink-0" />}
+                      <span className="min-w-0 text-[10px] font-semibold text-slate-400 truncate">
+                        vs {t.oppHand ? t.oppHand + "HP " : ""}{t.opp ? t.opp.name : "TBD"}
+                      </span>
                     </span>
                   </span>
                   <span className="flex items-center gap-2 mt-0.5 pl-7">
+                    <span className="w-6 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">Spot</span>
+                      <span className="block text-[10px] font-extrabold text-slate-500 dark:text-slate-300 tabular-nums">{t.spot + 1}</span>
+                    </span>
                     <span className="w-12 text-center shrink-0">
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
                       <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbHitClass(t.brl)}>
@@ -2087,7 +2141,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         {t.oppHr9 != null ? Number(t.oppHr9).toFixed(2) : "—"}
                       </span>
                     </span>
-                    <span className="ml-auto w-10 text-center shrink-0">
+                    {streaks[t.h.id] >= 5 && (
+                      <span className="ml-auto text-[10px] font-extrabold text-orange-500 shrink-0">🔥{streaks[t.h.id]}</span>
+                    )}
+                    <span className={(streaks[t.h.id] >= 5 ? "" : "ml-auto ") + "w-10 text-center shrink-0"}>
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
                       <span className="block text-[12px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{Math.round(t.score)}</span>
                     </span>
@@ -2132,15 +2189,32 @@ function HRBoardTab({ players, onSelectPlayer }) {
               : state === "Live" ? "LIVE " + scoreStr + (inn ? " · " + inn : "")
               : new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
             const rank = g.venue && g.venue.name ? parkRankFor(g.venue.name) : null;
+            const isOpen = !!openPks[g.gamePk];
+            const streakBadge = (s) => {
+              const m = /^W(\d+)$/.exec(s.streak || "");
+              return m && Number(m[1]) >= 5 ? <span className="ml-1 text-[9px] font-extrabold text-orange-500">🔥{m[1]}</span> : null;
+            };
             return (
-              <button key={g.gamePk} onClick={() => setSelGame(g)}
-                className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden active:bg-slate-50 dark:active:bg-slate-800">
-                <div className="flex items-center justify-between px-4 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800">
-                  <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-300">
-                    {sides.away.abbr} @ {sides.home.abbr}
-                    <span className={"ml-2 " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
+              <div key={g.gamePk}
+                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <button onClick={() => setOpenPks((o) => ({ ...o, [g.gamePk]: !o[g.gamePk] }))}
+                  className="w-full text-left px-4 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
+                  <span className="flex items-center gap-2">
+                    {TEAM_LOGOS[sides.away.abbr] && <img src={TEAM_LOGOS[sides.away.abbr]} alt="" className="w-6 h-6 rounded-full object-contain bg-white shrink-0" />}
+                    <span className="min-w-0">
+                      <span className="block text-xs font-extrabold" style={{ color: teamColor(sides.away.abbr) }}>{sides.away.abbr}{streakBadge(sides.away)}</span>
+                      <span className="block text-[9px] font-bold text-slate-400 tabular-nums">{sides.away.rec}</span>
+                    </span>
+                    <span className={"flex-1 text-center text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
+                    <span className="min-w-0 text-right">
+                      <span className="block text-xs font-extrabold" style={{ color: teamColor(sides.home.abbr) }}>{sides.home.abbr}{streakBadge(sides.home)}</span>
+                      <span className="block text-[9px] font-bold text-slate-400 tabular-nums">{sides.home.rec}</span>
+                    </span>
+                    {TEAM_LOGOS[sides.home.abbr] && <img src={TEAM_LOGOS[sides.home.abbr]} alt="" className="w-6 h-6 rounded-full object-contain bg-white shrink-0" />}
+                    <span className={"text-slate-300 dark:text-slate-600 text-[10px] shrink-0 transition-transform " + (isOpen ? "rotate-90" : "")}>▶</span>
                   </span>
-                </div>
+                </button>
+                {isOpen && <div>
                 {(g.venue && g.venue.name) || wx ? (
                   <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-slate-100 dark:border-slate-800">
                     <span className="text-[10px] font-bold text-slate-400 truncate">
@@ -2166,7 +2240,6 @@ function HRBoardTab({ players, onSelectPlayer }) {
                   const pm = s.pitcher ? meta(s.pitcher.name, s.abbr) : {};
                   const oppSP = sides[k === "away" ? "home" : "away"].pitcher;
                   const oppHand = oppSP && oppSP.hand;
-                  const smallSample = pm.bbe != null && pm.bbe < HRB.minBBE;
                   return (
                     <div key={k} className={"px-4 py-3 " + (k === "home" ? "border-t border-slate-100 dark:border-slate-800" : "")}>
                       <div className="flex items-center gap-2">
@@ -2191,8 +2264,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         <span className="flex-1 min-w-0 text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
                           {s.pitcher ? s.pitcher.name : "TBD"}
                         </span>
-                        <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + (smallSample ? "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500" : hrbPitBrlClass(pm.barrel))}>
-                          {smallSample ? "N/A" : pm.barrel != null ? Number(pm.barrel).toFixed(1) : "—"}
+                        <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbPitBrlClass(pm.barrel)}>
+                          {pm.barrel != null ? Number(pm.barrel).toFixed(1) : "—"}
                         </span>
                         {hasBbe && (
                           <span className="w-9 text-center text-[10px] font-bold text-slate-400 tabular-nums shrink-0">
@@ -2227,7 +2300,12 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     </div>
                   );
                 })}
-              </button>
+                <button onClick={() => setSelGame(g)}
+                  className="w-full text-center text-[11px] font-extrabold text-blue-600 dark:text-blue-400 py-2.5 border-t border-slate-100 dark:border-slate-800 active:bg-slate-50 dark:active:bg-slate-800">
+                  Full breakdown ›
+                </button>
+                </div>}
+              </div>
             );
           })}
         </div>
