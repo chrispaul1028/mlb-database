@@ -1818,7 +1818,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v57";
+const HRB_VERSION = "v58";
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
@@ -1995,11 +1995,21 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const shrink = (v, lg, n) => (v != null && n != null && n > 0) ? (v * n + lg * HRB.shrinkK) / (n + HRB.shrinkK) : v;
         // Split samples are smaller than the season total: hitters see
         // roughly 70% RHP / 30% LHP, so scale BBE when using a split.
+        const hand = opp && opp.hand;
+        const isSplit = hand === "L" ? hm.brlL != null : hand === "R" ? hm.brlR != null : false;
         const effBbe = hm.bbe == null ? null
-          : opp && opp.hand === "L" && hm.brlL != null ? hm.bbe * 0.3
-          : opp && opp.hand === "R" && hm.brlR != null ? hm.bbe * 0.7
+          : isSplit && hand === "L" ? hm.bbe * 0.3
+          : isSplit && hand === "R" ? hm.bbe * 0.7
           : hm.bbe;
-        const adjBrl = shrink(useBrl, HRB.lgHitBrl, effBbe != null ? effBbe : HRB.assumeBBE);
+        // Two-stage regression: the player's overall rate regresses toward
+        // league average; his vs-hand split then regresses toward HIS OWN
+        // regressed overall (not the league's). This stops small advantage
+        // splits (esp. righties vs LHP) from being over-punished.
+        const totAdj = shrink(hm.barrel, HRB.lgHitBrl, hm.bbe != null ? hm.bbe : HRB.assumeBBE);
+        const prior = totAdj != null ? totAdj : HRB.lgHitBrl;
+        const adjBrl = isSplit
+          ? shrink(useBrl, prior, effBbe != null ? effBbe : HRB.assumeBBE * 0.3)
+          : shrink(useBrl, HRB.lgHitBrl, effBbe != null ? effBbe : HRB.assumeBBE);
         const adjPitBrl = shrink(om.barrel, HRB.lgPitBrl, om.bbe != null ? om.bbe : HRB.assumeBBE);
         const adjHr9 = shrink(om.hr9, HRB.lgHr9, om.bbe != null ? om.bbe : HRB.assumeBBE);
         const hitR = Math.pow(capped(adjBrl / HRB.lgHitBrl), HRB.eHit);
