@@ -1814,6 +1814,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
+const HRB_VERSION = "v53";
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
@@ -2003,7 +2004,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const spotF = 1 - HRB.spotDrop * i;
         let score = 100 * hitR * pitR * hr9R * parkF * spotF * wxF;
         if (!s.confirmed) score *= HRB.projMult;
-        targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: useBrl, oppBrl: om.barrel, oppHr9: om.hr9, park: rank, score, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
+        targets.push({ h, spot: i, side: s, opp, oppHand: opp && opp.hand, brl: adjBrl, brlRaw: useBrl, oppBrl: adjPitBrl, oppHr9: adjHr9, park: rank, score, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
       }
     }
   }
@@ -2020,7 +2021,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
   return (
     <div>
       <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
-        <div className="text-2xl font-extrabold tracking-tight">HR Board ({todayLabel})</div>
+        <div className="text-2xl font-extrabold tracking-tight">HR Board ({todayLabel}) <span className="text-[10px] font-bold text-white/50 align-middle">{HRB_VERSION}</span></div>
       </div>
       <div className="px-4 pb-28">
         {top.length > 0 && (
@@ -2050,7 +2051,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                   <span className="w-10 text-center shrink-0">
                     <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
                     <span className={"block text-[10px] font-extrabold rounded px-0.5 py-0.5 tabular-nums " + hrbHitClass(t.brl)}>
-                      {Number(t.brl).toFixed(1)}
+                      {(t.brlRaw != null && Math.abs(t.brlRaw - t.brl) > 0.5 ? "~" : "") + Number(t.brl).toFixed(1)}
                     </span>
                   </span>
                   <span className="w-px h-7 bg-slate-200 dark:bg-slate-700 shrink-0" />
