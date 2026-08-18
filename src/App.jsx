@@ -1,3 +1,4 @@
+import React from "react";
 import { useState, useMemo, useEffect } from "react";
 
 // ═══════════════ THEME (edit these to restyle the app) ═══════════
@@ -735,6 +736,20 @@ function ordinalize(n) {
   if (j === 2 && k !== 12) return n + "nd";
   if (j === 3 && k !== 13) return n + "rd";
   return n + "th";
+}
+
+class HRBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(e) { return { err: e }; }
+  render() {
+    if (this.state.err) return (
+      <div className="p-6 pt-20">
+        <div className="text-sm font-bold text-red-500 break-words">Breakdown error: {String((this.state.err && this.state.err.message) || this.state.err)}</div>
+        <button className="mt-4 text-sm font-extrabold text-blue-600" onClick={this.props.onBack}>‹ Back</button>
+      </div>
+    );
+    return this.props.children;
+  }
 }
 
 function GameDetail({ g, players, onSelectPlayer, onBack }) {
@@ -1784,7 +1799,7 @@ const HRB = {
   // Each factor is a ratio to league average (capped so one freak stat
   // can't dominate), and they MULTIPLY: a stingy pitcher shrinks the
   // whole score instead of just adding less. Missing data = ratio of 1.
-  topN: 10,        // how many targets to rank
+  topN: 15,        // how many targets to rank
   maxPerTeam: 2,   // diversity cap: at most this many hitters per team
                    // in Top Targets (spreads picks across games)
   lgHitBrl: 8.5,   // league-average hitter Barrel %
@@ -1827,7 +1842,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v60";
+const HRB_VERSION = "v61";
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
@@ -1840,6 +1855,8 @@ const brlVsHand = (hm, hand) =>
 function HRBoardTab({ players, onSelectPlayer }) {
   const [data, setData] = useState(null);
   const [selGame, setSelGame] = useState(null);
+  const [view, setView] = useState("targets");  // targets | matchups | history
+  const [history, setHistory] = useState(null);
   const [openPks, setOpenPks] = useState({});   // matchup accordion state
   const [streaks, setStreaks] = useState({});   // hitter id -> current hit streak
   const myByName = useMemo(() => {
@@ -1951,7 +1968,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
             for (const person of ppl.people || []) {
               const sp = person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0];
               const hra = sp && sp.stat && sp.stat.homeRuns != null ? sp.stat.homeRuns : null;
-              hands[person.id] = { bat: person.batSide && person.batSide.code, pitch: person.pitchHand && person.pitchHand.code, hra };
+              const rec = sp && sp.stat && sp.stat.wins != null ? Math.round(sp.stat.wins) + "-" + Math.round(sp.stat.losses ?? 0) : null;
+              hands[person.id] = { bat: person.batSide && person.batSide.code, pitch: person.pitchHand && person.pitchHand.code, hra, rec };
             }
           } catch {}
         }
@@ -1960,6 +1978,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
           if (s.pitcher && hands[s.pitcher.id]) {
             s.pitcher.hand = hands[s.pitcher.id].pitch;
             s.pitcher.hra = hands[s.pitcher.id].hra;
+            s.pitcher.rec = hands[s.pitcher.id].rec;
           }
           for (const h of s.hitters) if (hands[h.id]) h.bats = hands[h.id].bat;
         }
@@ -1971,7 +1990,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
     return () => { alive = false; };
   }, []);
   const todayLabel = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "2-digit", day: "2-digit" }).format(new Date());
-  if (selGame) return <GameDetail g={selGame} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)} />;
+  if (selGame) return <HRBoundary onBack={() => setSelGame(null)}><GameDetail g={selGame} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)} /></HRBoundary>;
   const meta = (name, abbr) => {
     const list = myByName[hrbNrm(name)];
     if (!list || !list.length) return {};
@@ -2080,6 +2099,49 @@ function HRBoardTab({ players, onSelectPlayer }) {
     })();
     return () => { alive = false; };
   }, [topIdsKey]);
+  // Snapshot today's ranked list so History can grade it later
+  useEffect(() => {
+    if (!top.length) return;
+    try {
+      const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+      const hist = JSON.parse(localStorage.getItem("hrbHistory") || "{}");
+      hist[day] = { entries: top.map((t) => ({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk })), results: (hist[day] && hist[day].results) || null };
+      localStorage.setItem("hrbHistory", JSON.stringify(hist));
+    } catch {}
+  }, [topIdsKey]);
+  // Grade past days (which of the 15 homered) the first time History opens
+  useEffect(() => {
+    if (view !== "history") return;
+    let alive = true;
+    (async () => {
+      let hist = {};
+      try { hist = JSON.parse(localStorage.getItem("hrbHistory") || "{}"); } catch {}
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+      const boxCache = {};
+      for (const day of Object.keys(hist)) {
+        const h = hist[day];
+        if (day >= today || h.results) continue;
+        const results = {};
+        for (const e of h.entries || []) {
+          try {
+            if (!boxCache[e.pk]) boxCache[e.pk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${e.pk}/boxscore`)).json();
+            const b = boxCache[e.pk];
+            let hr = 0;
+            for (const k of ["away", "home"]) {
+              const pl = b.teams && b.teams[k] && b.teams[k].players && b.teams[k].players["ID" + e.id];
+              const st = pl && pl.stats && pl.stats.batting;
+              if (st && st.homeRuns != null) hr = st.homeRuns;
+            }
+            results[e.id] = hr;
+          } catch { results[e.id] = null; }
+        }
+        h.results = results;
+      }
+      try { localStorage.setItem("hrbHistory", JSON.stringify(hist)); } catch {}
+      if (alive) setHistory(hist);
+    })();
+    return () => { alive = false; };
+  }, [view]);
   const hasBbe = (data || []).some(({ sides }) =>
     ["away", "home"].some((k) => {
       const s = sides[k];
@@ -2093,7 +2155,17 @@ function HRBoardTab({ players, onSelectPlayer }) {
         <div className="text-2xl font-extrabold tracking-tight">HR Board ({todayLabel}) <span className="text-[10px] font-bold text-white/50 align-middle">{HRB_VERSION}</span></div>
       </div>
       <div className="px-4 pb-28">
-        {top.length > 0 && (
+        <div className="flex gap-2 mt-3">
+          {[["matchups", "Matchups"], ["targets", "Top Targets"], ["history", "History"]].map(([id, label]) => (
+            <button key={id} onClick={() => setView(id)}
+              className={"flex-1 py-2 rounded-full text-[11px] font-extrabold " + (view === id
+                ? "bg-blue-600 text-white"
+                : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-800")}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {view === "targets" && top.length > 0 && (
           <>
             <div className="text-[11px] font-bold tracking-widest uppercase mt-4 mb-2 px-1 text-slate-500 dark:text-slate-400">🎯 Top Targets</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
@@ -2118,9 +2190,9 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     </span>
                   </span>
                   <span className="flex items-center gap-2 mt-0.5 pl-7">
-                    <span className="w-6 text-center shrink-0">
-                      <span className="block text-[7px] font-bold text-slate-400 uppercase">Spot</span>
-                      <span className="block text-[10px] font-extrabold text-slate-500 dark:text-slate-300 tabular-nums">{t.spot + 1}</span>
+                    <span className="w-9 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">Batting</span>
+                      <span className="block text-[10px] font-extrabold text-slate-700 dark:text-slate-100 tabular-nums">{ordinalize(t.spot + 1)}</span>
                     </span>
                     <span className="w-12 text-center shrink-0">
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
@@ -2142,7 +2214,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       </span>
                     </span>
                     {streaks[t.h.id] >= 5 && (
-                      <span className="ml-auto text-[10px] font-extrabold text-orange-500 shrink-0">🔥{streaks[t.h.id]}</span>
+                      <span className="ml-auto text-sm font-extrabold text-orange-500 shrink-0">🔥{streaks[t.h.id]}</span>
                     )}
                     <span className={(streaks[t.h.id] >= 5 ? "" : "ml-auto ") + "w-10 text-center shrink-0"}>
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
@@ -2166,6 +2238,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
             <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score: 100 = league-avg matchup. Hitter Brl%, SP Brl% against & SP HR/9 as capped ratios to league avg (small samples regressed by BBE), multiplied with park + lineup spot + weather (temp/wind) · projected ×{HRB.projMult}</div>
           </>
         )}
+        {view === "matchups" && (<>
         <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-500 dark:text-slate-400">Matchups</div>
         <div className="space-y-3">
           {data == null && <div className="text-center text-sm text-slate-400 py-12">Building today's board…</div>}
@@ -2197,20 +2270,45 @@ function HRBoardTab({ players, onSelectPlayer }) {
             return (
               <div key={g.gamePk}
                 className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                <button onClick={() => setOpenPks((o) => ({ ...o, [g.gamePk]: !o[g.gamePk] }))}
+                <button onClick={() => {
+                    const opening = !openPks[g.gamePk];
+                    setOpenPks((o) => ({ ...o, [g.gamePk]: !o[g.gamePk] }));
+                    if (opening) {
+                      const need = ["away", "home"].flatMap((kk) => sides[kk].hitters.map((h2) => h2.id)).filter((pid) => streaks[pid] == null);
+                      Promise.all(need.map(async (pid) => {
+                        try {
+                          const gl = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${pid}/stats?stats=gameLog&group=hitting`)).json();
+                          const sp2 = (gl.stats && gl.stats[0] && gl.stats[0].splits) || [];
+                          let n2 = 0;
+                          for (let j2 = sp2.length - 1; j2 >= 0; j2--) {
+                            const st2 = sp2[j2].stat || {};
+                            if ((st2.atBats ?? 0) === 0) continue;
+                            if ((st2.hits ?? 0) > 0) n2++; else break;
+                          }
+                          return [pid, n2];
+                        } catch { return [pid, 0]; }
+                      })).then((pairs) => setStreaks((s2) => ({ ...s2, ...Object.fromEntries(pairs) })));
+                    }
+                  }}
                   className="w-full text-left px-4 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
                   <span className="flex items-center gap-2">
-                    {TEAM_LOGOS[sides.away.abbr] && <img src={TEAM_LOGOS[sides.away.abbr]} alt="" className="w-6 h-6 rounded-full object-contain bg-white shrink-0" />}
+                    {TEAM_LOGOS[sides.away.abbr] && <img src={TEAM_LOGOS[sides.away.abbr]} alt="" className="w-7 h-7 rounded-full object-contain bg-white shrink-0" />}
                     <span className="min-w-0">
                       <span className="block text-xs font-extrabold" style={{ color: teamColor(sides.away.abbr) }}>{sides.away.abbr}{streakBadge(sides.away)}</span>
                       <span className="block text-[9px] font-bold text-slate-400 tabular-nums">{sides.away.rec}</span>
+                      {sides.away.pitcher && <span className="block text-[8px] font-bold text-slate-400 truncate">{sides.away.pitcher.name.split(" ").slice(-1)[0]}{sides.away.pitcher.rec ? " (" + sides.away.pitcher.rec + ")" : ""}</span>}
                     </span>
-                    <span className={"flex-1 text-center text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-slate-400")}>{timeLabel}</span>
+                    {aScore != null && <span className="text-xl font-extrabold text-slate-800 dark:text-slate-100 tabular-nums shrink-0">{aScore}</span>}
+                    <span className={"flex-1 text-center text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-slate-400")}>
+                      {state === "Live" ? "LIVE" + (inn ? " · " + inn : "") : state === "Final" ? "Final" : timeLabel}
+                    </span>
+                    {hScore != null && <span className="text-xl font-extrabold text-slate-800 dark:text-slate-100 tabular-nums shrink-0">{hScore}</span>}
                     <span className="min-w-0 text-right">
                       <span className="block text-xs font-extrabold" style={{ color: teamColor(sides.home.abbr) }}>{sides.home.abbr}{streakBadge(sides.home)}</span>
                       <span className="block text-[9px] font-bold text-slate-400 tabular-nums">{sides.home.rec}</span>
+                      {sides.home.pitcher && <span className="block text-[8px] font-bold text-slate-400 truncate">{sides.home.pitcher.name.split(" ").slice(-1)[0]}{sides.home.pitcher.rec ? " (" + sides.home.pitcher.rec + ")" : ""}</span>}
                     </span>
-                    {TEAM_LOGOS[sides.home.abbr] && <img src={TEAM_LOGOS[sides.home.abbr]} alt="" className="w-6 h-6 rounded-full object-contain bg-white shrink-0" />}
+                    {TEAM_LOGOS[sides.home.abbr] && <img src={TEAM_LOGOS[sides.home.abbr]} alt="" className="w-7 h-7 rounded-full object-contain bg-white shrink-0" />}
                     <span className={"text-slate-300 dark:text-slate-600 text-[10px] shrink-0 transition-transform " + (isOpen ? "rotate-90" : "")}>▶</span>
                   </span>
                 </button>
@@ -2284,7 +2382,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
                             <div key={h.id} className="flex items-center gap-2">
                               <span className="w-4 text-center text-[10px] font-extrabold text-slate-300 dark:text-slate-600 tabular-nums shrink-0">{i + 1}</span>
                               <span className="w-4 text-center text-[10px] font-extrabold text-slate-500 dark:text-slate-200 shrink-0">{h.bats || ""}</span>
-                              <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{h.name}</span>
+                              <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                                {h.name}
+                                {streaks[h.id] >= 5 && <span className="ml-1 text-[11px] font-extrabold text-orange-500">🔥{streaks[h.id]}</span>}
+                              </span>
                               <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(hb)}>
                                 {hb != null ? Number(hb).toFixed(1) : "—"}
                               </span>
@@ -2309,6 +2410,50 @@ function HRBoardTab({ players, onSelectPlayer }) {
             );
           })}
         </div>
+        </>)}
+        {view === "history" && (
+          <div className="mt-4 space-y-3">
+            {history == null && <div className="text-center text-sm text-slate-400 py-12">Grading past boards…</div>}
+            {history != null && Object.keys(history).length === 0 && (
+              <div className="text-center text-sm text-slate-400 py-12">No history yet — each day's Top {HRB.topN} is saved automatically from this device.</div>
+            )}
+            {history != null && Object.keys(history).sort().reverse().map((day) => {
+              const h = history[day] || {};
+              const entries = h.entries || [];
+              const graded = h.results != null;
+              const hits = graded ? entries.filter((e) => (h.results[e.id] || 0) > 0).length : null;
+              return (
+                <div key={day} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800">
+                    <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-300">{day}</span>
+                    <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-300">
+                      {graded ? `${hits}/${entries.length} homered` : "Pending — grades after games end"}
+                    </span>
+                  </div>
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {entries.map((e, i) => {
+                      const hr = graded ? h.results[e.id] : null;
+                      return (
+                        <div key={e.id + "-" + i} className="flex items-center gap-2 px-4 py-1.5">
+                          <span className="w-4 text-center text-[10px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
+                          {TEAM_LOGOS[e.team] && <img src={TEAM_LOGOS[e.team]} alt="" className="w-4 h-4 rounded-full object-contain bg-white shrink-0" />}
+                          <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{e.name}</span>
+                          <span className="text-[10px] font-bold text-slate-400 tabular-nums shrink-0">{e.score}</span>
+                          <span className="w-12 text-right text-[11px] font-extrabold shrink-0">
+                            {hr == null && !graded ? <span className="text-slate-300 dark:text-slate-600">·</span>
+                              : hr == null ? <span className="text-slate-300 dark:text-slate-600">—</span>
+                              : hr > 0 ? <span className="text-emerald-500">✅{hr > 1 ? " ×" + hr : ""}</span>
+                              : <span className="text-slate-300 dark:text-slate-600">—</span>}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
