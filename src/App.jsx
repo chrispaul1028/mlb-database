@@ -1008,7 +1008,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
                   </span>
                 </span>
                 <span className="shrink-0 flex items-center">
-                  <span className="w-10 text-center text-[11px] font-extrabold text-orange-500 dark:text-orange-400">{streak >= 5 ? "🔥" + streak : ""}</span>
+                  <span className="w-10 text-center text-[11px] font-extrabold text-orange-500 dark:text-orange-400">{streak >= 5 ? streak + "🔥" : ""}</span>
                   <span className="w-4 text-center text-[11px] font-extrabold uppercase text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbrOf(side)) }}>{sp.bats || ""}</span>
                 </span>
               </RowTag>
@@ -1842,7 +1842,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v66";
+const HRB_VERSION = "v67";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2239,7 +2239,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       </span>
                     </span>
                     {streaks[t.h.id] >= 5 && (
-                      <span className="ml-auto text-sm font-extrabold text-orange-500 shrink-0">🔥{streaks[t.h.id]}</span>
+                      <span className="ml-auto text-[10px] font-extrabold text-orange-500 shrink-0">{streaks[t.h.id]}🔥</span>
                     )}
                     <span className={(streaks[t.h.id] >= 5 ? "" : "ml-auto ") + "w-10 text-center shrink-0"}>
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
@@ -2290,7 +2290,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
             const isOpen = !!openPks[g.gamePk];
             const streakBadge = (s) => {
               const m = /^W(\d+)$/.exec(s.streak || "");
-              return m && Number(m[1]) >= 5 ? <span className="ml-1 text-[9px] font-extrabold text-orange-500">🔥{m[1]}</span> : null;
+              return m && Number(m[1]) >= 5 ? <span className="ml-1 text-[9px] font-extrabold text-orange-500">{m[1]}🔥</span> : null;
             };
             return (
               <div key={g.gamePk}
@@ -2338,7 +2338,18 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       })}
                     </span>
                     <span className={"w-20 text-center text-[10px] font-extrabold shrink-0 " + (state === "Live" ? "text-red-500" : "text-slate-400")}>
-                      {state === "Live" ? "LIVE" + (inn ? " · " + inn : "") : state === "Final" ? "Final" : timeLabel}
+                      {state === "Live" ? (
+                        <span>
+                          <span className="block text-[13px]">
+                            {g.linescore && g.linescore.currentInning != null
+                              ? (String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "▲ " : "▼ ") + g.linescore.currentInning
+                              : "Live"}
+                          </span>
+                          {g.linescore && g.linescore.outs != null && (
+                            <span className="block text-[8px] font-bold text-slate-400">{g.linescore.outs} OUT{g.linescore.outs === 1 ? "" : "S"}</span>
+                          )}
+                        </span>
+                      ) : state === "Final" ? "Final" : timeLabel}
                     </span>
                     <span className={"text-slate-300 dark:text-slate-600 text-[10px] shrink-0 transition-transform " + (isOpen ? "rotate-90" : "")}>▶</span>
                   </span>
@@ -2419,7 +2430,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                               </span>
                               {hasBbe && <span className="w-9 shrink-0" />}
                               <span className="w-11 shrink-0 text-center text-[11px] font-extrabold text-orange-500">
-                                {streaks[h.id] >= 5 ? "🔥" + streaks[h.id] : ""}
+                                {streaks[h.id] >= 5 ? streaks[h.id] + "🔥" : ""}
                               </span>
                             </div>
                           );
