@@ -1923,7 +1923,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v72";
+const HRB_VERSION = "v73";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2632,6 +2632,18 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </div>
               );
             })}
+            {history != null && Object.keys(history).length > 0 && (
+              <button
+                onClick={() => {
+                  if (window.confirm("Erase ALL saved history? This cannot be undone.")) {
+                    try { localStorage.removeItem("hrbHistory"); } catch {}
+                    setHistory({});
+                  }
+                }}
+                className="w-full text-center text-[10px] font-bold text-slate-400 py-3">
+                Reset history
+              </button>
+            )}
           </div>
         )}
       </div>
