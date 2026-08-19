@@ -1923,7 +1923,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v69";
+const HRB_VERSION = "v70";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2043,6 +2043,17 @@ function HRBoardTab({ players, onSelectPlayer }) {
             const todayBox = boxes[g.gamePk];
             let order = (todayBox && todayBox.teams && todayBox.teams[k] && todayBox.teams[k].battingOrder) || [];
             let pmap = (todayBox && todayBox.teams && todayBox.teams[k] && todayBox.teams[k].players) || {};
+            // Pin to the STARTING nine even mid-game: per-player battingOrder
+            // codes ending in 00 are starters ("300"), subs are "301"+ — bets
+            // are placed pregame, so the board must not drift with subs.
+            if (order.length) {
+              const starters = Object.values(pmap)
+                .filter((pl) => pl.battingOrder != null && Number(pl.battingOrder) % 100 === 0)
+                .sort((x, y) => Number(x.battingOrder) - Number(y.battingOrder))
+                .map((pl) => pl.person && pl.person.id)
+                .filter(Boolean);
+              if (starters.length >= 9) order = starters;
+            }
             const confirmed = order.length > 0;
             if (!confirmed) {
               const prev = prevByTeam[t.team && t.team.id];
@@ -2210,6 +2221,13 @@ function HRBoardTab({ players, onSelectPlayer }) {
     try {
       const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
       const hist = JSON.parse(localStorage.getItem("hrbHistory") || "{}");
+      // Freeze the day's board once first pitch happens anywhere: the graded
+      // slate must match the PREGAME board bets were placed from.
+      const anyStarted = (data || []).some(({ g }) => {
+        const st = g.status && g.status.abstractGameState;
+        return st === "Live" || st === "Final";
+      });
+      if (hist[day] && anyStarted) return;
       hist[day] = { entries: top.map((t) => ({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk })), results: (hist[day] && hist[day].results) || null };
       localStorage.setItem("hrbHistory", JSON.stringify(hist));
     } catch {}
@@ -2323,7 +2341,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       <span className="ml-auto text-[10px] font-extrabold text-orange-500 shrink-0">{streaks[t.h.id]}🔥</span>
                     )}
                     {streaks[t.h.id] <= -5 && (
-                      <span className="ml-auto text-[10px] font-extrabold text-sky-400 shrink-0">{-streaks[t.h.id]}🧊</span>
+                      <span className="ml-auto text-[10px] font-extrabold text-sky-400 shrink-0">{-streaks[t.h.id]}❄️</span>
                     )}
                     <span className={(Math.abs(streaks[t.h.id]) >= 5 ? "" : "ml-auto ") + "w-10 text-center shrink-0"}>
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
@@ -2377,7 +2395,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
               if (!m || Number(m[2]) < 5) return null;
               return m[1] === "W"
                 ? <span className="ml-1 text-[9px] font-extrabold text-orange-500">{m[2]}🔥</span>
-                : <span className="ml-1 text-[9px] font-extrabold text-sky-400">{m[2]}🧊</span>;
+                : <span className="ml-1 text-[9px] font-extrabold text-sky-400">{m[2]}❄️</span>;
             };
             return (
               <div key={g.gamePk}
@@ -2421,12 +2439,13 @@ function HRBoardTab({ players, onSelectPlayer }) {
                               {sd.pitcher && <span className="block text-[9px] font-bold text-slate-400 truncate">{sd.pitcher.name}{sd.pitcher.rec ? " (" + sd.pitcher.rec + ")" : ""}</span>}
                             </span>
                             {sc != null && (
-                              <span className="ml-auto flex items-center gap-1 shrink-0">
-                                <span className="text-lg font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{sc}</span>
-                                {state === "Live" && g.linescore && g.linescore.currentInning != null &&
-                                  ((String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "away" : "home") === kk) && (
-                                  <span className="text-red-500 text-[10px]">{kk === "away" ? "▲" : "▼"}</span>
-                                )}
+                              <span className="ml-auto flex items-center shrink-0">
+                                <span className="text-lg font-extrabold text-slate-800 dark:text-slate-100 tabular-nums min-w-[26px] text-right">{sc}</span>
+                                <span className="w-3.5 text-center text-red-500 text-[10px]">
+                                  {state === "Live" && g.linescore && g.linescore.currentInning != null &&
+                                    ((String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "away" : "home") === kk)
+                                    ? (kk === "away" ? "▲" : "▼") : ""}
+                                </span>
                               </span>
                             )}
                           </span>
@@ -2526,7 +2545,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                               </span>
                               {hasBbe && <span className="w-9 shrink-0" />}
                               <span className={"w-11 shrink-0 text-center text-[11px] font-extrabold " + (streaks[h.id] <= -5 ? "text-sky-400" : "text-orange-500")}>
-                                {streaks[h.id] >= 5 ? streaks[h.id] + "🔥" : streaks[h.id] <= -5 ? (-streaks[h.id]) + "🧊" : ""}
+                                {streaks[h.id] >= 5 ? streaks[h.id] + "🔥" : streaks[h.id] <= -5 ? (-streaks[h.id]) + "❄️" : ""}
                               </span>
                             </div>
                           );
@@ -2646,7 +2665,7 @@ const TABS = [
 ];
 
 export default function App() {
-  const [tab, setTab] = useState("teams");
+  const [tab, setTab] = useState("hrboard");
   const [sel, setSel] = useState(null);
   const [players, setPlayers] = useState(null);
   const [fatal, setFatal] = useState(null);
