@@ -1842,7 +1842,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v64";
+const HRB_VERSION = "v65";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -1859,7 +1859,11 @@ if (typeof window !== "undefined" && !window.__hrbTrap) {
       el.textContent = "⚠️ " + msg + " (tap to dismiss)";
     } catch {}
   };
-  window.addEventListener("error", (e) => show(String((e.error && e.error.stack && e.error.stack.split("\n").slice(0, 2).join(" ")) || e.message || e)));
+  window.addEventListener("error", (e) => {
+    const err = e.error || {};
+    const parts = [err.name, err.message || e.message, e.filename ? "@" + String(e.filename).split("/").pop() + ":" + e.lineno + ":" + e.colno : ""];
+    show(parts.filter(Boolean).join(" ") || String(e));
+  });
   window.addEventListener("unhandledrejection", (e) => show("async: " + String((e.reason && e.reason.message) || e.reason)));
 }
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
