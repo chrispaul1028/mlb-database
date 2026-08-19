@@ -1842,7 +1842,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v65";
+const HRB_VERSION = "v66";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2013,7 +2013,6 @@ function HRBoardTab({ players, onSelectPlayer }) {
     return () => { alive = false; };
   }, []);
   const todayLabel = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "2-digit", day: "2-digit" }).format(new Date());
-  if (selGame) return <HRBoundary onBack={() => setSelGame(null)}><GameDetail g={selGame} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)} /></HRBoundary>;
   const meta = (name, abbr) => {
     const list = myByName[hrbNrm(name)];
     if (!list || !list.length) return {};
@@ -2174,6 +2173,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
       return pm.bbe != null;
     })
   );
+  if (selGame) return <HRBoundary onBack={() => setSelGame(null)}><GameDetail g={selGame} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)} /></HRBoundary>;
   return (
     <div>
       <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
