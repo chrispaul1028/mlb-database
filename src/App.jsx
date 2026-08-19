@@ -1923,7 +1923,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v74";
+const HRB_VERSION = "v75";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2678,7 +2678,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3">
                   <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">Performance · {days.length} graded day{days.length > 1 ? "s" : ""}</div>
                   <div className="grid grid-cols-4 gap-2 text-center">
-                    {[["All", bucket(0, 99)], ["#1 pick", bucket(0, 0)], ["Top 5", bucket(0, 4)], ["6-15", bucket(5, 14)]].map(([lbl, v]) => (
+                    {[["All", bucket(0, 99)], ["#1 pick", bucket(0, 0)], ["Top 5", bucket(0, 4)], ["6-10", bucket(5, 14)]].map(([lbl, v]) => (
                       <span key={lbl}>
                         <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
                         <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
