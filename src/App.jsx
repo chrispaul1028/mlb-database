@@ -1800,7 +1800,7 @@ const HRB = {
   // can't dominate), and they MULTIPLY: a stingy pitcher shrinks the
   // whole score instead of just adding less. Missing data = ratio of 1.
   topN: 15,        // how many targets to rank
-  maxPerTeam: 2,   // diversity cap: at most this many hitters per team
+  maxPerTeam: 3,   // diversity cap: at most this many hitters per team
                    // in Top Targets (spreads picks across games)
   lgHitBrl: 8.5,   // league-average hitter Barrel %
   lgPitBrl: 8.5,   // league-average pitcher Barrel % against
@@ -1842,7 +1842,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v61";
+const HRB_VERSION = "v62";
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
@@ -1855,7 +1855,7 @@ const brlVsHand = (hm, hand) =>
 function HRBoardTab({ players, onSelectPlayer }) {
   const [data, setData] = useState(null);
   const [selGame, setSelGame] = useState(null);
-  const [view, setView] = useState("targets");  // targets | matchups | history
+  const [view, setView] = useState("matchups"); // matchups | targets | history
   const [history, setHistory] = useState(null);
   const [openPks, setOpenPks] = useState({});   // matchup accordion state
   const [streaks, setStreaks] = useState({});   // hitter id -> current hit streak
@@ -2085,8 +2085,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
         try {
           const gl = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${pid}/stats?stats=gameLog&group=hitting`)).json();
           const splits = (gl.stats && gl.stats[0] && gl.stats[0].splits) || [];
+          const todayET = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
           let n = 0;
           for (let j = splits.length - 1; j >= 0; j--) {
+            if (splits[j].date === todayET) continue; // streak = entering today
             const st = splits[j].stat || {};
             if ((st.atBats ?? 0) === 0) continue; // skip games without an AB
             if ((st.hits ?? 0) > 0) n++;
@@ -2279,8 +2281,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         try {
                           const gl = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${pid}/stats?stats=gameLog&group=hitting`)).json();
                           const sp2 = (gl.stats && gl.stats[0] && gl.stats[0].splits) || [];
+                          const todayET2 = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
                           let n2 = 0;
                           for (let j2 = sp2.length - 1; j2 >= 0; j2--) {
+                            if (sp2[j2].date === todayET2) continue;
                             const st2 = sp2[j2].stat || {};
                             if ((st2.atBats ?? 0) === 0) continue;
                             if ((st2.hits ?? 0) > 0) n2++; else break;
@@ -2417,6 +2421,30 @@ function HRBoardTab({ players, onSelectPlayer }) {
             {history != null && Object.keys(history).length === 0 && (
               <div className="text-center text-sm text-slate-400 py-12">No history yet — each day's Top {HRB.topN} is saved automatically from this device.</div>
             )}
+            {history != null && (() => {
+              const days = Object.values(history).filter((h) => h.results);
+              if (!days.length) return null;
+              const bucket = (lo, hi) => {
+                let hit = 0, tot = 0;
+                for (const h of days) (h.entries || []).forEach((e, i) => {
+                  if (i >= lo && i <= hi) { tot++; if ((h.results[e.id] || 0) > 0) hit++; }
+                });
+                return tot ? `${hit}/${tot} (${Math.round((hit / tot) * 100)}%)` : "—";
+              };
+              return (
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3">
+                  <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">Performance · {days.length} graded day{days.length > 1 ? "s" : ""}</div>
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    {[["All", bucket(0, 99)], ["#1 pick", bucket(0, 0)], ["Top 5", bucket(0, 4)], ["6-15", bucket(5, 14)]].map(([lbl, v]) => (
+                      <span key={lbl}>
+                        <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
+                        <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
             {history != null && Object.keys(history).sort().reverse().map((day) => {
               const h = history[day] || {};
               const entries = h.entries || [];
