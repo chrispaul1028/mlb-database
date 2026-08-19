@@ -1923,7 +1923,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v73";
+const HRB_VERSION = "v74";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2188,6 +2188,97 @@ function HRBoardTab({ players, onSelectPlayer }) {
     if (top.length >= HRB.topN) break;
   }
   // Hide the BBE column entirely until batted-ball data exists in Airtable
+  const [btProgress, setBtProgress] = useState(null); // null | "3/14" | "done"
+  const runBacktest = async (days = 14) => {
+    if (btProgress && btProgress !== "done") return;
+    const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
+    let hist = {};
+    try { hist = JSON.parse(localStorage.getItem("hrbHistory") || "{}"); } catch {}
+    const shrinkB = (v, lg, n) => (v != null && n != null && n > 0) ? (v * n + lg * HRB.shrinkK) / (n + HRB.shrinkK) : v;
+    const cappedB = (r) => Math.min(Math.max(r, 0.2), HRB.capRatio);
+    for (let d = 1; d <= days; d++) {
+      const day = dayStr(d);
+      setBtProgress(`${d}/${days}`);
+      if (hist[day]) continue; // never overwrite real logged days
+      try {
+        const sched = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${day}&hydrate=team,probablePitcher,venue`)).json();
+        const gs = ((sched.dates && sched.dates[0] && sched.dates[0].games) || []).filter((g) => g.status && g.status.abstractGameState === "Final");
+        if (!gs.length) continue;
+        const boxes = {};
+        await Promise.all(gs.map(async (g) => {
+          try { boxes[g.gamePk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json(); } catch {}
+        }));
+        const pids = [...new Set(gs.flatMap((g) => ["away", "home"].map((k) => g.teams[k].probablePitcher && g.teams[k].probablePitcher.id).filter(Boolean)))];
+        const hand = {};
+        for (let i = 0; i < pids.length; i += 90) {
+          try {
+            const ppl = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${pids.slice(i, i + 90).join(",")}`)).json();
+            for (const person of ppl.people || []) hand[person.id] = person.pitchHand && person.pitchHand.code;
+          } catch {}
+        }
+        const cands = [];
+        for (const g of gs) {
+          const box = boxes[g.gamePk];
+          if (!box || !box.teams) continue;
+          const rank = g.venue && g.venue.name ? parkRankFor(g.venue.name) : null;
+          const parkF = rank != null ? 1 + ((15.5 - rank) / 14.5) * HRB.parkSwing : 1;
+          for (const k of ["away", "home"]) {
+            const t = g.teams[k];
+            const ab = NAME_TO_ABBR[((t.team && t.team.name) || "").toLowerCase()] || toAbbr((t.team && t.team.name) || "") || "";
+            const oppT = g.teams[k === "away" ? "home" : "away"];
+            const oppAb = NAME_TO_ABBR[((oppT.team && oppT.team.name) || "").toLowerCase()] || "";
+            const opp = oppT.probablePitcher || null;
+            const om = opp ? meta(opp.fullName, oppAb) : {};
+            const oh = opp ? hand[opp.id] : null;
+            const pmap = (box.teams[k] && box.teams[k].players) || {};
+            const starters = Object.values(pmap)
+              .filter((pl) => pl.battingOrder != null && Number(pl.battingOrder) % 100 === 0)
+              .sort((x, y) => Number(x.battingOrder) - Number(y.battingOrder));
+            starters.forEach((pl, i) => {
+              const nm = pl.person && pl.person.fullName;
+              if (!nm) return;
+              const hm = meta(nm, ab);
+              const useBrl = brlVsHand(hm, oh);
+              if (useBrl == null) return;
+              const isSplit = oh === "L" ? hm.brlL != null : oh === "R" ? hm.brlR != null : false;
+              const effBbe = hm.bbe == null ? null : isSplit && oh === "L" ? hm.bbe * 0.3 : isSplit && oh === "R" ? hm.bbe * 0.7 : hm.bbe;
+              const totAdj = shrinkB(hm.barrel, HRB.lgHitBrl, hm.bbe != null ? hm.bbe : HRB.assumeBBE);
+              const prior = totAdj != null ? totAdj : HRB.lgHitBrl;
+              const adjBrl = isSplit
+                ? shrinkB(useBrl, prior, effBbe != null ? effBbe : HRB.assumeBBE * 0.3)
+                : shrinkB(useBrl, HRB.lgHitBrl, effBbe != null ? effBbe : HRB.assumeBBE);
+              const adjPitBrl = shrinkB(om.barrel, HRB.lgPitBrl, om.bbe != null ? om.bbe : HRB.assumeBBE);
+              const adjHr9 = shrinkB(om.hr9, HRB.lgHr9, om.bbe != null ? om.bbe : HRB.assumeBBE);
+              const hitR = Math.pow(cappedB(adjBrl / HRB.lgHitBrl), HRB.eHit);
+              const pitR = adjPitBrl != null ? Math.pow(cappedB(adjPitBrl / HRB.lgPitBrl), HRB.ePitBrl) : 1;
+              const hr9R = adjHr9 != null ? Math.pow(cappedB(adjHr9 / HRB.lgHr9), HRB.eHr9) : 1;
+              const spotF = 1 - HRB.spotDrop * i;
+              let score = 100 * hitR * pitR * hr9R * parkF * spotF; // wx omitted in backtest
+              if (om.barrel == null && om.hr9 == null) score *= HRB.unknownSP;
+              const st = pl.stats && pl.stats.batting;
+              cands.push({ id: pl.person.id, name: nm, team: ab, score, hr: (st && st.homeRuns) || 0 });
+            });
+          }
+        }
+        cands.sort((a, b) => b.score - a.score);
+        const picked = [];
+        const perT = {};
+        for (const c of cands) {
+          if ((perT[c.team] || 0) >= HRB.maxPerTeam) continue;
+          perT[c.team] = (perT[c.team] || 0) + 1;
+          picked.push(c);
+          if (picked.length >= HRB.topN) break;
+        }
+        if (!picked.length) continue;
+        const results = {};
+        for (const c of picked) results[c.id] = c.hr;
+        hist[day] = { ver: "backtest", entries: picked.map((c) => ({ id: c.id, name: c.name, team: c.team, score: Math.round(c.score), pk: 0 })), results };
+        try { localStorage.setItem("hrbHistory", JSON.stringify(hist)); } catch {}
+        setHistory({ ...hist });
+      } catch {}
+    }
+    setBtProgress("done");
+  };
   const topIdsKey = top.map((t) => t.h.id).join(",");
   useEffect(() => {
     if (!topIdsKey) return;
@@ -2632,6 +2723,14 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </div>
               );
             })}
+            {history != null && (
+              <button
+                onClick={() => runBacktest(14)}
+                disabled={btProgress != null && btProgress !== "done"}
+                className="w-full text-center text-[11px] font-extrabold text-blue-600 dark:text-blue-400 py-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                {btProgress == null ? "Run 14-day backtest (current scoring)" : btProgress === "done" ? "Backtest complete ✓" : "Backtesting… " + btProgress}
+              </button>
+            )}
             {history != null && Object.keys(history).length > 0 && (
               <button
                 onClick={() => {
