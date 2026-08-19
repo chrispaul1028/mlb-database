@@ -1842,7 +1842,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v62";
+const HRB_VERSION = "v63";
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
@@ -2386,15 +2386,14 @@ function HRBoardTab({ players, onSelectPlayer }) {
                             <div key={h.id} className="flex items-center gap-2">
                               <span className="w-4 text-center text-[10px] font-extrabold text-slate-300 dark:text-slate-600 tabular-nums shrink-0">{i + 1}</span>
                               <span className="w-4 text-center text-[10px] font-extrabold text-slate-500 dark:text-slate-200 shrink-0">{h.bats || ""}</span>
-                              <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
-                                {h.name}
-                                {streaks[h.id] >= 5 && <span className="ml-1 text-[11px] font-extrabold text-orange-500">🔥{streaks[h.id]}</span>}
-                              </span>
+                              <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{h.name}</span>
                               <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(hb)}>
                                 {hb != null ? Number(hb).toFixed(1) : "—"}
                               </span>
                               {hasBbe && <span className="w-9 shrink-0" />}
-                              <span className="w-11 shrink-0" />
+                              <span className="w-11 shrink-0 text-center text-[11px] font-extrabold text-orange-500">
+                                {streaks[h.id] >= 5 ? "🔥" + streaks[h.id] : ""}
+                              </span>
                             </div>
                           );
                         })}
@@ -2517,6 +2516,14 @@ export default function App() {
   const [tab, setTab] = useState("teams");
   const [sel, setSel] = useState(null);
   const [players, setPlayers] = useState(null);
+  const [fatal, setFatal] = useState(null);
+  useEffect(() => {
+    const onErr = (e) => setFatal(String((e.error && e.error.message) || e.message || e.reason || e));
+    const onRej = (e) => setFatal("async: " + String((e.reason && e.reason.message) || e.reason));
+    window.addEventListener("error", onErr);
+    window.addEventListener("unhandledrejection", onRej);
+    return () => { window.removeEventListener("error", onErr); window.removeEventListener("unhandledrejection", onRej); };
+  }, []);
   const [teams, setTeams] = useState([]);
   const [selTeam, setSelTeam] = useState(null);
   const [error, setError] = useState(null);
@@ -2566,6 +2573,12 @@ export default function App() {
           onBack={() => setSelTeam(null)}
           onSelectPlayer={setSel}
         />
+      )}
+      {fatal && (
+        <div className="fixed inset-x-2 top-2 z-50 bg-red-600 text-white text-[11px] font-bold rounded-xl p-3 break-words shadow-lg" style={{ marginTop: "env(safe-area-inset-top)" }}>
+          ⚠️ {fatal}
+          <button className="block mt-1 underline" onClick={() => setFatal(null)}>dismiss</button>
+        </div>
       )}
       {players && tab === "hrboard" && <HRBoardTab players={players} onSelectPlayer={setSel} />}
       {players && tab === "players" && <PlayersTab players={players} onSelect={setSel} />}
