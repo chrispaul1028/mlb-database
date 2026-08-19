@@ -1880,16 +1880,16 @@ const HRB = {
   // Each factor is a ratio to league average (capped so one freak stat
   // can't dominate), and they MULTIPLY: a stingy pitcher shrinks the
   // whole score instead of just adding less. Missing data = ratio of 1.
-  topN: 15,        // how many targets to rank
-  maxPerTeam: 3,   // diversity cap: at most this many hitters per team
+  topN: 10,        // how many targets to rank
+  maxPerTeam: 2,   // diversity cap: at most this many hitters per team
                    // in Top Targets (spreads picks across games)
   lgHitBrl: 8.5,   // league-average hitter Barrel %
   lgPitBrl: 8.5,   // league-average pitcher Barrel % against
   lgHr9: 1.10,     // league-average HR/9
   capRatio: 2.5,   // max any single ratio can contribute
   eHit: 1.0,       // exponent on the hitter's barrel ratio
-  ePitBrl: 0.65,   // exponent on SP Brl%-against ratio (red flags sting harder)
-  eHr9: 0.65,      // exponent on SP HR/9 ratio (red flags sting harder)
+  ePitBrl: 0.5,    // exponent on SP Brl%-against ratio
+  eHr9: 0.5,       // exponent on SP HR/9 ratio
   parkSwing: 0.12, // park factor range: rank 1 = x1.12 ... rank 30 = x0.88
   spotDrop: 0.015, // score decay per lineup spot (fewer PAs hitting lower)
   assumeBBE: 40,   // players with NO batted-ball data are treated as
@@ -1923,7 +1923,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v70";
+const HRB_VERSION = "v71";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
