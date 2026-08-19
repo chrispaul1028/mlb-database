@@ -1923,7 +1923,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v71";
+const HRB_VERSION = "v72";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2228,7 +2228,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         return st === "Live" || st === "Final";
       });
       if (hist[day] && anyStarted) return;
-      hist[day] = { entries: top.map((t) => ({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk })), results: (hist[day] && hist[day].results) || null };
+      hist[day] = { ver: HRB_VERSION, entries: top.map((t) => ({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk })), results: (hist[day] && hist[day].results) || null };
       localStorage.setItem("hrbHistory", JSON.stringify(hist));
     } catch {}
   }, [topIdsKey]);
@@ -2605,7 +2605,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
               return (
                 <div key={day} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800">
-                    <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-300">{day}</span>
+                    <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-300">{day}{h.ver && <span className="ml-1 font-bold text-slate-400 dark:text-slate-500">· {h.ver}</span>}</span>
                     <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-300">
                       {graded ? `${hits}/${entries.length} homered` : "Pending — grades after games end"}
                     </span>
