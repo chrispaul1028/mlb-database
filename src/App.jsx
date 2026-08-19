@@ -1842,7 +1842,26 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v63";
+const HRB_VERSION = "v64";
+// Crash reporter that survives React unmounting: writes straight to the DOM.
+if (typeof window !== "undefined" && !window.__hrbTrap) {
+  window.__hrbTrap = true;
+  const show = (msg) => {
+    try {
+      let el = document.getElementById("hrb-crash");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "hrb-crash";
+        el.style.cssText = "position:fixed;top:env(safe-area-inset-top,8px);left:8px;right:8px;z-index:99999;background:#dc2626;color:#fff;font:700 11px -apple-system,sans-serif;padding:10px 12px;border-radius:12px;word-break:break-word;box-shadow:0 4px 16px rgba(0,0,0,.3)";
+        el.onclick = () => el.remove();
+        document.body.appendChild(el);
+      }
+      el.textContent = "⚠️ " + msg + " (tap to dismiss)";
+    } catch {}
+  };
+  window.addEventListener("error", (e) => show(String((e.error && e.error.stack && e.error.stack.split("\n").slice(0, 2).join(" ")) || e.message || e)));
+  window.addEventListener("unhandledrejection", (e) => show("async: " + String((e.reason && e.reason.message) || e.reason)));
+}
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
@@ -2295,24 +2314,28 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     }
                   }}
                   className="w-full text-left px-4 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
-                  <span className="flex items-center gap-2">
-                    {TEAM_LOGOS[sides.away.abbr] && <img src={TEAM_LOGOS[sides.away.abbr]} alt="" className="w-7 h-7 rounded-full object-contain bg-white shrink-0" />}
-                    <span className="min-w-0">
-                      <span className="block text-xs font-extrabold" style={{ color: teamColor(sides.away.abbr) }}>{sides.away.abbr}{streakBadge(sides.away)}</span>
-                      <span className="block text-[9px] font-bold text-slate-400 tabular-nums">{sides.away.rec}</span>
-                      {sides.away.pitcher && <span className="block text-[8px] font-bold text-slate-400 truncate">{sides.away.pitcher.name.split(" ").slice(-1)[0]}{sides.away.pitcher.rec ? " (" + sides.away.pitcher.rec + ")" : ""}</span>}
+<span className="flex items-center gap-2">
+                    <span className="flex-1 min-w-0 space-y-1.5">
+                      {["away", "home"].map((kk) => {
+                        const sd = sides[kk];
+                        const sc = kk === "away" ? aScore : hScore;
+                        return (
+                          <span key={kk} className="flex items-center gap-2">
+                            {TEAM_LOGOS[sd.abbr] && <img src={TEAM_LOGOS[sd.abbr]} alt="" className="w-6 h-6 rounded-full object-contain bg-white shrink-0" />}
+                            <span className="min-w-0">
+                              <span className="block text-xs font-extrabold" style={{ color: teamColor(sd.abbr) }}>
+                                {sd.abbr}<span className="ml-1 font-bold text-slate-400 text-[9px] tabular-nums">{sd.rec}</span>{streakBadge(sd)}
+                              </span>
+                              {sd.pitcher && <span className="block text-[9px] font-bold text-slate-400 truncate">{sd.pitcher.name}{sd.pitcher.rec ? " (" + sd.pitcher.rec + ")" : ""}</span>}
+                            </span>
+                            {sc != null && <span className="ml-auto text-lg font-extrabold text-slate-800 dark:text-slate-100 tabular-nums shrink-0">{sc}</span>}
+                          </span>
+                        );
+                      })}
                     </span>
-                    {aScore != null && <span className="text-xl font-extrabold text-slate-800 dark:text-slate-100 tabular-nums shrink-0">{aScore}</span>}
-                    <span className={"flex-1 text-center text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-slate-400")}>
+                    <span className={"w-20 text-center text-[10px] font-extrabold shrink-0 " + (state === "Live" ? "text-red-500" : "text-slate-400")}>
                       {state === "Live" ? "LIVE" + (inn ? " · " + inn : "") : state === "Final" ? "Final" : timeLabel}
                     </span>
-                    {hScore != null && <span className="text-xl font-extrabold text-slate-800 dark:text-slate-100 tabular-nums shrink-0">{hScore}</span>}
-                    <span className="min-w-0 text-right">
-                      <span className="block text-xs font-extrabold" style={{ color: teamColor(sides.home.abbr) }}>{sides.home.abbr}{streakBadge(sides.home)}</span>
-                      <span className="block text-[9px] font-bold text-slate-400 tabular-nums">{sides.home.rec}</span>
-                      {sides.home.pitcher && <span className="block text-[8px] font-bold text-slate-400 truncate">{sides.home.pitcher.name.split(" ").slice(-1)[0]}{sides.home.pitcher.rec ? " (" + sides.home.pitcher.rec + ")" : ""}</span>}
-                    </span>
-                    {TEAM_LOGOS[sides.home.abbr] && <img src={TEAM_LOGOS[sides.home.abbr]} alt="" className="w-7 h-7 rounded-full object-contain bg-white shrink-0" />}
                     <span className={"text-slate-300 dark:text-slate-600 text-[10px] shrink-0 transition-transform " + (isOpen ? "rotate-90" : "")}>▶</span>
                   </span>
                 </button>
