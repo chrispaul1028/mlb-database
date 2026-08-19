@@ -247,6 +247,58 @@ function BioRow({ k, v }) {
 }
 
 // ═══════════════ PLAYER DETAIL ═══════════════════════════════════
+function TrendsChart({ p }) {
+  const [gl, setGl] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const s = await (await fetch(`https://statsapi.mlb.com/api/v1/people/search?names=${encodeURIComponent(p.name)}`)).json();
+        const person = (s.people || [])[0];
+        if (!person) { if (alive) setGl([]); return; }
+        const g = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${person.id}/stats?stats=gameLog&group=hitting`)).json();
+        const splits = (g.stats && g.stats[0] && g.stats[0].splits) || [];
+        if (alive) setGl(splits.filter((x) => x.stat && x.stat.atBats != null).slice(-30));
+      } catch { if (alive) setGl([]); }
+    })();
+    return () => { alive = false; };
+  }, [p.id]);
+  if (gl == null || gl.length < 3) return null;
+  const sum = (f) => gl.reduce((a, x) => a + (x.stat[f] || 0), 0);
+  const hrTot = sum("homeRuns"), hits = sum("hits"), abs = sum("atBats");
+  const max = Math.max(3, ...gl.map((x) => x.stat.hits || 0));
+  return (
+    <div className="px-4 mt-6">
+      <div className="text-[11px] font-bold tracking-widest uppercase mb-2 px-1 text-slate-500 dark:text-slate-400">Trends · Last {gl.length} Games</div>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3">
+        <div className="flex items-end gap-[2px] h-16">
+          {gl.map((x, i2) => {
+            const h = x.stat.hits || 0;
+            const hr = (x.stat.homeRuns || 0) > 0;
+            return (
+              <span key={i2}
+                className={"flex-1 rounded-t " + (hr ? "bg-orange-500" : h > 0 ? "bg-emerald-400 dark:bg-emerald-500" : "bg-slate-200 dark:bg-slate-700")}
+                style={{ height: Math.max(8, (h / max) * 100) + "%" }} />
+            );
+          })}
+        </div>
+        <div className="flex justify-between mt-1 text-[8px] font-bold text-slate-400">
+          <span>{gl[0].date}</span><span>{gl[gl.length - 1].date}</span>
+        </div>
+        <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+          {[["HR", hrTot], ["Hits", hits], ["AVG", abs ? (hits / abs).toFixed(3).replace(/^0/, "") : "—"]].map(([lbl, v]) => (
+            <span key={lbl}>
+              <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
+              <span className="block text-sm font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
+            </span>
+          ))}
+        </div>
+        <div className="text-[9px] text-slate-400 mt-2">Bar height = hits per game · orange = homered · gray = hitless</div>
+      </div>
+    </div>
+  );
+}
+
 function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
   useEffect(() => { window.scrollTo(0, 0); }, []);
   const act = activeOf(p);
@@ -276,6 +328,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
       </div>
 
       <div className="px-4 -mt-3">
+        {(p.rating2k != null || currentSalary(p) > 0 || nextEvent(p)) && (
         <div className="grid grid-cols-3 gap-2">
           <Tile
             value={p.rating2k != null ? Math.round(p.rating2k) : "—"}
@@ -303,7 +356,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
               />
             );
           })()}
-        </div>
+        </div>)}
 
         {mode === "full" && (p.height || p.weight || p.age || p.draft || p.birthplace || p.draftYear) && (
           <>
@@ -399,6 +452,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
           </>
         )}
       </div>
+      {mode === "full" && <TrendsChart p={p} />}
     </div>
   );
 }
@@ -438,10 +492,36 @@ function TeamPill({ team }) {
 // ═══════════════ TAB: PLAYER HUB ═════════════════════════════════
 function PlayersTab({ players, onSelect }) {
   const [q, setQ] = useState("");
-  const list = useMemo(() => players.filter((p) => matchesQuery(p, q)), [players, q]);
+  const [pill, setPill] = useState("active");
+  const isRetired = (p) => String(p.status || "").toLowerCase().includes("retire");
+  const list = useMemo(
+    () => players.filter((p) => (pill === "retired" ? isRetired(p) : !isRetired(p))).filter((p) => matchesQuery(p, q)),
+    [players, q, pill]
+  );
+  const pillsBar = (
+    <div className="flex gap-2 px-4 mt-3">
+      {[["active", "Active"], ["contracts", "Contracts"], ["retired", "Retired"]].map(([id, label]) => (
+        <button key={id} onClick={() => setPill(id)}
+          className={"flex-1 py-2 rounded-full text-[11px] font-extrabold " + (pill === id
+            ? "bg-blue-600 text-white"
+            : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-800")}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+  if (pill === "contracts") return (
+    <div>
+      <ListHeader title="Players" q={q} setQ={setQ} />
+      {pillsBar}
+      <ContractsTab players={players} onSelect={onSelect} embedded extQ={q} />
+    </div>
+  );
   return (
     <div>
       <ListHeader title="Players" q={q} setQ={setQ} />
+      {pillsBar}
+      {pill === "retired" && list.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No retired players saved yet.</div>}
       <div className="px-4 pb-28 mt-4">
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
           {list.map((p) => (
@@ -558,8 +638,9 @@ function nextSeason(s) {
   return (Number(m[1]) + 1) + "-" + (Number(m[2]) + 1);
 }
 
-function ContractsTab({ players, onSelect }) {
-  const [q, setQ] = useState("");
+function ContractsTab({ players, onSelect, embedded = false, extQ }) {
+  const [qState, setQ] = useState("");
+  const q = embedded ? (extQ || "") : qState;
   const [faOnly, setFaOnly] = useState(false);
   const list = useMemo(
     () =>
@@ -587,7 +668,7 @@ function ContractsTab({ players, onSelect }) {
   );
   return (
     <div>
-      <ListHeader title="Contracts" q={q} setQ={setQ} />
+      {!embedded && <ListHeader title="Contracts" q={qState} setQ={setQ} />}
       <div className="px-4 mt-3 flex gap-2">
         {[["All", false], ["Free Agency " + (startYear(CURRENT_SEASON) + 1), true]].map(([lbl, v]) => (
           <button key={lbl} onClick={() => setFaOnly(v)}
@@ -1842,7 +1923,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v67";
+const HRB_VERSION = "v68";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2332,7 +2413,15 @@ function HRBoardTab({ players, onSelectPlayer }) {
                               </span>
                               {sd.pitcher && <span className="block text-[9px] font-bold text-slate-400 truncate">{sd.pitcher.name}{sd.pitcher.rec ? " (" + sd.pitcher.rec + ")" : ""}</span>}
                             </span>
-                            {sc != null && <span className="ml-auto text-lg font-extrabold text-slate-800 dark:text-slate-100 tabular-nums shrink-0">{sc}</span>}
+                            {sc != null && (
+                              <span className="ml-auto flex items-center gap-1 shrink-0">
+                                {state === "Live" && g.linescore && g.linescore.currentInning != null &&
+                                  ((String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "away" : "home") === kk) && (
+                                  <span className="text-red-500 text-[10px]">{kk === "away" ? "▲" : "▼"}</span>
+                                )}
+                                <span className="text-lg font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{sc}</span>
+                              </span>
+                            )}
                           </span>
                         );
                       })}
@@ -2340,10 +2429,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     <span className={"w-20 text-center text-[10px] font-extrabold shrink-0 " + (state === "Live" ? "text-red-500" : "text-slate-400")}>
                       {state === "Live" ? (
                         <span>
-                          <span className="block text-[13px]">
+                          <span className="block text-[12px]">
                             {g.linescore && g.linescore.currentInning != null
-                              ? (String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "▲ " : "▼ ") + g.linescore.currentInning
-                              : "Live"}
+                              ? (String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "TOP " : "BOT ") + g.linescore.currentInning
+                              : "LIVE"}
                           </span>
                           {g.linescore && g.linescore.outs != null && (
                             <span className="block text-[8px] font-bold text-slate-400">{g.linescore.outs} OUT{g.linescore.outs === 1 ? "" : "S"}</span>
@@ -2542,11 +2631,10 @@ function ComingSoon({ icon, title, blurb }) {
 
 // ═══════════════ APP SHELL ═══════════════════════════════════════
 const TABS = [
+  { id: "hrboard", label: "HR Board", icon: "🎯" },
   { id: "teams", label: "Teams", icon: "⚾" },
   { id: "players", label: "Players", icon: "👤" },
-  { id: "hrboard", label: "HR Board", icon: "🎯" },
   { id: "stats", label: "Stats", icon: "📊" },
-  { id: "contracts", label: "Contracts", icon: "💰" },
   { id: "draft", label: "Draft", icon: "🎓" },
 ];
 
@@ -2620,7 +2708,6 @@ export default function App() {
       )}
       {players && tab === "hrboard" && <HRBoardTab players={players} onSelectPlayer={setSel} />}
       {players && tab === "players" && <PlayersTab players={players} onSelect={setSel} />}
-      {players && tab === "contracts" && <ContractsTab players={players} onSelect={setSel} />}
       {players && tab === "stats" && <StatsTab players={players} onSelect={setSel} />}
       {players && tab === "draft" && <DraftTab players={players} onSelect={setSel} />}
 
