@@ -945,7 +945,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
   return (
     <div>
       <div className="px-4 pb-5" style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)", backgroundColor: teamColor(abbrOf(side)) }}>
-        <button onClick={onBack} className="text-white/90 text-sm font-semibold mb-3">‹ HR Board</button>
+        <button onClick={onBack} className="text-white/90 text-sm font-semibold mb-3">‹ Matchups</button>
         <div className="flex items-center justify-between">
           {["away", "home"].map((k) => {
             const ab = abbrOf(k);
@@ -1923,7 +1923,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v68";
+const HRB_VERSION = "v69";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2194,8 +2194,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
             if (splits[j].date === todayET) continue; // streak = entering today
             const st = splits[j].stat || {};
             if ((st.atBats ?? 0) === 0) continue; // skip games without an AB
-            if ((st.hits ?? 0) > 0) n++;
-            else break;
+            if ((st.hits ?? 0) > 0) { if (n < 0) break; n++; }
+            else { if (n > 0) break; n--; }
           }
           out[pid] = n;
         } catch { out[pid] = 0; }
@@ -2258,11 +2258,11 @@ function HRBoardTab({ players, onSelectPlayer }) {
   return (
     <div>
       <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
-        <div className="text-2xl font-extrabold tracking-tight">HR Board ({todayLabel}) <span className="text-[10px] font-bold text-white/50 align-middle">{HRB_VERSION}</span></div>
+        <div className="text-2xl font-extrabold tracking-tight">Matchups ({todayLabel}) <span className="text-[10px] font-bold text-white/50 align-middle">{HRB_VERSION}</span></div>
       </div>
       <div className="px-4 pb-28">
         <div className="flex gap-2 mt-3">
-          {[["matchups", "Matchups"], ["targets", "Top Targets"], ["history", "History"]].map(([id, label]) => (
+          {[["matchups", "Matchups"], ["targets", "HR Targets"], ["history", "History"]].map(([id, label]) => (
             <button key={id} onClick={() => setView(id)}
               className={"flex-1 py-2 rounded-full text-[11px] font-extrabold " + (view === id
                 ? "bg-blue-600 text-white"
@@ -2273,7 +2273,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         </div>
         {view === "targets" && top.length > 0 && (
           <>
-            <div className="text-[11px] font-bold tracking-widest uppercase mt-4 mb-2 px-1 text-slate-500 dark:text-slate-400">🎯 Top Targets</div>
+            <div className="text-[11px] font-bold tracking-widest uppercase mt-4 mb-2 px-1 text-slate-500 dark:text-slate-400">🎯 HR Targets</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
               {top.map((t, i) => (
                 <button key={t.h.id + "-" + t.g.gamePk} onClick={() => setSelGame(t.g)}
@@ -2322,7 +2322,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     {streaks[t.h.id] >= 5 && (
                       <span className="ml-auto text-[10px] font-extrabold text-orange-500 shrink-0">{streaks[t.h.id]}🔥</span>
                     )}
-                    <span className={(streaks[t.h.id] >= 5 ? "" : "ml-auto ") + "w-10 text-center shrink-0"}>
+                    {streaks[t.h.id] <= -5 && (
+                      <span className="ml-auto text-[10px] font-extrabold text-sky-400 shrink-0">{-streaks[t.h.id]}🧊</span>
+                    )}
+                    <span className={(Math.abs(streaks[t.h.id]) >= 5 ? "" : "ml-auto ") + "w-10 text-center shrink-0"}>
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
                       <span className="block text-[12px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{Math.round(t.score)}</span>
                     </span>
@@ -2370,8 +2373,11 @@ function HRBoardTab({ players, onSelectPlayer }) {
             const rank = g.venue && g.venue.name ? parkRankFor(g.venue.name) : null;
             const isOpen = !!openPks[g.gamePk];
             const streakBadge = (s) => {
-              const m = /^W(\d+)$/.exec(s.streak || "");
-              return m && Number(m[1]) >= 5 ? <span className="ml-1 text-[9px] font-extrabold text-orange-500">{m[1]}🔥</span> : null;
+              const m = /^([WL])(\d+)$/.exec(s.streak || "");
+              if (!m || Number(m[2]) < 5) return null;
+              return m[1] === "W"
+                ? <span className="ml-1 text-[9px] font-extrabold text-orange-500">{m[2]}🔥</span>
+                : <span className="ml-1 text-[9px] font-extrabold text-sky-400">{m[2]}🧊</span>;
             };
             return (
               <div key={g.gamePk}
@@ -2391,7 +2397,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
                             if (sp2[j2].date === todayET2) continue;
                             const st2 = sp2[j2].stat || {};
                             if ((st2.atBats ?? 0) === 0) continue;
-                            if ((st2.hits ?? 0) > 0) n2++; else break;
+                            if ((st2.hits ?? 0) > 0) { if (n2 < 0) break; n2++; }
+                            else { if (n2 > 0) break; n2--; }
                           }
                           return [pid, n2];
                         } catch { return [pid, 0]; }
@@ -2415,18 +2422,18 @@ function HRBoardTab({ players, onSelectPlayer }) {
                             </span>
                             {sc != null && (
                               <span className="ml-auto flex items-center gap-1 shrink-0">
+                                <span className="text-lg font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{sc}</span>
                                 {state === "Live" && g.linescore && g.linescore.currentInning != null &&
                                   ((String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "away" : "home") === kk) && (
                                   <span className="text-red-500 text-[10px]">{kk === "away" ? "▲" : "▼"}</span>
                                 )}
-                                <span className="text-lg font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{sc}</span>
                               </span>
                             )}
                           </span>
                         );
                       })}
                     </span>
-                    <span className={"w-20 text-center text-[10px] font-extrabold shrink-0 " + (state === "Live" ? "text-red-500" : "text-slate-400")}>
+                    <span className={"w-20 text-center text-[10px] font-extrabold shrink-0 " + (state === "Live" ? "text-slate-800 dark:text-white" : "text-slate-400")}>
                       {state === "Live" ? (
                         <span>
                           <span className="block text-[12px]">
@@ -2518,8 +2525,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
                                 {hb != null ? Number(hb).toFixed(1) : "—"}
                               </span>
                               {hasBbe && <span className="w-9 shrink-0" />}
-                              <span className="w-11 shrink-0 text-center text-[11px] font-extrabold text-orange-500">
-                                {streaks[h.id] >= 5 ? streaks[h.id] + "🔥" : ""}
+                              <span className={"w-11 shrink-0 text-center text-[11px] font-extrabold " + (streaks[h.id] <= -5 ? "text-sky-400" : "text-orange-500")}>
+                                {streaks[h.id] >= 5 ? streaks[h.id] + "🔥" : streaks[h.id] <= -5 ? (-streaks[h.id]) + "🧊" : ""}
                               </span>
                             </div>
                           );
@@ -2631,7 +2638,7 @@ function ComingSoon({ icon, title, blurb }) {
 
 // ═══════════════ APP SHELL ═══════════════════════════════════════
 const TABS = [
-  { id: "hrboard", label: "HR Board", icon: "🎯" },
+  { id: "hrboard", label: "Matchups", icon: "🎯" },
   { id: "teams", label: "Teams", icon: "⚾" },
   { id: "players", label: "Players", icon: "👤" },
   { id: "stats", label: "Stats", icon: "📊" },
