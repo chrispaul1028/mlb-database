@@ -1899,6 +1899,8 @@ const HRB = {
                    // samples pull hard toward average; 300+ BBE barely move.
                    // Activates per-player only when Batted Balls has data.
   projMult: 0.9,   // discount applied when the lineup is only projected
+  coldMult: 0.9,   // discount for hitters on a 5+ game hitless drought
+                   // (owner's prior — the logged streak data will judge it)
   unknownSP: 0.85, // discount when the opposing SP has NO barrel/HR9 data
                    // (a blind matchup shouldn't rank beside a proven one)
   // Weather (applied only when data exists; domes stay neutral):
@@ -1923,7 +1925,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v76";
+const HRB_VERSION = "v77";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2173,6 +2175,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const spotF = 1 - HRB.spotDrop * i;
         let score = 100 * hitR * pitR * hr9R * parkF * spotF * wxF;
         if (om.barrel == null && om.hr9 == null) score *= HRB.unknownSP;
+        const stk = streaks[h.id];
+        if (stk != null && stk <= -5) score *= HRB.coldMult;
         if (!s.confirmed) score *= HRB.projMult;
         targets.push({ h, spot: i, side: s, opp, oppAbbr: oppSide.abbr, oppHand: opp && opp.hand, brl: adjBrl, brlRaw: useBrl, oppBrl: adjPitBrl, oppHr9: adjHr9, park: rank, score, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
       }
@@ -2279,7 +2283,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
     }
     setBtProgress("done");
   };
-  const topIdsKey = top.map((t) => t.h.id).join(",");
+  const topIdsKey = targets.slice(0, 25).map((t) => t.h.id).join(",");
   useEffect(() => {
     if (!topIdsKey) return;
     let alive = true;
