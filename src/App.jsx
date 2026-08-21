@@ -1923,7 +1923,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v75";
+const HRB_VERSION = "v76";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2319,10 +2319,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
         return st === "Live" || st === "Final";
       });
       if (hist[day] && anyStarted) return;
-      hist[day] = { ver: HRB_VERSION, entries: top.map((t) => ({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk })), results: (hist[day] && hist[day].results) || null };
+      hist[day] = { ver: HRB_VERSION, entries: top.map((t) => ({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk, st: streaks[t.h.id] ?? null })), results: (hist[day] && hist[day].results) || null };
       localStorage.setItem("hrbHistory", JSON.stringify(hist));
     } catch {}
-  }, [topIdsKey]);
+  }, [topIdsKey, streaks]);
   // Grade past days (which of the 15 homered) the first time History opens
   useEffect(() => {
     if (view !== "history") return;
