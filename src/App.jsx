@@ -2073,7 +2073,9 @@ const HRB = {
   ePitBrl: 0.5,    // exponent on SP Brl%-against ratio
   eHr9: 0.5,       // exponent on SP HR/9 ratio
   parkSwing: 0.12, // park factor range: rank 1 = x1.12 ... rank 30 = x0.88
-  spotDrop: 0.015, // score decay per lineup spot (fewer PAs hitting lower)
+  // Real plate-appearance curve by lineup spot (ratio to leadoff).
+  // 9th hitter sees ~18% fewer PAs than leadoff — measured, not vibes.
+  paCurve: [1, 0.978, 0.953, 0.931, 0.908, 0.884, 0.860, 0.839, 0.817],
   assumeBBE: 40,   // players with NO batted-ball data are treated as
                    // having this small a sample (unproven != trustworthy)
   shrinkK: 60,     // sample-size regression: stats behave as if K extra
@@ -2104,10 +2106,11 @@ function hrbPitBrlClass(v) {
 function hrbHr9Class(v) {
   if (v == null) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
   if (v >= HRB.hr9Green) return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300";
-  if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
-  return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+  if (v <= 0.70) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
+  if (v <= 0.90) return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+  return "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300";
 }
-const HRB_VERSION = "v82";
+const HRB_VERSION = "v83";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2354,9 +2357,14 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const hitR = Math.pow(capped(adjBrl / HRB.lgHitBrl), HRB.eHit);
         const pitR = adjPitBrl != null ? Math.pow(capped(adjPitBrl / HRB.lgPitBrl), HRB.ePitBrl) : 1;
         const hr9R = adjHr9 != null ? Math.pow(capped(adjHr9 / HRB.lgHr9), HRB.eHr9) : 1;
-        const spotF = 1 - HRB.spotDrop * i;
+        const spotF = HRB.paCurve[Math.min(i, 8)];
         let score = 100 * hitR * pitR * hr9R * parkF * spotF * wxF;
         if (om.barrel == null && om.hr9 == null) score *= HRB.unknownSP;
+        if (om.hr9 != null && om.bbe != null && om.bbe >= HRB.qualBBE) {
+          if (om.hr9 <= HRB.hr9RedMax) score *= HRB.hr9RedMult;
+          else if (om.hr9 <= HRB.hr9AmberMax) score *= HRB.hr9AmberMult;
+          else if (om.hr9 >= HRB.hr9HotMin) score *= HRB.hr9HotMult;
+        }
         const stk = streaks[h.id];
         if (stk != null && stk <= -5) score *= HRB.coldMult;
         if (!s.confirmed) score *= HRB.projMult;
@@ -2559,7 +2567,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </button>
               ))}
             </div>
-            <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score: 100 = league-avg matchup. Hitter Brl%, SP Brl% against & SP HR/9 as capped ratios to league avg (small samples regressed by BBE), multiplied with park + lineup spot + weather (temp/wind) · projected ×{HRB.projMult}</div>
+            <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score: 100 = league-avg matchup. Hitter Brl%, SP Brl% against & SP HR/9 as capped ratios to league avg (small samples regressed by BBE), multiplied with park + lineup spot (PA curve) + weather · SP HR/9 tail steps on 200+ BBE (red ×{HRB.hr9RedMult}, amber ×{HRB.hr9AmberMult}, 1.9+ ×{HRB.hr9HotMult}) · projected ×{HRB.projMult}</div>
           </>
         )}
         {view === "matchups" && (<>
