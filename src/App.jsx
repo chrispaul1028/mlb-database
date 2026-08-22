@@ -1245,6 +1245,65 @@ function seasonsAhead(n) {
 }
 const LINE_COLORS = ["#2563eb", "#16a34a", "#dc2626", "#9333ea", "#f59e0b", "#0891b2"];
 
+function FieldView({ roster, abbr, onSelectPlayer }) {
+  const used = new Set();
+  const pick = (aliases) => {
+    const cands = roster
+      .filter((p) => aliases.includes(String(p.pos || "").toUpperCase()) && !used.has(p.id))
+      .sort((a, b) => (b.rating2k ?? -1) - (a.rating2k ?? -1));
+    const hit = cands[0] || null;
+    if (hit) used.add(hit.id);
+    return hit;
+  };
+  const SPOTS = [
+    { lbl: "CF", x: 50, y: 16, aliases: ["CF", "OF"] },
+    { lbl: "LF", x: 17, y: 26, aliases: ["LF", "OF"] },
+    { lbl: "RF", x: 83, y: 26, aliases: ["RF", "OF"] },
+    { lbl: "SS", x: 37, y: 44, aliases: ["SS"] },
+    { lbl: "2B", x: 63, y: 44, aliases: ["2B"] },
+    { lbl: "3B", x: 24, y: 58, aliases: ["3B"] },
+    { lbl: "1B", x: 76, y: 58, aliases: ["1B"] },
+    { lbl: "P", x: 50, y: 60, aliases: ["P", "SP", "RHP", "LHP"] },
+    { lbl: "C", x: 50, y: 86, aliases: ["C"] },
+  ];
+  const chip = (r) => r == null ? "bg-slate-900/85 text-white"
+    : r >= 90 ? "bg-amber-400 text-slate-900"
+    : r >= 85 ? "bg-emerald-500 text-white"
+    : r >= 70 ? "bg-slate-900/85 text-white"
+    : "bg-rose-600 text-white";
+  return (
+    <div className="mt-4">
+      <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm"
+        style={{ paddingBottom: "108%", background: "radial-gradient(circle at 50% 92%, #b45309 0%, #b45309 9%, #16a34a 9.5%, #15803d 46%, #166534 100%)" }}>
+        <div className="absolute" style={{ left: "50%", top: "72%", width: "58%", paddingBottom: "58%", transform: "translate(-50%,-50%) rotate(45deg)", border: "2px solid rgba(255,255,255,.35)", background: "rgba(180,83,9,.55)", borderRadius: "4px" }} />
+        {SPOTS.map((s, i) => {
+          const p = pick(s.aliases);
+          return (
+            <button key={i} disabled={!p} onClick={p ? () => onSelectPlayer(p) : undefined}
+              className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
+              style={{ left: s.x + "%", top: s.y + "%" }}>
+              <span className="relative">
+                {p && p.photo ? (
+                  <img src={p.photo} alt="" className="w-11 h-11 rounded-full object-cover object-top bg-white border-2 border-white/80 shadow-md" loading="lazy" />
+                ) : (
+                  <span className="w-11 h-11 rounded-full flex items-center justify-center text-[10px] font-extrabold bg-white/25 text-white/80 border-2 border-dashed border-white/50 shadow-md">{s.lbl}</span>
+                )}
+                <span className={"absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 rounded-full text-[8px] font-extrabold tabular-nums shadow " + chip(p && p.rating2k)}>
+                  {p && p.rating2k != null ? (Math.round(p.rating2k) >= 90 ? "⭐" : "") + Math.round(p.rating2k) : s.lbl}
+                </span>
+              </span>
+              <span className="mt-2 text-[8px] font-bold text-white/95 max-w-[64px] truncate drop-shadow">
+                {p ? p.name.split(" ").slice(-1)[0] : ""}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="text-[9px] text-slate-400 mt-2 px-1">Best-rated player at each position · chip = The Show rating (⭐ 90+) · tap for profile</div>
+    </div>
+  );
+}
+
 function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
   useEffect(() => { window.scrollTo(0, 0); }, []);
   const abbr = team.abbr || toAbbr(team.name);
@@ -1336,7 +1395,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
         </div>
 
         <div className="flex gap-2 mt-4">
-          {[["roster", "Roster"], ["contracts", "Contracts"], ["charts", "Charts"]].map(([k, lbl]) => (
+          {[["roster", "Roster"], ["field", "Field"], ["contracts", "Contracts"], ["charts", "Charts"]].map(([k, lbl]) => (
             <button key={k} onClick={() => setSeg(k)}
               className={"flex-1 py-2 rounded-full text-xs font-bold transition-colors " + (seg === k
                 ? "text-white"
@@ -1450,6 +1509,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
             </div>
           </div>
         ))}
+        {seg === "field" && <FieldView roster={roster} abbr={toAbbr(team.name)} onSelectPlayer={onSelectPlayer} />}
         {seg === "contracts" && (
           <>
             <div className="flex items-baseline justify-between mt-6 mb-2 px-1">
@@ -1925,7 +1985,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v77";
+const HRB_VERSION = "v79";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2323,7 +2383,14 @@ function HRBoardTab({ players, onSelectPlayer }) {
         return st === "Live" || st === "Final";
       });
       if (hist[day] && anyStarted) return;
-      hist[day] = { ver: HRB_VERSION, entries: top.map((t) => ({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk, st: streaks[t.h.id] ?? null })), results: (hist[day] && hist[day].results) || null };
+      const more = [];
+      const seenIds = new Set(top.map((t) => t.h.id));
+      for (const t of targets) {
+        if (seenIds.has(t.h.id)) continue;
+        more.push({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk });
+        if (more.length >= 10) break;
+      }
+      hist[day] = { ver: HRB_VERSION, more, entries: top.map((t) => ({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk, st: streaks[t.h.id] ?? null })), results: (hist[day] && hist[day].results) || null };
       localStorage.setItem("hrbHistory", JSON.stringify(hist));
     } catch {}
   }, [topIdsKey, streaks]);
@@ -2340,7 +2407,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const h = hist[day];
         if (day >= today || h.results) continue;
         const results = {};
-        for (const e of h.entries || []) {
+        for (const e of (h.entries || []).concat(h.more || [])) {
           try {
             if (!boxCache[e.pk]) boxCache[e.pk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${e.pk}/boxscore`)).json();
             const b = boxCache[e.pk];
@@ -2384,6 +2451,17 @@ function HRBoardTab({ players, onSelectPlayer }) {
             </button>
           ))}
         </div>
+        {view === "targets" && top.length > 0 && (() => {
+          const avg5 = top.slice(0, 5).reduce((a, t) => a + t.score, 0) / Math.min(5, top.length);
+          const tier = avg5 >= 230 ? ["Strong slate", "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300", "top-5 avg " + Math.round(avg5)]
+            : avg5 >= 190 ? ["Average slate", "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300", "top-5 avg " + Math.round(avg5)]
+            : ["Thin slate — consider smaller stakes", "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300", "top-5 avg " + Math.round(avg5)];
+          return (
+            <div className={"mt-3 px-3 py-2 rounded-xl text-[11px] font-extrabold flex items-center justify-between " + tier[1]}>
+              <span>{tier[0]}</span><span className="font-bold opacity-70">{tier[2]}</span>
+            </div>
+          );
+        })()}
         {view === "targets" && top.length > 0 && (
           <>
             <div className="text-[11px] font-bold tracking-widest uppercase mt-4 mb-2 px-1 text-slate-500 dark:text-slate-400">🎯 HR Targets</div>
@@ -2723,6 +2801,27 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         </div>
                       );
                     })}
+                    {(h.more || []).length > 0 && (
+                      <>
+                        <div className="px-4 py-1 text-[9px] font-extrabold tracking-widest uppercase text-slate-400 bg-slate-50 dark:bg-slate-800/60">Ranked 11–20 at lock</div>
+                        {(h.more || []).map((e, i) => {
+                          const hr = graded ? h.results[e.id] : null;
+                          return (
+                            <div key={"m" + e.id + "-" + i} className="flex items-center gap-2 px-4 py-1">
+                              <span className="w-4 text-center text-[9px] font-extrabold text-slate-300 dark:text-slate-600 tabular-nums shrink-0">{i + 11}</span>
+                              {TEAM_LOGOS[e.team] && <img src={TEAM_LOGOS[e.team]} alt="" className="w-3.5 h-3.5 rounded-full object-contain bg-white shrink-0" />}
+                              <span className="flex-1 min-w-0 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">{e.name}</span>
+                              <span className="text-[9px] font-bold text-slate-400 tabular-nums shrink-0">{e.score}</span>
+                              <span className="w-10 text-right text-[10px] font-extrabold shrink-0">
+                                {!graded ? <span className="text-slate-300 dark:text-slate-600">·</span>
+                                  : (hr || 0) > 0 ? <span className="text-emerald-500">✅{hr > 1 ? " ×" + hr : ""}</span>
+                                  : <span className="text-slate-200 dark:text-slate-700">—</span>}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
                   </div>
                 </div>
               );
