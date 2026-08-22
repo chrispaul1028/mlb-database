@@ -751,14 +751,20 @@ function currentSalary(p) {
 }
 
 const ROLE_ORDER = ["Batting", "Pitching", "Bullpen", "Bench"];
-const CAT_ORDER = ["__C__", "__IF__", "__OF__", "__P__"];
-const CAT_LABELS = { __C__: "Catchers", __IF__: "Infielders", __OF__: "Outfielders", __P__: "Pitchers" };
+const CAT_ORDER = ["__P__", "__C__", "__IF__", "__OF__", "__DH__"];
+const CAT_LABELS = { __P__: "Pitchers", __C__: "Catchers", __IF__: "Infielders", __OF__: "Outfielders", __DH__: "Designated Hitters" };
 const catOf = (p) => {
-  const pos = String(p.pos || "").toUpperCase();
-  if (["P", "SP", "RP", "CP", "CL", "LHP", "RHP"].includes(pos)) return "__P__";
-  if (pos === "C") return "__C__";
-  if (["LF", "CF", "RF", "OF"].includes(pos)) return "__OF__";
-  return "__IF__"; // 1B/2B/3B/SS/IF/UT/DH and anything else position-player
+  // Split multi-position strings ("OF/1B", "CF-RF", "1B, OF") into tokens
+  // and classify by the FIRST recognizable one — Bellinger-proof.
+  const tokens = String(p.pos || "").toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  for (const t of tokens) {
+    if (["P", "SP", "RP", "CP", "CL", "LHP", "RHP"].includes(t)) return "__P__";
+    if (t === "C") return "__C__";
+    if (["LF", "CF", "RF", "OF"].includes(t)) return "__OF__";
+    if (["1B", "2B", "3B", "SS", "IF", "UT", "INF"].includes(t)) return "__IF__";
+    if (t === "DH") return "__DH__";
+  }
+  return "__IF__";
 };
 const UNIT_LABELS = { Batting: "Batting Order", Pitching: "Pitching Rotation", Bullpen: "Bullpen", Bench: "Bench" };
 // "R/R" -> throws with the right hand -> RHP
@@ -1584,7 +1590,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                           if (st && (st.avg != null || st.hr != null || st.era != null || st.w != null || st.l != null || st.whip != null || st.sv != null)) {
                             return (
                               <span className="flex gap-2 shrink-0">
-                                {((role === "Pitching" || role === "Bullpen" || (role === "__all__" && ["Pitching", "Bullpen"].includes(unitOf(p))))
+                                {((role === "Pitching" || role === "Bullpen" || ["Pitching", "Bullpen"].includes(unitOf(p)) || catOf(p) === "__P__")
                                   ? [["W", st.w != null ? String(Math.round(st.w)) : null], ["L", st.l != null ? String(Math.round(st.l)) : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["WHIP", st.whip != null ? Number(st.whip).toFixed(2) : null]]
                                   : [["AVG", st.avg != null ? Number(st.avg).toFixed(3).replace(/^0/, "") : null], ["HR", st.hr != null ? String(Math.round(st.hr)) : null], ["RBI", st.rbi != null ? String(Math.round(st.rbi)) : null], ["OPS", st.ops != null ? Number(st.ops).toFixed(3).replace(/^0/, "") : null]]
                                 ).map(([lbl, v]) => (
@@ -2101,7 +2107,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v81";
+const HRB_VERSION = "v82";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
