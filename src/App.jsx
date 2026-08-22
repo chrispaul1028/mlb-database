@@ -1255,42 +1255,58 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
     if (hit) used.add(hit.id);
     return hit;
   };
+  // Base corners (viewBox 0-100 x, 0-108 y): home 50,84 · 1B 74,60 · 2B 50,36 · 3B 26,60
   const SPOTS = [
-    { lbl: "CF", x: 50, y: 16, aliases: ["CF", "OF"] },
-    { lbl: "LF", x: 17, y: 26, aliases: ["LF", "OF"] },
-    { lbl: "RF", x: 83, y: 26, aliases: ["RF", "OF"] },
-    { lbl: "SS", x: 37, y: 44, aliases: ["SS"] },
-    { lbl: "2B", x: 63, y: 44, aliases: ["2B"] },
-    { lbl: "3B", x: 24, y: 58, aliases: ["3B"] },
-    { lbl: "1B", x: 76, y: 58, aliases: ["1B"] },
+    { lbl: "CF", x: 50, y: 12, aliases: ["CF", "OF"] },
+    { lbl: "LF", x: 16, y: 22, aliases: ["LF", "OF"] },
+    { lbl: "RF", x: 84, y: 22, aliases: ["RF", "OF"] },
+    { lbl: "2B", x: 62, y: 44, aliases: ["2B"] },
+    { lbl: "SS", x: 38, y: 44, aliases: ["SS"] },
+    { lbl: "3B", x: 26, y: 60, aliases: ["3B"] },
+    { lbl: "1B", x: 74, y: 60, aliases: ["1B"] },
     { lbl: "P", x: 50, y: 60, aliases: ["P", "SP", "RHP", "LHP"] },
-    { lbl: "C", x: 50, y: 86, aliases: ["C"] },
+    { lbl: "C", x: 50, y: 90, aliases: ["C"] },
   ];
-  const chip = (r) => r == null ? "bg-slate-900/85 text-white"
-    : r >= 90 ? "bg-amber-400 text-slate-900"
-    : r >= 85 ? "bg-emerald-500 text-white"
-    : r >= 70 ? "bg-slate-900/85 text-white"
+  const oaaChip = (v) => v == null ? "bg-slate-900/70 text-white/70"
+    : v >= 8 ? "bg-amber-400 text-slate-900"
+    : v >= 3 ? "bg-emerald-500 text-white"
+    : v > -3 ? "bg-slate-900/85 text-white"
     : "bg-rose-600 text-white";
   return (
     <div className="mt-4">
       <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm"
-        style={{ paddingBottom: "108%", background: "radial-gradient(circle at 50% 92%, #b45309 0%, #b45309 9%, #16a34a 9.5%, #15803d 46%, #166534 100%)" }}>
-        <div className="absolute" style={{ left: "50%", top: "72%", width: "58%", paddingBottom: "58%", transform: "translate(-50%,-50%) rotate(45deg)", border: "2px solid rgba(255,255,255,.35)", background: "rgba(180,83,9,.55)", borderRadius: "4px" }} />
+        style={{ paddingBottom: "108%", background: "linear-gradient(180deg,#166534 0%,#15803d 60%,#166534 100%)" }}>
+        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 108" preserveAspectRatio="none">
+          <polygon points="50,84 74,60 50,36 26,60" fill="#b45309" fillOpacity="0.75" stroke="rgba(255,255,255,0.55)" strokeWidth="0.7" />
+          <circle cx="50" cy="60" r="5" fill="#b45309" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
+          <circle cx="50" cy="84" r="7" fill="#b45309" fillOpacity="0.9" />
+          {[[50, 84], [74, 60], [50, 36], [26, 60]].map(([bx, by], i) => (
+            <rect key={i} x={bx - 1.6} y={by - 1.6} width="3.2" height="3.2" fill="#fff"
+              transform={"rotate(45 " + bx + " " + by + ")"} />
+          ))}
+        </svg>
         {SPOTS.map((s, i) => {
           const p = pick(s.aliases);
           return (
             <button key={i} disabled={!p} onClick={p ? () => onSelectPlayer(p) : undefined}
               className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
-              style={{ left: s.x + "%", top: s.y + "%" }}>
+              style={{ left: s.x + "%", top: (s.y / 1.08) + "%" }}>
               <span className="relative">
                 {p && p.photo ? (
                   <img src={p.photo} alt="" className="w-11 h-11 rounded-full object-cover object-top bg-white border-2 border-white/80 shadow-md" loading="lazy" />
                 ) : (
                   <span className="w-11 h-11 rounded-full flex items-center justify-center text-[10px] font-extrabold bg-white/25 text-white/80 border-2 border-dashed border-white/50 shadow-md">{s.lbl}</span>
                 )}
-                <span className={"absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 rounded-full text-[8px] font-extrabold tabular-nums shadow " + chip(p && p.rating2k)}>
-                  {p && p.rating2k != null ? (Math.round(p.rating2k) >= 90 ? "⭐" : "") + Math.round(p.rating2k) : s.lbl}
-                </span>
+                {p && cleanNo(p.no) && (
+                  <span className="absolute top-1/2 -translate-y-1/2 -left-2.5 px-1 rounded text-[8px] font-extrabold bg-white/85 text-slate-700 tabular-nums shadow">
+                    #{cleanNo(p.no)}
+                  </span>
+                )}
+                {p && (
+                  <span className={"absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 rounded-full text-[8px] font-extrabold tabular-nums shadow " + oaaChip(p.oaa)}>
+                    {p.oaa != null ? (p.oaa > 0 ? "+" : "") + Math.round(p.oaa) : "—"}
+                  </span>
+                )}
               </span>
               <span className="mt-2 text-[8px] font-bold text-white/95 max-w-[64px] truncate drop-shadow">
                 {p ? p.name.split(" ").slice(-1)[0] : ""}
@@ -1299,7 +1315,7 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
           );
         })}
       </div>
-      <div className="text-[9px] text-slate-400 mt-2 px-1">Best-rated player at each position · chip = The Show rating (⭐ 90+) · tap for profile</div>
+      <div className="text-[9px] text-slate-400 mt-2 px-1">Chip = Outs Above Average (Statcast fielding): gold +8 elite · green +3 · red −3 or worse · tap for profile</div>
     </div>
   );
 }
@@ -1985,7 +2001,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v79";
+const HRB_VERSION = "v80";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2378,11 +2394,13 @@ function HRBoardTab({ players, onSelectPlayer }) {
       const hist = JSON.parse(localStorage.getItem("hrbHistory") || "{}");
       // Freeze the day's board once first pitch happens anywhere: the graded
       // slate must match the PREGAME board bets were placed from.
-      const anyStarted = (data || []).some(({ g }) => {
+      const games = data || [];
+      const startedN = games.filter(({ g }) => {
         const st = g.status && g.status.abstractGameState;
         return st === "Live" || st === "Final";
-      });
-      if (hist[day] && anyStarted) return;
+      }).length;
+      const majorityStarted = games.length > 0 && startedN > games.length / 2;
+      if (hist[day] && majorityStarted) return;
       const more = [];
       const seenIds = new Set(top.map((t) => t.h.id));
       for (const t of targets) {
@@ -2453,12 +2471,12 @@ function HRBoardTab({ players, onSelectPlayer }) {
         </div>
         {view === "targets" && top.length > 0 && (() => {
           const avg5 = top.slice(0, 5).reduce((a, t) => a + t.score, 0) / Math.min(5, top.length);
-          const tier = avg5 >= 230 ? ["Strong slate", "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300", "top-5 avg " + Math.round(avg5)]
-            : avg5 >= 190 ? ["Average slate", "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300", "top-5 avg " + Math.round(avg5)]
-            : ["Thin slate — consider smaller stakes", "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300", "top-5 avg " + Math.round(avg5)];
+          const tier = avg5 >= 220 ? ["Strong slate", "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"]
+            : avg5 >= 195 ? ["Average slate", "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300"]
+            : ["Thin slate — consider smaller stakes", "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"];
           return (
-            <div className={"mt-3 px-3 py-2 rounded-xl text-[11px] font-extrabold flex items-center justify-between " + tier[1]}>
-              <span>{tier[0]}</span><span className="font-bold opacity-70">{tier[2]}</span>
+            <div className={"mt-3 px-3 py-2 rounded-xl text-[11px] font-extrabold text-center " + tier[1]}>
+              {tier[0]}
             </div>
           );
         })()}
