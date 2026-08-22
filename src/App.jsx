@@ -113,10 +113,31 @@ function matchesQuery(p, q) {
 
 
 // ═══════════════ SHARED PIECES ═══════════════════════════════════
+const MLB_ID_CACHE = {};
 function Avatar({ p, size }) {
   const px = size === "lg" ? "w-20 h-20 text-2xl" : "w-11 h-11 text-sm";
+  const key = String(p.name || "").toLowerCase();
+  const [mid, setMid] = useState(MLB_ID_CACHE[key]);
+  useEffect(() => {
+    if (p.photo || MLB_ID_CACHE[key] !== undefined) return;
+    let alive = true;
+    MLB_ID_CACHE[key] = null; // claim so parallel rows don't double-fetch
+    fetch(`https://statsapi.mlb.com/api/v1/people/search?names=${encodeURIComponent(p.name)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const person = (d.people || [])[0];
+        MLB_ID_CACHE[key] = person ? person.id : null;
+        if (alive) setMid(MLB_ID_CACHE[key]);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [key]);
   if (p.photo) {
-    return <img src={p.photo} alt={p.name} className={px + " rounded-full object-cover object-top bg-slate-200 shrink-0"} />;
+    return <img src={p.photo} alt={p.name} className={px + " rounded-full object-cover object-top bg-white shrink-0"} />;
+  }
+  if (mid) {
+    return <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + mid + "/headshot/silo/current"}
+      alt={p.name} className={px + " rounded-full object-cover object-top bg-white shrink-0"} loading="lazy" />;
   }
   const no = cleanNo(p.no);
   const label = no ? "#" + no : p.name.split(" ").map((w) => w[0]).slice(0, 2).join("");
@@ -459,6 +480,11 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
 
 // ═══════════════ LIST HEADER (shared) ════════════════════════════
 function ListHeader({ title, q, setQ, placeholder }) {
+  if (!setQ) return (
+    <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
+      <div className="text-2xl font-extrabold tracking-tight">{title}</div>
+    </div>
+  );
   return (
     <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
       <div className="text-2xl font-extrabold tracking-tight">{title}</div>
@@ -725,6 +751,15 @@ function currentSalary(p) {
 }
 
 const ROLE_ORDER = ["Batting", "Pitching", "Bullpen", "Bench"];
+const CAT_ORDER = ["__C__", "__IF__", "__OF__", "__P__"];
+const CAT_LABELS = { __C__: "Catchers", __IF__: "Infielders", __OF__: "Outfielders", __P__: "Pitchers" };
+const catOf = (p) => {
+  const pos = String(p.pos || "").toUpperCase();
+  if (["P", "SP", "RP", "CP", "CL", "LHP", "RHP"].includes(pos)) return "__P__";
+  if (pos === "C") return "__C__";
+  if (["LF", "CF", "RF", "OF"].includes(pos)) return "__OF__";
+  return "__IF__"; // 1B/2B/3B/SS/IF/UT/DH and anything else position-player
+};
 const UNIT_LABELS = { Batting: "Batting Order", Pitching: "Pitching Rotation", Bullpen: "Bullpen", Bench: "Bench" };
 // "R/R" -> throws with the right hand -> RHP
 function pitcherHand(p) {
@@ -1148,7 +1183,7 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
   const pickConf = (k) => { setConf(k); setDiv(null); };
   return (
     <div>
-      <ListHeader title="Teams" q={q} setQ={setQ} placeholder="Search teams or players…" />
+      <ListHeader title="Teams" />
       <div className="px-4 pb-28">
         <div className="flex gap-2 mt-4">
           {[["all", "All"], ["al", "American League"], ["nl", "National League"]].map(([k, lbl]) => (
@@ -1320,12 +1355,73 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
   );
 }
 
+let MLB_TEAMID_MAP = null;
+function TeamFormChart({ teamName }) {
+  const [games, setGames] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        if (!MLB_TEAMID_MAP) {
+          const d = await (await fetch("https://statsapi.mlb.com/api/v1/teams?sportId=1")).json();
+          MLB_TEAMID_MAP = {};
+          for (const t of d.teams || []) MLB_TEAMID_MAP[String(t.name).toLowerCase()] = t.id;
+        }
+        const tid = MLB_TEAMID_MAP[String(teamName).toLowerCase()];
+        if (!tid) { if (alive) setGames([]); return; }
+        const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
+        const sched = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${tid}&startDate=${dayStr(30)}&endDate=${dayStr(0)}`)).json();
+        const gs = (sched.dates || []).flatMap((d) => d.games || [])
+          .filter((g) => g.status && g.status.abstractGameState === "Final")
+          .map((g) => {
+            const home = g.teams.home.team.id === tid;
+            const us = home ? g.teams.home : g.teams.away;
+            const them = home ? g.teams.away : g.teams.home;
+            return { runs: us.score ?? 0, won: (us.score ?? 0) > (them.score ?? 0), date: g.officialDate || g.gameDate };
+          })
+          .slice(-20);
+        if (alive) setGames(gs);
+      } catch { if (alive) setGames([]); }
+    })();
+    return () => { alive = false; };
+  }, [teamName]);
+  if (games == null) return <div className="text-center text-xs text-slate-400 py-10">Loading form…</div>;
+  if (!games.length) return <div className="text-center text-xs text-slate-400 py-10">No recent completed games found.</div>;
+  const wins = games.filter((g) => g.won).length;
+  const runs = games.reduce((a, g) => a + g.runs, 0);
+  const max = Math.max(6, ...games.map((g) => g.runs));
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3 mt-3">
+      <div className="flex items-end gap-[3px] h-24">
+        {games.map((g, i) => (
+          <span key={i}
+            className={"flex-1 rounded-t " + (g.won ? "bg-emerald-400 dark:bg-emerald-500" : "bg-rose-300 dark:bg-rose-500/70")}
+            style={{ height: Math.max(6, (g.runs / max) * 100) + "%" }}
+            title={g.date + ": " + g.runs + " runs"} />
+        ))}
+      </div>
+      <div className="flex justify-between mt-1 text-[8px] font-bold text-slate-400">
+        <span>{String(games[0].date).slice(5)}</span><span>{String(games[games.length - 1].date).slice(5)}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+        {[["Last " + games.length, wins + "-" + (games.length - wins)], ["Runs/Gm", (runs / games.length).toFixed(1)], ["Total Runs", runs]].map(([lbl, v]) => (
+          <span key={lbl}>
+            <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
+            <span className="block text-sm font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
+          </span>
+        ))}
+      </div>
+      <div className="text-[9px] text-slate-400 mt-2">Bar height = runs scored that game · green = win, red = loss · last 20 games</div>
+    </div>
+  );
+}
+
 function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
   useEffect(() => { window.scrollTo(0, 0); }, []);
   const abbr = team.abbr || toAbbr(team.name);
   const [seg, setSeg] = useState("roster");
   const [roleFilter, setRoleFilter] = useState(null);
-  const [chartMode, setChartMode] = useState("cap");
+  const [chartMode, setChartMode] = useState("form");
   const [capSeason, setCapSeason] = useState(null);
   const roster = players.filter((p) => {
     if (p.teamId && p.teamId === team.id) return true; // exact Airtable link - no naming needed
@@ -1435,13 +1531,16 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
             ))}
           </div>
         )}
-        {seg === "roster" && (roleFilter ? orderedRoles.filter((role) => role === roleFilter) : ["__all__"]).map((role) => (
+        {seg === "roster" && (roleFilter ? orderedRoles.filter((role) => role === roleFilter) : CAT_ORDER).map((role) => (
           <div key={role}>
-            <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">{role === "__all__" ? "Roster" : (UNIT_LABELS[role] || role)}</div>
+            <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">{CAT_LABELS[role] || UNIT_LABELS[role] || role}</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
-              {(role === "__all__" ? [...roster] : groups[role])
+              {(CAT_LABELS[role] ? roster.filter((p) => catOf(p) === role) : groups[role])
                 .sort((a, b) => {
-                  if (role === "__all__") return String(a.name).localeCompare(String(b.name));
+                  if (CAT_LABELS[role]) {
+                    const last = (n) => String(n).split(" ").slice(-1)[0];
+                    return last(a.name).localeCompare(last(b.name)) || String(a.name).localeCompare(String(b.name));
+                  }
                   if (role === "Bench") {
                     const r = statusRank(a) - statusRank(b);
                     if (r !== 0) return r;
@@ -1566,7 +1665,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
           return (
             <>
               <div className="flex gap-2 mt-4">
-                {[["cap", "Cap Outlook"], ["timeline", "Timeline"], ["trends", "Trends"]].map(([k, lbl]) => (
+                {[["form", "Form"], ["cap", "Cap Outlook"], ["timeline", "Timeline"], ["trends", "Trends"]].map(([k, lbl]) => (
                   <button key={k} onClick={() => setChartMode(k)}
                     className={"flex-1 py-1.5 rounded-full text-[11px] font-bold " + (chartMode === k
                       ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900"
@@ -1575,6 +1674,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                   </button>
                 ))}
               </div>
+              {chartMode === "form" && <TeamFormChart teamName={team.name} />}
 
               {chartMode === "cap" && (() => {
                 const totals = seasons.map((s) => ({
@@ -2001,7 +2101,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v80";
+const HRB_VERSION = "v81";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2268,97 +2368,6 @@ function HRBoardTab({ players, onSelectPlayer }) {
     if (top.length >= HRB.topN) break;
   }
   // Hide the BBE column entirely until batted-ball data exists in Airtable
-  const [btProgress, setBtProgress] = useState(null); // null | "3/14" | "done"
-  const runBacktest = async (days = 14) => {
-    if (btProgress && btProgress !== "done") return;
-    const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
-    let hist = {};
-    try { hist = JSON.parse(localStorage.getItem("hrbHistory") || "{}"); } catch {}
-    const shrinkB = (v, lg, n) => (v != null && n != null && n > 0) ? (v * n + lg * HRB.shrinkK) / (n + HRB.shrinkK) : v;
-    const cappedB = (r) => Math.min(Math.max(r, 0.2), HRB.capRatio);
-    for (let d = 1; d <= days; d++) {
-      const day = dayStr(d);
-      setBtProgress(`${d}/${days}`);
-      if (hist[day]) continue; // never overwrite real logged days
-      try {
-        const sched = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${day}&hydrate=team,probablePitcher,venue`)).json();
-        const gs = ((sched.dates && sched.dates[0] && sched.dates[0].games) || []).filter((g) => g.status && g.status.abstractGameState === "Final");
-        if (!gs.length) continue;
-        const boxes = {};
-        await Promise.all(gs.map(async (g) => {
-          try { boxes[g.gamePk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json(); } catch {}
-        }));
-        const pids = [...new Set(gs.flatMap((g) => ["away", "home"].map((k) => g.teams[k].probablePitcher && g.teams[k].probablePitcher.id).filter(Boolean)))];
-        const hand = {};
-        for (let i = 0; i < pids.length; i += 90) {
-          try {
-            const ppl = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${pids.slice(i, i + 90).join(",")}`)).json();
-            for (const person of ppl.people || []) hand[person.id] = person.pitchHand && person.pitchHand.code;
-          } catch {}
-        }
-        const cands = [];
-        for (const g of gs) {
-          const box = boxes[g.gamePk];
-          if (!box || !box.teams) continue;
-          const rank = g.venue && g.venue.name ? parkRankFor(g.venue.name) : null;
-          const parkF = rank != null ? 1 + ((15.5 - rank) / 14.5) * HRB.parkSwing : 1;
-          for (const k of ["away", "home"]) {
-            const t = g.teams[k];
-            const ab = NAME_TO_ABBR[((t.team && t.team.name) || "").toLowerCase()] || toAbbr((t.team && t.team.name) || "") || "";
-            const oppT = g.teams[k === "away" ? "home" : "away"];
-            const oppAb = NAME_TO_ABBR[((oppT.team && oppT.team.name) || "").toLowerCase()] || "";
-            const opp = oppT.probablePitcher || null;
-            const om = opp ? meta(opp.fullName, oppAb) : {};
-            const oh = opp ? hand[opp.id] : null;
-            const pmap = (box.teams[k] && box.teams[k].players) || {};
-            const starters = Object.values(pmap)
-              .filter((pl) => pl.battingOrder != null && Number(pl.battingOrder) % 100 === 0)
-              .sort((x, y) => Number(x.battingOrder) - Number(y.battingOrder));
-            starters.forEach((pl, i) => {
-              const nm = pl.person && pl.person.fullName;
-              if (!nm) return;
-              const hm = meta(nm, ab);
-              const useBrl = brlVsHand(hm, oh);
-              if (useBrl == null) return;
-              const isSplit = oh === "L" ? hm.brlL != null : oh === "R" ? hm.brlR != null : false;
-              const effBbe = hm.bbe == null ? null : isSplit && oh === "L" ? hm.bbe * 0.3 : isSplit && oh === "R" ? hm.bbe * 0.7 : hm.bbe;
-              const totAdj = shrinkB(hm.barrel, HRB.lgHitBrl, hm.bbe != null ? hm.bbe : HRB.assumeBBE);
-              const prior = totAdj != null ? totAdj : HRB.lgHitBrl;
-              const adjBrl = isSplit
-                ? shrinkB(useBrl, prior, effBbe != null ? effBbe : HRB.assumeBBE * 0.3)
-                : shrinkB(useBrl, HRB.lgHitBrl, effBbe != null ? effBbe : HRB.assumeBBE);
-              const adjPitBrl = shrinkB(om.barrel, HRB.lgPitBrl, om.bbe != null ? om.bbe : HRB.assumeBBE);
-              const adjHr9 = shrinkB(om.hr9, HRB.lgHr9, om.bbe != null ? om.bbe : HRB.assumeBBE);
-              const hitR = Math.pow(cappedB(adjBrl / HRB.lgHitBrl), HRB.eHit);
-              const pitR = adjPitBrl != null ? Math.pow(cappedB(adjPitBrl / HRB.lgPitBrl), HRB.ePitBrl) : 1;
-              const hr9R = adjHr9 != null ? Math.pow(cappedB(adjHr9 / HRB.lgHr9), HRB.eHr9) : 1;
-              const spotF = 1 - HRB.spotDrop * i;
-              let score = 100 * hitR * pitR * hr9R * parkF * spotF; // wx omitted in backtest
-              if (om.barrel == null && om.hr9 == null) score *= HRB.unknownSP;
-              const st = pl.stats && pl.stats.batting;
-              cands.push({ id: pl.person.id, name: nm, team: ab, score, hr: (st && st.homeRuns) || 0 });
-            });
-          }
-        }
-        cands.sort((a, b) => b.score - a.score);
-        const picked = [];
-        const perT = {};
-        for (const c of cands) {
-          if ((perT[c.team] || 0) >= HRB.maxPerTeam) continue;
-          perT[c.team] = (perT[c.team] || 0) + 1;
-          picked.push(c);
-          if (picked.length >= HRB.topN) break;
-        }
-        if (!picked.length) continue;
-        const results = {};
-        for (const c of picked) results[c.id] = c.hr;
-        hist[day] = { ver: "backtest", entries: picked.map((c) => ({ id: c.id, name: c.name, team: c.team, score: Math.round(c.score), pk: 0 })), results };
-        try { localStorage.setItem("hrbHistory", JSON.stringify(hist)); } catch {}
-        setHistory({ ...hist });
-      } catch {}
-    }
-    setBtProgress("done");
-  };
   const topIdsKey = targets.slice(0, 25).map((t) => t.h.id).join(",");
   useEffect(() => {
     if (!topIdsKey) return;
@@ -2395,20 +2404,22 @@ function HRBoardTab({ players, onSelectPlayer }) {
       // Freeze the day's board once first pitch happens anywhere: the graded
       // slate must match the PREGAME board bets were placed from.
       const games = data || [];
-      const startedN = games.filter(({ g }) => {
+      const isStarted = ({ g }) => {
         const st = g.status && g.status.abstractGameState;
         return st === "Live" || st === "Final";
-      }).length;
-      const majorityStarted = games.length > 0 && startedN > games.length / 2;
-      if (hist[day] && majorityStarted) return;
-      const more = [];
-      const seenIds = new Set(top.map((t) => t.h.id));
-      for (const t of targets) {
-        if (seenIds.has(t.h.id)) continue;
-        more.push({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk });
-        if (more.length >= 10) break;
-      }
-      hist[day] = { ver: HRB_VERSION, more, entries: top.map((t) => ({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk, st: streaks[t.h.id] ?? null })), results: (hist[day] && hist[day].results) || null };
+      };
+      const startedN = games.filter(isStarted).length;
+      const wkday = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short" }).format(new Date());
+      const isWeekend = wkday === "Sat" || wkday === "Sun";
+      const hourET = (g) => Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }).format(new Date(g.gameDate)));
+      // Weekdays: a couple of matinees don't lock the board — freeze only
+      // when the first afternoon/evening (4pm+ ET) game starts, or when
+      // everything has started. Weekends (early games all day): majority.
+      const shouldLock = games.length > 0 && (isWeekend
+        ? startedN > games.length / 2
+        : games.some((x) => isStarted(x) && hourET(x.g) >= 16) || startedN === games.length);
+      if (hist[day] && shouldLock) return;
+      hist[day] = { ver: HRB_VERSION, entries: top.map((t) => ({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk, st: streaks[t.h.id] ?? null })), results: (hist[day] && hist[day].results) || null };
       localStorage.setItem("hrbHistory", JSON.stringify(hist));
     } catch {}
   }, [topIdsKey, streaks]);
@@ -2425,7 +2436,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const h = hist[day];
         if (day >= today || h.results) continue;
         const results = {};
-        for (const e of (h.entries || []).concat(h.more || [])) {
+        for (const e of h.entries || []) {
           try {
             if (!boxCache[e.pk]) boxCache[e.pk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${e.pk}/boxscore`)).json();
             const b = boxCache[e.pk];
@@ -2469,17 +2480,6 @@ function HRBoardTab({ players, onSelectPlayer }) {
             </button>
           ))}
         </div>
-        {view === "targets" && top.length > 0 && (() => {
-          const avg5 = top.slice(0, 5).reduce((a, t) => a + t.score, 0) / Math.min(5, top.length);
-          const tier = avg5 >= 220 ? ["Strong slate", "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"]
-            : avg5 >= 195 ? ["Average slate", "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300"]
-            : ["Thin slate — consider smaller stakes", "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"];
-          return (
-            <div className={"mt-3 px-3 py-2 rounded-xl text-[11px] font-extrabold text-center " + tier[1]}>
-              {tier[0]}
-            </div>
-          );
-        })()}
         {view === "targets" && top.length > 0 && (
           <>
             <div className="text-[11px] font-bold tracking-widest uppercase mt-4 mb-2 px-1 text-slate-500 dark:text-slate-400">🎯 HR Targets</div>
@@ -2819,39 +2819,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         </div>
                       );
                     })}
-                    {(h.more || []).length > 0 && (
-                      <>
-                        <div className="px-4 py-1 text-[9px] font-extrabold tracking-widest uppercase text-slate-400 bg-slate-50 dark:bg-slate-800/60">Ranked 11–20 at lock</div>
-                        {(h.more || []).map((e, i) => {
-                          const hr = graded ? h.results[e.id] : null;
-                          return (
-                            <div key={"m" + e.id + "-" + i} className="flex items-center gap-2 px-4 py-1">
-                              <span className="w-4 text-center text-[9px] font-extrabold text-slate-300 dark:text-slate-600 tabular-nums shrink-0">{i + 11}</span>
-                              {TEAM_LOGOS[e.team] && <img src={TEAM_LOGOS[e.team]} alt="" className="w-3.5 h-3.5 rounded-full object-contain bg-white shrink-0" />}
-                              <span className="flex-1 min-w-0 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">{e.name}</span>
-                              <span className="text-[9px] font-bold text-slate-400 tabular-nums shrink-0">{e.score}</span>
-                              <span className="w-10 text-right text-[10px] font-extrabold shrink-0">
-                                {!graded ? <span className="text-slate-300 dark:text-slate-600">·</span>
-                                  : (hr || 0) > 0 ? <span className="text-emerald-500">✅{hr > 1 ? " ×" + hr : ""}</span>
-                                  : <span className="text-slate-200 dark:text-slate-700">—</span>}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
                   </div>
                 </div>
               );
             })}
-            {history != null && (
-              <button
-                onClick={() => runBacktest(14)}
-                disabled={btProgress != null && btProgress !== "done"}
-                className="w-full text-center text-[11px] font-extrabold text-blue-600 dark:text-blue-400 py-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                {btProgress == null ? "Run 14-day backtest (current scoring)" : btProgress === "done" ? "Backtest complete ✓" : "Backtesting… " + btProgress}
-              </button>
-            )}
             {history != null && Object.keys(history).length > 0 && (
               <button
                 onClick={() => {
