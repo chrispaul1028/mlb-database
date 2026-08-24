@@ -196,8 +196,9 @@ function sortRank(raw) {
   const m = s.match(/^([A-Z]+)\s*(\d*)$/);
   if (!m) return null;
   const i = POS_SEQ.indexOf(m[1]);
-  if (i === -1) return null;
-  return i * 100 + (m[2] ? Number(m[2]) : 0); // "QB1" -> 1, "RB2" -> 102, "WR2" -> 302
+  // Unknown prefixes ("SP5", "CL1", anything new) still order by their
+  // number within the group instead of silently dropping to the fallback.
+  return (i === -1 ? 50 : i) * 100 + (m[2] ? Number(m[2]) : 0);
 }
 
 export default async function handler(req, res) {
