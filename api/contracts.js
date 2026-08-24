@@ -618,10 +618,22 @@ export default async function handler(req, res) {
                 if (pd.position && pd.position.abbreviation) posByName[key] = pd.position.abbreviation;
               }
             });
+            // Pitchers never appear in a DH-era batting order, so the
+            // overlay must leave their Airtable "Sort Priority" (rotation
+            // slot 1-5, bullpen order) untouched. Previously every pitcher
+            // was wiped to null here, which is why the rotation showed
+            // "no sort" and fell back to salary order.
+            const isPitcher = (p) => {
+              const role = String(p.role || "").trim().toLowerCase();
+              if (role === "pitching" || role === "bullpen") return true;
+              const pos = String(p.pos || "").toUpperCase().replace(/\s+/g, "");
+              return ["P", "SP", "RP", "CP", "CL", "LHP", "RHP", "SP/RP", "RP/SP"].includes(pos);
+            };
             let matched = 0;
             for (const p of out) {
               const mine = p.teamId === t.id || String(p.teamName || "").trim().toLowerCase() === String(t.name).trim().toLowerCase();
               if (!mine) continue;
+              if (isPitcher(p)) continue; // keep Airtable rotation order as-is
               const key = normName(p.name);
               const spot = orderByName[key];
               if (spot) { p.sort = spot; p.sortLabel = String(spot); if (posByName[key]) p.gamePos = posByName[key]; matched++; }
@@ -642,7 +654,7 @@ export default async function handler(req, res) {
     }
 
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
-    return res.status(200).json({ apiVersion: "v23.7", players: out, teams: teamsOut, imports: importOnly });
+    return res.status(200).json({ apiVersion: "v23.8", players: out, teams: teamsOut, imports: importOnly });
   } catch (e) {
     return res.status(500).json({ error: String(e.message || e) });
   }
