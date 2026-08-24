@@ -2151,7 +2151,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v90";
+const HRB_VERSION = "v91";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2659,7 +2659,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
   return (
     <div>
       <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
-        <div className="text-2xl font-extrabold tracking-tight">Matchups ({todayLabel}) <span className="text-[10px] font-bold text-white/50 align-middle">{HRB_VERSION}{typeof window !== "undefined" && window.__hrbApiVer ? " · api " + window.__hrbApiVer : ""}</span></div>
+        <div className="text-2xl font-extrabold tracking-tight">Matchups ({todayLabel}) <span role="button" onClick={() => window.__hrbRefetch && window.__hrbRefetch()}
+              className="text-[10px] font-bold text-white/50 align-middle">
+              {HRB_VERSION}{typeof window !== "undefined" && window.__hrbApiVer ? " · api " + window.__hrbApiVer : ""}{typeof window !== "undefined" && window.__hrbDataAt ? " · data " + window.__hrbDataAt + " ↻" : ""}
+            </span></div>
       </div>
       <div className="px-4 pb-28">
         <div className="flex gap-2 mt-3">
@@ -3128,7 +3131,7 @@ export default function App() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch("/api/contracts")
+    const load = (bust) => fetch("/api/contracts" + (bust ? "?t=" + Date.now() : ""))
       .then((r) => r.json())
       .then((d) => { if (d.error) setError(d.error); else {
         for (const t of d.teams || []) { const a = t.abbr || toAbbr(t.name); if (a && t.logo) TEAM_LOGOS[a] = t.logo; }
@@ -3138,8 +3141,11 @@ export default function App() {
           if (TEAM_LOGOS[y] && !TEAM_LOGOS[x]) TEAM_LOGOS[x] = TEAM_LOGOS[y];
         }
         setPlayers(d.players); setTeams(d.teams || []); window.__imports = d.imports || []; window.__hrbApiVer = d.apiVersion || "";
+        window.__hrbDataAt = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date());
       } })
       .catch((e) => setError(String(e)));
+    load(false);
+    window.__hrbRefetch = () => load(true);
   }, []);
 
   if (sel) {
