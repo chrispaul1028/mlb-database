@@ -114,6 +114,45 @@ function matchesQuery(p, q) {
 
 // ═══════════════ SHARED PIECES ═══════════════════════════════════
 const MLB_ID_CACHE = {};
+const STREAK_BY_ID = {};
+function LiveStreak({ p }) {
+  const key = String(p.name || "").toLowerCase();
+  const [, force] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        let mid = MLB_ID_CACHE[key];
+        if (mid === undefined) {
+          const d = await (await fetch(`https://statsapi.mlb.com/api/v1/people/search?names=${encodeURIComponent(p.name)}`)).json();
+          mid = (d.people || [])[0] ? d.people[0].id : null;
+          MLB_ID_CACHE[key] = mid;
+        }
+        if (!mid || STREAK_BY_ID[mid] !== undefined) { if (alive) force((x) => x + 1); return; }
+        const gl = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${mid}/stats?stats=gameLog&group=hitting`)).json();
+        const splits = (gl.stats && gl.stats[0] && gl.stats[0].splits) || [];
+        const todayET = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+        let n = 0;
+        for (let j = splits.length - 1; j >= 0; j--) {
+          if (splits[j].date === todayET) continue;
+          const st = splits[j].stat || {};
+          if ((st.atBats ?? 0) === 0) continue;
+          if ((st.hits ?? 0) > 0) { if (n < 0) break; n++; }
+          else { if (n > 0) break; n--; }
+        }
+        STREAK_BY_ID[mid] = n;
+        if (alive) force((x) => x + 1);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [key]);
+  const mid = MLB_ID_CACHE[key];
+  const n = mid != null ? STREAK_BY_ID[mid] : undefined;
+  if (n == null) return null;
+  if (n >= 5) return <span className="ml-1 text-[11px] font-extrabold text-orange-500">{n}🔥</span>;
+  if (n <= -5) return <span className="ml-1 text-[11px] font-extrabold text-sky-400">{-n}❄️</span>;
+  return null;
+}
 function Avatar({ p, size }) {
   const px = size === "lg" ? "w-20 h-20 text-2xl" : "w-11 h-11 text-sm";
   const key = String(p.name || "").toLowerCase();
@@ -2109,7 +2148,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v87";
+const HRB_VERSION = "v88";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2380,6 +2419,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
   const [valResult, setValResult] = useState(() => {
     try { return JSON.parse(localStorage.getItem("hrbValidation") || "null"); } catch { return null; }
   });
+  const [valWin, setValWin] = useState("recent");   // recent | prior
+  const [valPA, setValPA] = useState(true);          // PA curve on/off
   const runValidation = async (days = 14) => {
     if (valProg && valProg !== "done") return;
     const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
@@ -2387,8 +2428,18 @@ function HRBoardTab({ players, onSelectPlayer }) {
     const cappedB = (r) => Math.min(Math.max(r, 0.2), HRB.capRatio);
     const agg = { all: [0, 0], p1: [0, 0], t5: [0, 0], t610: [0, 0], days: 0 };
     const bAgg = { all: [0, 0], p1: [0, 0], t5: [0, 0], t610: [0, 0] };
-    for (let d = 1; d <= days; d++) {
-      setValProg(`${d}/${days}`);
+    const off0 = valWin === "prior" ? days : 0;
+    // Data health: catches silent import corruption at a glance
+    const bat = Object.values(HRB_META_SNAPSHOT()).filter((m) => m.barrel != null);
+    const sps = Object.values(HRB_META_SNAPSHOT()).filter((m) => m.hr9 != null);
+    const health = {
+      nB: bat.length,
+      avgBrl: bat.length ? (bat.reduce((a, m) => a + m.barrel, 0) / bat.length) : null,
+      nP: sps.length,
+      avgHr9: sps.length ? (sps.reduce((a, m) => a + m.hr9, 0) / sps.length) : null,
+    };
+    for (let d = 1 + off0; d <= days + off0; d++) {
+      setValProg(`${d - off0}/${days}`);
       try {
         const day = dayStr(d);
         const sched = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${day}&hydrate=team,probablePitcher,venue`)).json();
@@ -2448,7 +2499,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
               const hitR = Math.pow(cappedB(adjBrl / HRB.lgHitBrl), HRB.eHit);
               const pitR = adjPitBrl != null ? Math.pow(cappedB(adjPitBrl / HRB.lgPitBrl), HRB.ePitBrl) : 1;
               const hr9R = adjHr9 != null ? Math.pow(cappedB(adjHr9 / HRB.lgHr9), HRB.eHr9) : 1;
-              const spotF = HRB.paCurve[Math.min(i, 8)];
+              const spotF = valPA ? HRB.paCurve[Math.min(i, 8)] : 1 - 0.015 * i;
               let score = 100 * hitR * pitR * hr9R * parkF * spotF;
               if (om.barrel == null && om.hr9 == null) score *= HRB.unknownSP;
               const st = pl.stats && pl.stats.batting;
@@ -2480,10 +2531,18 @@ function HRBoardTab({ players, onSelectPlayer }) {
         });
       } catch {}
     }
-    const out = { ver: HRB_VERSION, when: new Date().toISOString().slice(0, 10), ...agg, bett: bAgg };
+    const out = { ver: HRB_VERSION + (valPA ? "" : " (linear spot)"), win: valWin, when: new Date().toISOString().slice(0, 10), health, ...agg, bett: bAgg };
     try { localStorage.setItem("hrbValidation", JSON.stringify(out)); } catch {}
     setValResult(out);
     setValProg("done");
+  };
+  const HRB_META_SNAPSHOT = () => {
+    const out = {};
+    for (const [k, list] of Object.entries(myByName)) {
+      const m = Array.isArray(list) ? list[0] : list;
+      if (m) out[k] = m;
+    }
+    return out;
   };
   const topIdsKey = targets.slice(0, 25).map((t) => t.h.id).join(",");
   useEffect(() => {
@@ -2877,6 +2936,16 @@ function HRBoardTab({ players, onSelectPlayer }) {
         </>)}
         {view === "history" && (
           <div className="mt-4 space-y-3">
+            <div className="flex gap-2">
+              {[["recent", "Last 14"], ["prior", "Prior 14"]].map(([k, lbl]) => (
+                <button key={k} onClick={() => setValWin(k)}
+                  className={"flex-1 py-1.5 rounded-full text-[10px] font-extrabold " + (valWin === k ? "bg-blue-600 text-white" : "bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-800 dark:text-slate-300")}>{lbl}</button>
+              ))}
+              <button onClick={() => setValPA((v) => !v)}
+                className={"flex-1 py-1.5 rounded-full text-[10px] font-extrabold " + (valPA ? "bg-blue-600 text-white" : "bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-800 dark:text-slate-300")}>
+                {valPA ? "PA curve ON" : "PA curve OFF"}
+              </button>
+            </div>
             <button onClick={() => runValidation(14)}
               disabled={valProg != null && valProg !== "done"}
               className="w-full text-center text-[11px] font-extrabold text-blue-600 dark:text-blue-400 py-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
@@ -2884,7 +2953,12 @@ function HRBoardTab({ players, onSelectPlayer }) {
             </button>
             {valResult && (
               <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-blue-200 dark:border-blue-900 shadow-sm px-4 py-3">
-                <div className="text-[10px] font-extrabold uppercase tracking-widest text-blue-500 mb-2">Validation · {valResult.ver} scoring · {valResult.days} days · run {valResult.when}</div>
+                <div className="text-[10px] font-extrabold uppercase tracking-widest text-blue-500 mb-2">Validation · {valResult.ver} · {valResult.win === "prior" ? "prior" : "last"} 14 days · run {valResult.when}</div>
+                {valResult.health && (
+                  <div className="text-[9px] font-bold text-slate-400 mb-2">
+                    Data health: {valResult.health.nB} batters, avg Brl {valResult.health.avgBrl != null ? valResult.health.avgBrl.toFixed(1) : "—"}% · {valResult.health.nP} SPs, avg HR/9 {valResult.health.avgHr9 != null ? valResult.health.avgHr9.toFixed(2) : "—"}
+                  </div>
+                )}
                 <div className="grid grid-cols-4 gap-2 text-center">
                   {[["All", valResult.all], ["#1 pick", valResult.p1], ["Top 5", valResult.t5], ["6-10", valResult.t610]].map(([lbl, [h, t]]) => (
                     <span key={lbl}>
