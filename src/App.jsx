@@ -2109,7 +2109,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v86";
+const HRB_VERSION = "v87";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2386,20 +2386,19 @@ function HRBoardTab({ players, onSelectPlayer }) {
     const shrinkB = (v, lg, n) => (v != null && n != null && n > 0) ? (v * n + lg * HRB.shrinkK) / (n + HRB.shrinkK) : v;
     const cappedB = (r) => Math.min(Math.max(r, 0.2), HRB.capRatio);
     const agg = { all: [0, 0], p1: [0, 0], t5: [0, 0], t610: [0, 0], days: 0 };
+    const bAgg = { all: [0, 0], p1: [0, 0], t5: [0, 0], t610: [0, 0] };
     for (let d = 1; d <= days; d++) {
       setValProg(`${d}/${days}`);
       try {
         const day = dayStr(d);
         const sched = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${day}&hydrate=team,probablePitcher,venue`)).json();
-        // Mirror real betting behavior: weekdays only evening games (4pm+ ET
-        // — matinees are rarely bet); weekends everything. Same universe the
-        // live board locks on, so test conditions match deployment.
+        // Rank the FULL slate exactly like the live board does; the
+        // evening-bettable distinction is applied at GRADING time below.
         const wkd = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short" }).format(new Date(day + "T12:00:00-04:00"));
         const wknd = wkd === "Sat" || wkd === "Sun";
         const hrET = (g) => Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }).format(new Date(g.gameDate)));
         const gs = ((sched.dates && sched.dates[0] && sched.dates[0].games) || [])
-          .filter((g) => g.status && g.status.abstractGameState === "Final")
-          .filter((g) => wknd || hrET(g) >= 16);
+          .filter((g) => g.status && g.status.abstractGameState === "Final");
         if (!gs.length) continue;
         const boxes = {};
         await Promise.all(gs.map(async (g) => {
@@ -2453,7 +2452,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
               let score = 100 * hitR * pitR * hr9R * parkF * spotF;
               if (om.barrel == null && om.hr9 == null) score *= HRB.unknownSP;
               const st = pl.stats && pl.stats.batting;
-              cands.push({ team: ab, score, hr: (st && st.homeRuns) || 0 });
+              cands.push({ team: ab, score, hr: (st && st.homeRuns) || 0, bett: wknd || hrET(g) >= 16 });
             });
           }
         }
@@ -2473,10 +2472,15 @@ function HRBoardTab({ players, onSelectPlayer }) {
           agg.all[0] += hit; agg.all[1]++;
           if (i === 0) { agg.p1[0] += hit; agg.p1[1]++; }
           if (i < 5) { agg.t5[0] += hit; agg.t5[1]++; } else { agg.t610[0] += hit; agg.t610[1]++; }
+          if (c.bett) {
+            bAgg.all[0] += hit; bAgg.all[1]++;
+            if (i === 0) { bAgg.p1[0] += hit; bAgg.p1[1]++; }
+            if (i < 5) { bAgg.t5[0] += hit; bAgg.t5[1]++; } else { bAgg.t610[0] += hit; bAgg.t610[1]++; }
+          }
         });
       } catch {}
     }
-    const out = { ver: HRB_VERSION, when: new Date().toISOString().slice(0, 10), ...agg };
+    const out = { ver: HRB_VERSION, when: new Date().toISOString().slice(0, 10), ...agg, bett: bAgg };
     try { localStorage.setItem("hrbValidation", JSON.stringify(out)); } catch {}
     setValResult(out);
     setValProg("done");
@@ -2889,6 +2893,19 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     </span>
                   ))}
                 </div>
+                {valResult.bett && (
+                  <>
+                    <div className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 mt-3 mb-1">Bettable picks only (evening / weekend games)</div>
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      {[["All", valResult.bett.all], ["#1 pick", valResult.bett.p1], ["Top 5", valResult.bett.t5], ["6-10", valResult.bett.t610]].map(([lbl, [h, t]]) => (
+                        <span key={"b" + lbl}>
+                          <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
+                          <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{t ? `${h}/${t} (${Math.round((h / t) * 100)}%)` : "—"}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
             {history == null && <div className="text-center text-sm text-slate-400 py-12">Grading past boards…</div>}
