@@ -2110,7 +2110,7 @@ function hrbHr9Class(v) {
   if (v <= 0.90) return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
   return "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300";
 }
-const HRB_VERSION = "v84";
+const HRB_VERSION = "v85";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2397,7 +2397,15 @@ function HRBoardTab({ players, onSelectPlayer }) {
       try {
         const day = dayStr(d);
         const sched = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${day}&hydrate=team,probablePitcher,venue`)).json();
-        const gs = ((sched.dates && sched.dates[0] && sched.dates[0].games) || []).filter((g) => g.status && g.status.abstractGameState === "Final");
+        // Mirror real betting behavior: weekdays only evening games (4pm+ ET
+        // — matinees are rarely bet); weekends everything. Same universe the
+        // live board locks on, so test conditions match deployment.
+        const wkd = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short" }).format(new Date(day + "T12:00:00-04:00"));
+        const wknd = wkd === "Sat" || wkd === "Sun";
+        const hrET = (g) => Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }).format(new Date(g.gameDate)));
+        const gs = ((sched.dates && sched.dates[0] && sched.dates[0].games) || [])
+          .filter((g) => g.status && g.status.abstractGameState === "Final")
+          .filter((g) => wknd || hrET(g) >= 16);
         if (!gs.length) continue;
         const boxes = {};
         await Promise.all(gs.map(async (g) => {
