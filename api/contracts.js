@@ -35,7 +35,7 @@ const FIELDS = {
   playerStatus: ["Status"],
   playerArchetype: ["Archetype", "Player Type", "Play Style"],
   playerRole: ["Role", "Depth Chart", "Depth", "Lineup Role", "Rotation"],
-  playerSort: ["Sort Priority", "Batting Order", "Sort", "Priority", "Depth Order", "Order"],
+  playerSort: ["Sort Priority", "Batting Order", "Rotation Order", "Rotation", "Pitching Order", "Pitcher Order", "SP Order", "Depth Chart", "Depth", "Sort", "Priority", "Depth Order", "Order"],
   playerDraft: ["Draft", "Draft Info", "Drafted"],
   playerDraftYear: ["Draft Year"],
   playerDraftRound: ["Draft Round", "Round", "Rd"],
@@ -642,7 +642,7 @@ export default async function handler(req, res) {
     }
 
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
-    return res.status(200).json({ apiVersion: "v23.6", players: out, teams: teamsOut, imports: importOnly });
+    return res.status(200).json({ apiVersion: "v23.7", players: out, teams: teamsOut, imports: importOnly });
   } catch (e) {
     return res.status(500).json({ error: String(e.message || e) });
   }
