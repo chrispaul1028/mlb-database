@@ -2110,7 +2110,7 @@ function hrbHr9Class(v) {
   if (v <= 0.90) return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
   return "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300";
 }
-const HRB_VERSION = "v83";
+const HRB_VERSION = "v84";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2382,6 +2382,108 @@ function HRBoardTab({ players, onSelectPlayer }) {
     if (top.length >= HRB.topN) break;
   }
   // Hide the BBE column entirely until batted-ball data exists in Airtable
+  const [valProg, setValProg] = useState(null);
+  const [valResult, setValResult] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("hrbValidation") || "null"); } catch { return null; }
+  });
+  const runValidation = async (days = 14) => {
+    if (valProg && valProg !== "done") return;
+    const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
+    const shrinkB = (v, lg, n) => (v != null && n != null && n > 0) ? (v * n + lg * HRB.shrinkK) / (n + HRB.shrinkK) : v;
+    const cappedB = (r) => Math.min(Math.max(r, 0.2), HRB.capRatio);
+    const agg = { all: [0, 0], p1: [0, 0], t5: [0, 0], t610: [0, 0], days: 0 };
+    for (let d = 1; d <= days; d++) {
+      setValProg(`${d}/${days}`);
+      try {
+        const day = dayStr(d);
+        const sched = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${day}&hydrate=team,probablePitcher,venue`)).json();
+        const gs = ((sched.dates && sched.dates[0] && sched.dates[0].games) || []).filter((g) => g.status && g.status.abstractGameState === "Final");
+        if (!gs.length) continue;
+        const boxes = {};
+        await Promise.all(gs.map(async (g) => {
+          try { boxes[g.gamePk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json(); } catch {}
+        }));
+        const pids = [...new Set(gs.flatMap((g) => ["away", "home"].map((k) => g.teams[k].probablePitcher && g.teams[k].probablePitcher.id).filter(Boolean)))];
+        const hand = {};
+        for (let i = 0; i < pids.length; i += 90) {
+          try {
+            const ppl = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${pids.slice(i, i + 90).join(",")}`)).json();
+            for (const person of ppl.people || []) hand[person.id] = person.pitchHand && person.pitchHand.code;
+          } catch {}
+        }
+        const cands = [];
+        for (const g of gs) {
+          const box = boxes[g.gamePk];
+          if (!box || !box.teams) continue;
+          const rank = g.venue && g.venue.name ? parkRankFor(g.venue.name) : null;
+          const parkF = rank != null ? 1 + ((15.5 - rank) / 14.5) * HRB.parkSwing : 1;
+          for (const k of ["away", "home"]) {
+            const t = g.teams[k];
+            const ab = NAME_TO_ABBR[((t.team && t.team.name) || "").toLowerCase()] || "";
+            const oppT = g.teams[k === "away" ? "home" : "away"];
+            const oppAb = NAME_TO_ABBR[((oppT.team && oppT.team.name) || "").toLowerCase()] || "";
+            const opp = oppT.probablePitcher || null;
+            const om = opp ? meta(opp.fullName, oppAb) : {};
+            const oh = opp ? hand[opp.id] : null;
+            const pmap = (box.teams[k] && box.teams[k].players) || {};
+            const starters = Object.values(pmap)
+              .filter((pl) => pl.battingOrder != null && Number(pl.battingOrder) % 100 === 0)
+              .sort((x, y) => Number(x.battingOrder) - Number(y.battingOrder));
+            starters.forEach((pl, i) => {
+              const nm = pl.person && pl.person.fullName;
+              if (!nm) return;
+              const hm = meta(nm, ab);
+              const useBrl = brlVsHand(hm, oh);
+              if (useBrl == null) return;
+              const isSplit = oh === "L" ? hm.brlL != null : oh === "R" ? hm.brlR != null : false;
+              const effBbe = hm.bbe == null ? null : isSplit && oh === "L" ? hm.bbe * 0.3 : isSplit && oh === "R" ? hm.bbe * 0.7 : hm.bbe;
+              const totAdj = shrinkB(hm.barrel, HRB.lgHitBrl, hm.bbe != null ? hm.bbe : HRB.assumeBBE);
+              const prior = totAdj != null ? totAdj : HRB.lgHitBrl;
+              const adjBrl = isSplit
+                ? shrinkB(useBrl, prior, effBbe != null ? effBbe : HRB.assumeBBE * 0.3)
+                : shrinkB(useBrl, HRB.lgHitBrl, effBbe != null ? effBbe : HRB.assumeBBE);
+              const adjPitBrl = shrinkB(om.barrel, HRB.lgPitBrl, om.bbe != null ? om.bbe : HRB.assumeBBE);
+              const adjHr9 = shrinkB(om.hr9, HRB.lgHr9, om.bbe != null ? om.bbe : HRB.assumeBBE);
+              const hitR = Math.pow(cappedB(adjBrl / HRB.lgHitBrl), HRB.eHit);
+              const pitR = adjPitBrl != null ? Math.pow(cappedB(adjPitBrl / HRB.lgPitBrl), HRB.ePitBrl) : 1;
+              const hr9R = adjHr9 != null ? Math.pow(cappedB(adjHr9 / HRB.lgHr9), HRB.eHr9) : 1;
+              const spotF = HRB.paCurve[Math.min(i, 8)];
+              let score = 100 * hitR * pitR * hr9R * parkF * spotF;
+              if (om.barrel == null && om.hr9 == null) score *= HRB.unknownSP;
+              if (om.hr9 != null && om.bbe != null && om.bbe >= HRB.qualBBE) {
+                if (om.hr9 <= HRB.hr9RedMax) score *= HRB.hr9RedMult;
+                else if (om.hr9 <= HRB.hr9AmberMax) score *= HRB.hr9AmberMult;
+                else if (om.hr9 >= HRB.hr9HotMin) score *= HRB.hr9HotMult;
+              }
+              const st = pl.stats && pl.stats.batting;
+              cands.push({ team: ab, score, hr: (st && st.homeRuns) || 0 });
+            });
+          }
+        }
+        cands.sort((a, b) => b.score - a.score);
+        const picked = [];
+        const perT = {};
+        for (const c of cands) {
+          if ((perT[c.team] || 0) >= HRB.maxPerTeam) continue;
+          perT[c.team] = (perT[c.team] || 0) + 1;
+          picked.push(c);
+          if (picked.length >= HRB.topN) break;
+        }
+        if (picked.length < HRB.topN) continue;
+        agg.days++;
+        picked.forEach((c, i) => {
+          const hit = c.hr > 0 ? 1 : 0;
+          agg.all[0] += hit; agg.all[1]++;
+          if (i === 0) { agg.p1[0] += hit; agg.p1[1]++; }
+          if (i < 5) { agg.t5[0] += hit; agg.t5[1]++; } else { agg.t610[0] += hit; agg.t610[1]++; }
+        });
+      } catch {}
+    }
+    const out = { ver: HRB_VERSION, when: new Date().toISOString().slice(0, 10), ...agg };
+    try { localStorage.setItem("hrbValidation", JSON.stringify(out)); } catch {}
+    setValResult(out);
+    setValProg("done");
+  };
   const topIdsKey = targets.slice(0, 25).map((t) => t.h.id).join(",");
   useEffect(() => {
     if (!topIdsKey) return;
@@ -2774,6 +2876,24 @@ function HRBoardTab({ players, onSelectPlayer }) {
         </>)}
         {view === "history" && (
           <div className="mt-4 space-y-3">
+            <button onClick={() => runValidation(14)}
+              disabled={valProg != null && valProg !== "done"}
+              className="w-full text-center text-[11px] font-extrabold text-blue-600 dark:text-blue-400 py-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+              {valProg == null ? "Validate current scoring (14-day backtest)" : valProg === "done" ? "Validation complete ✓ — re-run" : "Validating… " + valProg}
+            </button>
+            {valResult && (
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-blue-200 dark:border-blue-900 shadow-sm px-4 py-3">
+                <div className="text-[10px] font-extrabold uppercase tracking-widest text-blue-500 mb-2">Validation · {valResult.ver} scoring · {valResult.days} days · run {valResult.when}</div>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  {[["All", valResult.all], ["#1 pick", valResult.p1], ["Top 5", valResult.t5], ["6-10", valResult.t610]].map(([lbl, [h, t]]) => (
+                    <span key={lbl}>
+                      <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
+                      <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{t ? `${h}/${t} (${Math.round((h / t) * 100)}%)` : "—"}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {history == null && <div className="text-center text-sm text-slate-400 py-12">Grading past boards…</div>}
             {history != null && Object.keys(history).length === 0 && (
               <div className="text-center text-sm text-slate-400 py-12">No history yet — each day's Top {HRB.topN} is saved automatically from this device.</div>
