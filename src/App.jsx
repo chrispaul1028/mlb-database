@@ -1617,6 +1617,10 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                           )}
                           {p.name}
                         </span>
+                        {role === "Batting" && <LiveStreak p={p} />}
+                        {role === "Pitching" && (
+                          <span className="text-[9px] font-bold text-slate-300 dark:text-slate-600 shrink-0">{p.sortLabel || "no sort"}</span>
+                        )}
                         {role === "Batting" && !hasLineup && <StatusBadge status={p.status} />}
                         {role === "Batting" && <span className="flex-1" />}
                         {p.rating2k != null && <Rating2kBadge r={p.rating2k} />}
@@ -2148,7 +2152,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v88";
+const HRB_VERSION = "v89";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2430,13 +2434,26 @@ function HRBoardTab({ players, onSelectPlayer }) {
     const bAgg = { all: [0, 0], p1: [0, 0], t5: [0, 0], t610: [0, 0] };
     const off0 = valWin === "prior" ? days : 0;
     // Data health: catches silent import corruption at a glance
-    const bat = Object.values(HRB_META_SNAPSHOT()).filter((m) => m.barrel != null);
-    const sps = Object.values(HRB_META_SNAPSHOT()).filter((m) => m.hr9 != null);
+    const snap = HRB_META_SNAPSHOT();
+    const bat = Object.values(snap).filter((m) => m.barrel != null);
+    const sps = Object.values(snap).filter((m) => m.hr9 != null);
+    // Lineup match rate: of TODAY's loaded starters, how many resolve to a
+    // stats row? Low rate = names in the stats table don't match lineups
+    // (flipped "Last, First" imports, duplicates) => model runs blind.
+    let luTot = 0, luHit = 0;
+    const luMiss = [];
+    for (const { sides } of data || []) for (const k of ["away", "home"]) for (const h of sides[k].hitters || []) {
+      luTot++;
+      if (myByName[hrbNrm(h.name)]) luHit++;
+      else if (luMiss.length < 6) luMiss.push(h.name);
+    }
+    const dupes = Object.values(myByName).filter((l) => Array.isArray(l) && l.length > 1).length;
     const health = {
       nB: bat.length,
       avgBrl: bat.length ? (bat.reduce((a, m) => a + m.barrel, 0) / bat.length) : null,
       nP: sps.length,
       avgHr9: sps.length ? (sps.reduce((a, m) => a + m.hr9, 0) / sps.length) : null,
+      luTot, luHit, luMiss, dupes,
     };
     for (let d = 1 + off0; d <= days + off0; d++) {
       setValProg(`${d - off0}/${days}`);
@@ -2956,7 +2973,13 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 <div className="text-[10px] font-extrabold uppercase tracking-widest text-blue-500 mb-2">Validation · {valResult.ver} · {valResult.win === "prior" ? "prior" : "last"} 14 days · run {valResult.when}</div>
                 {valResult.health && (
                   <div className="text-[9px] font-bold text-slate-400 mb-2">
-                    Data health: {valResult.health.nB} batters, avg Brl {valResult.health.avgBrl != null ? valResult.health.avgBrl.toFixed(1) : "—"}% · {valResult.health.nP} SPs, avg HR/9 {valResult.health.avgHr9 != null ? valResult.health.avgHr9.toFixed(2) : "—"}
+                    <span className="block">Data health: {valResult.health.nB} batters, avg Brl {valResult.health.avgBrl != null ? valResult.health.avgBrl.toFixed(1) : "—"}% · {valResult.health.nP} SPs, avg HR/9 {valResult.health.avgHr9 != null ? valResult.health.avgHr9.toFixed(2) : "—"} · {valResult.health.dupes} duplicate names</span>
+                    {valResult.health.luTot > 0 && (
+                      <span className={"block " + ((valResult.health.luHit / valResult.health.luTot) < 0.8 ? "text-rose-500" : "text-emerald-600 dark:text-emerald-400")}>
+                        Lineup match: {valResult.health.luHit}/{valResult.health.luTot} of today's starters found ({Math.round((valResult.health.luHit / valResult.health.luTot) * 100)}%)
+                        {valResult.health.luMiss.length > 0 && " · missing: " + valResult.health.luMiss.join(", ")}
+                      </span>
+                    )}
                   </div>
                 )}
                 <div className="grid grid-cols-4 gap-2 text-center">
