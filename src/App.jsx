@@ -2100,6 +2100,8 @@ const HRB = {
   pitRed: 6.5,   // pitcher Barrel % against <= this -> red (avoid)
   hr9Green: 1.2, // pitcher HR/9 >= this -> green
   hr9Red: 0.9,   // pitcher HR/9 <= this -> red
+  gbGreen: 38,   // pitcher GB% <= this -> green (fly-ball pitcher = HR-prone)
+  gbRed: 48,     // pitcher GB% >= this -> red (ground-ball pitcher = fade)
   // ── Top Targets: MULTIPLICATIVE score, 100 = league-average matchup ──
   // Each factor is a ratio to league average (capped so one freak stat
   // can't dominate), and they MULTIPLY: a stingy pitcher shrinks the
@@ -2125,14 +2127,112 @@ const HRB = {
                    // samples pull hard toward average; 300+ BBE barely move.
                    // Activates per-player only when Batted Balls has data.
   projMult: 0.9,   // discount applied when the lineup is only projected
-  coldMult: 0.9,   // discount for hitters on a 5+ game hitless drought
-                   // (owner's prior — the logged streak data will judge it)
+  coldMult: 1.0,   // v92: hit streaks are noise for HR purposes - disabled
+                   // (set back to 0.9 to restore the old drought discount)
   unknownSP: 0.85, // discount when the opposing SP has NO barrel/HR9 data
                    // (a blind matchup shouldn't rank beside a proven one)
   // Weather (applied only when data exists; domes stay neutral):
   wxTempPer: 0.004, // +0.4% per °F above 72 (capped ±8%)
   wxWindPer: 0.012, // ±1.2% per mph blowing out/in (capped ±12%)
+  // ── v92 ────────────────────────────────────────────────────────────
+  // HITTER = Barrel/PA (process, fixes the strikeout blind spot of Brl%
+  // per batted ball) blended with HR/PA (outcome). Exponents sum to 1.
+  lgBrlPa: 5.8,    // league-avg Barrel/PA % (Savant "brl_pa"; = 8.5 Brl% x ~68% balls-in-play)
+  lgHrPa: 0.032,   // league-avg HR per plate appearance (~3.2%)
+  eBrlPa: 0.6,
+  eHrPa: 0.4,
+  // PITCHER = SP Brl% against + HR/9 (both HR-proneness) + ground-ball
+  // rate (independent HR suppressor). Exponents sum to 1.
+  eSpBrl: 0.35,
+  eSpHr9: 0.35,
+  eGb: 0.30,
+  lgGb: 43,        // league-avg GB% (Savant scale, balls in play)
+  lgGoPct: 52,     // league-avg groundOuts/(groundOuts+airOuts) - the MLB
+                   // API fallback runs on an outs-only scale, hence separate
+  // BULLPEN: ~35% of a hitter's PAs come vs relievers, not the SP.
+  spShare: 0.65,   // SP factor ^ spShare  x  bullpen factor ^ (1 - spShare)
+  // Expected plate appearances by lineup spot (leadoff -> 9th). Turns the
+  // score into a real per-game HR probability: 1 - (1 - p_PA) ^ expPA.
+  expPA: [4.65, 4.55, 4.45, 4.35, 4.25, 4.15, 4.05, 3.95, 3.85],
+  avgPA: 4.25,     // expPA / avgPA replaces the old paCurve multiplier
 };
+
+// ── v92 shared scorer ───────────────────────────────────────────────────
+// ONE function feeds the live board, the game accordion, and the
+// backtester so History always grades the exact formula you bet from.
+//   hm   = hitter stats row (Airtable/import): barrel, brlL, brlR, bbe, brlPa, pa, hr
+//   hApi = hitter from MLB API: { hr, pa }           (may be {} / undefined)
+//   om   = opposing SP stats row: barrel, hr9, bbe, gb
+//   pApi = SP from MLB API: { goPct }                (may be {} / undefined)
+//   penR = opposing bullpen HR/9 ratio to league (1 = avg / unknown)
+// Returns null when the hitter has no usable data at all.
+function hrbEval({ hm, hApi, om, pApi, hand, spot, parkF, wxF, confirmed, penR }) {
+  hm = hm || {}; hApi = hApi || {}; om = om || {}; pApi = pApi || {};
+  const shrink = (v, lg, n) => (v != null && n != null && n > 0) ? (v * n + lg * HRB.shrinkK) / (n + HRB.shrinkK) : v;
+  const capped = (r) => Math.min(Math.max(r, 0.2), HRB.capRatio);
+  const pa = hm.pa != null ? hm.pa : hApi.pa;
+  const hr = hm.hr != null ? hm.hr : hApi.hr;
+
+  // ── Hitter: vs-hand Barrel% (regressed) -> converted to Barrel/PA ──
+  const useBrl = brlVsHand(hm, hand);
+  const isSplit = hand === "L" ? hm.brlL != null : hand === "R" ? hm.brlR != null : false;
+  const effBbe = hm.bbe == null ? null : isSplit && hand === "L" ? hm.bbe * 0.3 : isSplit && hand === "R" ? hm.bbe * 0.7 : hm.bbe;
+  const totAdj = shrink(hm.barrel, HRB.lgHitBrl, hm.bbe != null ? hm.bbe : HRB.assumeBBE);
+  const prior = totAdj != null ? totAdj : HRB.lgHitBrl;
+  const adjBrl = useBrl == null ? null : isSplit
+    ? shrink(useBrl, prior, effBbe != null ? effBbe : HRB.assumeBBE * 0.3)
+    : shrink(useBrl, HRB.lgHitBrl, effBbe != null ? effBbe : HRB.assumeBBE);
+  // Barrel/PA: prefer the Savant column; else derive Brl% x BBE / PA
+  // (contact rate), so strikeout-heavy hitters stop tying contact hitters.
+  let brlPa = null;
+  if (hm.brlPa != null) {
+    // scale the season Barrel/PA by the vs-hand adjustment so the split still counts
+    brlPa = hm.brlPa * (adjBrl != null && totAdj != null && totAdj > 0 ? adjBrl / totAdj : 1);
+  } else if (adjBrl != null && hm.bbe != null && pa != null && pa > 0) {
+    brlPa = adjBrl * (hm.bbe / pa);
+  } else if (adjBrl != null) {
+    brlPa = adjBrl * (HRB.lgBrlPa / HRB.lgHitBrl); // no contact info: assume league BIP rate
+  }
+  const hrPaRaw = (hr != null && pa != null && pa > 0) ? hr / pa : null;
+  const hrPa = hrPaRaw != null ? (hrPaRaw * pa + HRB.lgHrPa * HRB.shrinkK) / (pa + HRB.shrinkK) : null;
+  if (brlPa == null && hrPa == null) return null;
+  const brlPaR = brlPa != null ? Math.pow(capped(brlPa / HRB.lgBrlPa), HRB.eBrlPa) : 1;
+  const hrPaR = hrPa != null ? Math.pow(capped(hrPa / HRB.lgHrPa), HRB.eHrPa) : 1;
+  // If only one hitter input exists, give it the full weight.
+  const hitR = brlPa != null && hrPa != null ? brlPaR * hrPaR
+    : brlPa != null ? Math.pow(capped(brlPa / HRB.lgBrlPa), 1)
+    : Math.pow(capped(hrPa / HRB.lgHrPa), 1);
+
+  // ── Starting pitcher ──
+  const adjPitBrl = shrink(om.barrel, HRB.lgPitBrl, om.bbe != null ? om.bbe : HRB.assumeBBE);
+  const adjHr9 = shrink(om.hr9, HRB.lgHr9, om.bbe != null ? om.bbe : HRB.assumeBBE);
+  const spBrlR = adjPitBrl != null ? Math.pow(capped(adjPitBrl / HRB.lgPitBrl), HRB.eSpBrl) : 1;
+  const spHr9R = adjHr9 != null ? Math.pow(capped(adjHr9 / HRB.lgHr9), HRB.eSpHr9) : 1;
+  // Ground-ball rate: MORE grounders = FEWER homers, so the ratio is inverted.
+  let gbR = 1;
+  if (om.gb != null) gbR = Math.pow(capped(HRB.lgGb / Math.max(om.gb, 1)), HRB.eGb);
+  else if (pApi.goPct != null) gbR = Math.pow(capped(HRB.lgGoPct / Math.max(pApi.goPct, 1)), HRB.eGb);
+  const spKnown = om.barrel != null || om.hr9 != null;
+  const spR = spBrlR * spHr9R * gbR;
+  // ── Bullpen blend ──
+  const pitR = Math.pow(spR, HRB.spShare) * Math.pow(penR != null ? capped(penR) : 1, 1 - HRB.spShare);
+
+  // ── Assemble ──
+  let pPA = HRB.lgHrPa * hitR * pitR * (parkF || 1) * (wxF || 1);
+  if (!spKnown) pPA *= HRB.unknownSP;
+  if (confirmed === false) pPA *= HRB.projMult;
+  const ePA = HRB.expPA[Math.min(Math.max(spot || 0, 0), 8)];
+  const prob = 1 - Math.pow(1 - Math.min(pPA, 0.5), ePA);
+  const score = 100 * (pPA / HRB.lgHrPa) * (ePA / HRB.avgPA);
+  return { score, prob, hitR, pitR, brlPa, hrPa, adjBrl, adjPitBrl, adjHr9, gbR, penR, spKnown };
+}
+// GB% is INVERTED: low ground-ball rate = more balls in the air = target.
+function hrbGbClass(v) {
+  if (v == null) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
+  if (v <= HRB.gbGreen) return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300";
+  if (v >= HRB.gbRed) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
+  return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+}
 function hrbHitClass(v) {
   if (v == null) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
   if (v >= HRB.hitGreen) return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300";
@@ -2151,7 +2251,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v91";
+const HRB_VERSION = "v92";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2183,6 +2283,75 @@ const brlVsHand = (hm, hand) =>
   hand === "L" ? (hm.brlL != null ? hm.brlL : hm.barrel)
   : hand === "R" ? (hm.brlR != null ? hm.brlR : hm.barrel)
   : hm.barrel;
+
+// Weather multiplier (temp above/below 72°F, wind blowing out/in); domes = 1.
+function hrbWxFactor(w) {
+  if (!w || w.temp == null) return 1;
+  let f = 1 + Math.max(-0.08, Math.min(0.08, (Number(w.temp) - 72) * HRB.wxTempPer));
+  const wind = String(w.wind || "").toLowerCase();
+  const mph = parseFloat(wind) || 0;
+  if (wind.includes("out")) f += Math.min(0.12, mph * HRB.wxWindPer);
+  else if (wind.includes("in")) f -= Math.min(0.12, mph * HRB.wxWindPer);
+  return Math.max(0.8, Math.min(1.25, f));
+}
+// v92: batched people lookup - bat/pitch hands PLUS season hitting (HR, PA)
+// and pitching (HR allowed, W-L, ground-out share) in one hydrate.
+async function hrbPeopleStats(idList) {
+  const out = {};
+  const ipToNum = (ip) => { const [w, f] = String(ip || "0").split("."); return Number(w) + (Number(f || 0) / 3); };
+  for (let i = 0; i < idList.length; i += 90) {
+    const chunk = idList.slice(i, i + 90);
+    try {
+      const ppl = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${chunk.join(",")}&hydrate=stats(group=[hitting,pitching],type=[season])`)).json();
+      for (const person of ppl.people || []) {
+        const grp = (name) => {
+          const st = (person.stats || []).find((x) => x.group && String(x.group.displayName).toLowerCase() === name);
+          return st && st.splits && st.splits[0] && st.splits[0].stat;
+        };
+        const hit = grp("hitting");
+        const pit = grp("pitching");
+        const go = pit && pit.groundOuts != null ? Number(pit.groundOuts) : null;
+        const ao = pit && pit.airOuts != null ? Number(pit.airOuts) : null;
+        out[person.id] = {
+          bat: person.batSide && person.batSide.code,
+          pitch: person.pitchHand && person.pitchHand.code,
+          hr: hit && hit.homeRuns != null ? Number(hit.homeRuns) : null,
+          pa: hit && hit.plateAppearances != null ? Number(hit.plateAppearances) : null,
+          hra: pit && pit.homeRuns != null ? Number(pit.homeRuns) : null,
+          rec: pit && pit.wins != null ? Math.round(pit.wins) + "-" + Math.round(pit.losses ?? 0) : null,
+          ip: pit ? ipToNum(pit.inningsPitched) : null,
+          goPct: go != null && ao != null && go + ao > 0 ? (go / (go + ao)) * 100 : null,
+        };
+      }
+    } catch {}
+  }
+  return out;
+}
+// v92: team bullpen HR/9 (relievers-only split; falls back to the team's
+// overall HR/9; null if the API says nothing - scorer then treats it as avg).
+const hrbPenCache = {};
+async function hrbBullpenHr9(teamIds, season) {
+  const ipToNum = (ip) => { const [w, f] = String(ip || "0").split("."); return Number(w) + (Number(f || 0) / 3); };
+  const out = {};
+  await Promise.all(teamIds.map(async (tid) => {
+    const key = tid + ":" + season;
+    if (hrbPenCache[key] !== undefined) { out[tid] = hrbPenCache[key]; return; }
+    let val = null;
+    const pick = (j) => {
+      const st = j && j.stats && j.stats[0] && j.stats[0].splits && j.stats[0].splits[0] && j.stats[0].splits[0].stat;
+      if (!st || st.homeRuns == null) return null;
+      const ip = ipToNum(st.inningsPitched);
+      return ip > 0 ? (Number(st.homeRuns) / ip) * 9 : null;
+    };
+    try { val = pick(await (await fetch(`https://statsapi.mlb.com/api/v1/teams/${tid}/stats?stats=statSplits&group=pitching&sitCodes=rp&season=${season}`)).json()); } catch {}
+    if (val == null) {
+      try { val = pick(await (await fetch(`https://statsapi.mlb.com/api/v1/teams/${tid}/stats?stats=season&group=pitching&season=${season}`)).json()); } catch {}
+    }
+    hrbPenCache[key] = val;
+    out[tid] = val;
+  }));
+  return out;
+}
 
 function HRBoardTab({ players, onSelectPlayer }) {
   const [data, setData] = useState(null);
@@ -2303,27 +2472,20 @@ function HRBoardTab({ players, onSelectPlayer }) {
           return { g, sides, wx: wxByPk[g.gamePk] || null };
         });
         const all = [...ids];
-        const hands = {};
-        for (let i = 0; i < all.length; i += 90) {
-          const chunk = all.slice(i, i + 90);
-          try {
-            const ppl = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${chunk.join(",")}&hydrate=stats(group=[pitching],type=[season])`)).json();
-            for (const person of ppl.people || []) {
-              const sp = person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0];
-              const hra = sp && sp.stat && sp.stat.homeRuns != null ? sp.stat.homeRuns : null;
-              const rec = sp && sp.stat && sp.stat.wins != null ? Math.round(sp.stat.wins) + "-" + Math.round(sp.stat.losses ?? 0) : null;
-              hands[person.id] = { bat: person.batSide && person.batSide.code, pitch: person.pitchHand && person.pitchHand.code, hra, rec };
-            }
-          } catch {}
-        }
+        const hands = await hrbPeopleStats(all);
+        // v92: opposing BULLPEN HR/9 per team (one call per team, cached)
+        const teamIds = [...new Set(rows.flatMap((r) => ["away", "home"].map((k) => r.g.teams[k].team && r.g.teams[k].team.id).filter(Boolean)))];
+        const penByTeam = await hrbBullpenHr9(teamIds, dayStr(0).slice(0, 4));
         for (const row of rows) for (const k of ["away", "home"]) {
           const s = row.sides[k];
           if (s.pitcher && hands[s.pitcher.id]) {
             s.pitcher.hand = hands[s.pitcher.id].pitch;
             s.pitcher.hra = hands[s.pitcher.id].hra;
             s.pitcher.rec = hands[s.pitcher.id].rec;
+            s.pitcher.goPct = hands[s.pitcher.id].goPct;
           }
-          for (const h of s.hitters) if (hands[h.id]) h.bats = hands[h.id].bat;
+          s.penHr9 = penByTeam[row.g.teams[k].team && row.g.teams[k].team.id] ?? null;
+          for (const h of s.hitters) if (hands[h.id]) { h.bats = hands[h.id].bat; h.hr = hands[h.id].hr; h.pa = hands[h.id].pa; }
         }
         if (alive) setData(rows);
       } catch {
@@ -2353,58 +2515,22 @@ function HRBoardTab({ players, onSelectPlayer }) {
   for (const row of data || []) {
     const rank = row.g.venue && row.g.venue.name ? parkRankFor(row.g.venue.name) : null;
     const parkF = rank != null ? 1 + ((15.5 - rank) / 14.5) * HRB.parkSwing : 1;
-    const wxF = (() => {
-      const w = row.wx;
-      if (!w || w.temp == null) return 1;
-      let f = 1 + Math.max(-0.08, Math.min(0.08, (Number(w.temp) - 72) * HRB.wxTempPer));
-      const wind = String(w.wind || "").toLowerCase();
-      const mph = parseFloat(wind) || 0;
-      if (wind.includes("out")) f += Math.min(0.12, mph * HRB.wxWindPer);
-      else if (wind.includes("in")) f -= Math.min(0.12, mph * HRB.wxWindPer);
-      return Math.max(0.8, Math.min(1.25, f));
-    })();
+    const wxF = hrbWxFactor(row.wx);
     for (const k of ["away", "home"]) {
       const s = row.sides[k];
       const oppSide = row.sides[k === "away" ? "home" : "away"];
       const opp = oppSide.pitcher;
       const om = opp ? meta(opp.name, oppSide.abbr) : {};
+      const penR = oppSide.penHr9 != null ? oppSide.penHr9 / HRB.lgHr9 : null;
       for (let i = 0; i < s.hitters.length; i++) {
         const h = s.hitters[i];
         const hm = meta(h.name, s.abbr);
-        const useBrl = brlVsHand(hm, opp && opp.hand);
-        if (useBrl == null) continue;
-        // Sample-size regression (empirical Bayes): blend toward league
-        // average weighted by batted balls. No BBE data = no change.
-        const shrink = (v, lg, n) => (v != null && n != null && n > 0) ? (v * n + lg * HRB.shrinkK) / (n + HRB.shrinkK) : v;
-        // Split samples are smaller than the season total: hitters see
-        // roughly 70% RHP / 30% LHP, so scale BBE when using a split.
-        const hand = opp && opp.hand;
-        const isSplit = hand === "L" ? hm.brlL != null : hand === "R" ? hm.brlR != null : false;
-        const effBbe = hm.bbe == null ? null
-          : isSplit && hand === "L" ? hm.bbe * 0.3
-          : isSplit && hand === "R" ? hm.bbe * 0.7
-          : hm.bbe;
-        // Two-stage regression: the player's overall rate regresses toward
-        // league average; his vs-hand split then regresses toward HIS OWN
-        // regressed overall (not the league's). This stops small advantage
-        // splits (esp. righties vs LHP) from being over-punished.
-        const totAdj = shrink(hm.barrel, HRB.lgHitBrl, hm.bbe != null ? hm.bbe : HRB.assumeBBE);
-        const prior = totAdj != null ? totAdj : HRB.lgHitBrl;
-        const adjBrl = isSplit
-          ? shrink(useBrl, prior, effBbe != null ? effBbe : HRB.assumeBBE * 0.3)
-          : shrink(useBrl, HRB.lgHitBrl, effBbe != null ? effBbe : HRB.assumeBBE);
-        const adjPitBrl = shrink(om.barrel, HRB.lgPitBrl, om.bbe != null ? om.bbe : HRB.assumeBBE);
-        const adjHr9 = shrink(om.hr9, HRB.lgHr9, om.bbe != null ? om.bbe : HRB.assumeBBE);
-        const hitR = Math.pow(capped(adjBrl / HRB.lgHitBrl), HRB.eHit);
-        const pitR = adjPitBrl != null ? Math.pow(capped(adjPitBrl / HRB.lgPitBrl), HRB.ePitBrl) : 1;
-        const hr9R = adjHr9 != null ? Math.pow(capped(adjHr9 / HRB.lgHr9), HRB.eHr9) : 1;
-        const spotF = HRB.paCurve[Math.min(i, 8)];
-        let score = 100 * hitR * pitR * hr9R * parkF * spotF * wxF;
-        if (om.barrel == null && om.hr9 == null) score *= HRB.unknownSP;
+        const ev = hrbEval({ hm, hApi: { hr: h.hr, pa: h.pa }, om, pApi: { goPct: opp && opp.goPct }, hand: opp && opp.hand, spot: i, parkF, wxF, confirmed: s.confirmed, penR });
+        if (!ev) continue;
+        let score = ev.score, prob = ev.prob;
         const stk = streaks[h.id];
-        if (stk != null && stk <= -5) score *= HRB.coldMult;
-        if (!s.confirmed) score *= HRB.projMult;
-        targets.push({ h, spot: i, side: s, opp, oppAbbr: oppSide.abbr, oppHand: opp && opp.hand, brl: adjBrl, brlRaw: useBrl, oppBrl: adjPitBrl, oppHr9: adjHr9, park: rank, score, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
+        if (stk != null && stk <= -5) { score *= HRB.coldMult; prob *= HRB.coldMult; }
+        targets.push({ h, spot: i, side: s, opp, oppAbbr: oppSide.abbr, oppHand: opp && opp.hand, brl: ev.adjBrl, brlPa: ev.brlPa, hrPa: ev.hrPa, oppBrl: ev.adjPitBrl, oppHr9: ev.adjHr9, oppGb: om.gb != null ? om.gb : null, gbR: ev.gbR, penHr9: oppSide.penHr9, park: rank, score, prob, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
       }
     }
   }
@@ -2427,8 +2553,6 @@ function HRBoardTab({ players, onSelectPlayer }) {
   const runValidation = async (days = 14) => {
     if (valProg && valProg !== "done") return;
     const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
-    const shrinkB = (v, lg, n) => (v != null && n != null && n > 0) ? (v * n + lg * HRB.shrinkK) / (n + HRB.shrinkK) : v;
-    const cappedB = (r) => Math.min(Math.max(r, 0.2), HRB.capRatio);
     const agg = { all: [0, 0], p1: [0, 0], t5: [0, 0], t610: [0, 0], days: 0 };
     const bAgg = { all: [0, 0], p1: [0, 0], t5: [0, 0], t610: [0, 0] };
     const off0 = valWin === "prior" ? days : 0;
@@ -2468,23 +2592,31 @@ function HRBoardTab({ players, onSelectPlayer }) {
           .filter((g) => g.status && g.status.abstractGameState === "Final");
         if (!gs.length) continue;
         const boxes = {};
-        await Promise.all(gs.map(async (g) => {
-          try { boxes[g.gamePk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json(); } catch {}
-        }));
-        const pids = [...new Set(gs.flatMap((g) => ["away", "home"].map((k) => g.teams[k].probablePitcher && g.teams[k].probablePitcher.id).filter(Boolean)))];
+        const wxV = {};
+        await Promise.all(gs.flatMap((g) => [
+          (async () => { try { boxes[g.gamePk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json(); } catch {} })(),
+          (async () => {
+            try {
+              const f = await (await fetch(`https://statsapi.mlb.com/api/v1.1/game/${g.gamePk}/feed/live?fields=gameData,weather,condition,temp,wind`)).json();
+              if (f && f.gameData && f.gameData.weather && f.gameData.weather.temp) wxV[g.gamePk] = f.gameData.weather;
+            } catch {}
+          })(),
+        ]));
+        // v92: people stats for SPs AND every starter (HR/PA, hands, GO%)
+        const pidSet = new Set(gs.flatMap((g) => ["away", "home"].map((k) => g.teams[k].probablePitcher && g.teams[k].probablePitcher.id).filter(Boolean)));
+        for (const g of gs) { const b = boxes[g.gamePk]; if (!b || !b.teams) continue; for (const k of ["away", "home"]) for (const pl of Object.values((b.teams[k] && b.teams[k].players) || {})) if (pl.battingOrder != null && Number(pl.battingOrder) % 100 === 0 && pl.person) pidSet.add(pl.person.id); }
+        const ppl = await hrbPeopleStats([...pidSet]);
         const hand = {};
-        for (let i = 0; i < pids.length; i += 90) {
-          try {
-            const ppl = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${pids.slice(i, i + 90).join(",")}`)).json();
-            for (const person of ppl.people || []) hand[person.id] = person.pitchHand && person.pitchHand.code;
-          } catch {}
-        }
+        for (const id of Object.keys(ppl)) hand[id] = ppl[id].pitch;
+        const tIds = [...new Set(gs.flatMap((g) => ["away", "home"].map((k) => g.teams[k].team && g.teams[k].team.id).filter(Boolean)))];
+        const penV = await hrbBullpenHr9(tIds, day.slice(0, 4));
         const cands = [];
         for (const g of gs) {
           const box = boxes[g.gamePk];
           if (!box || !box.teams) continue;
           const rank = g.venue && g.venue.name ? parkRankFor(g.venue.name) : null;
           const parkF = rank != null ? 1 + ((15.5 - rank) / 14.5) * HRB.parkSwing : 1;
+          const wxF = hrbWxFactor(wxV[g.gamePk]);
           for (const k of ["away", "home"]) {
             const t = g.teams[k];
             const ab = NAME_TO_ABBR[((t.team && t.team.name) || "").toLowerCase()] || "";
@@ -2497,29 +2629,18 @@ function HRBoardTab({ players, onSelectPlayer }) {
             const starters = Object.values(pmap)
               .filter((pl) => pl.battingOrder != null && Number(pl.battingOrder) % 100 === 0)
               .sort((x, y) => Number(x.battingOrder) - Number(y.battingOrder));
+            const penR = penV[oppT.team && oppT.team.id] != null ? penV[oppT.team.id] / HRB.lgHr9 : null;
+            const pApi = opp && ppl[opp.id] ? { goPct: ppl[opp.id].goPct } : {};
             starters.forEach((pl, i) => {
               const nm = pl.person && pl.person.fullName;
               if (!nm) return;
               const hm = meta(nm, ab);
-              const useBrl = brlVsHand(hm, oh);
-              if (useBrl == null) return;
-              const isSplit = oh === "L" ? hm.brlL != null : oh === "R" ? hm.brlR != null : false;
-              const effBbe = hm.bbe == null ? null : isSplit && oh === "L" ? hm.bbe * 0.3 : isSplit && oh === "R" ? hm.bbe * 0.7 : hm.bbe;
-              const totAdj = shrinkB(hm.barrel, HRB.lgHitBrl, hm.bbe != null ? hm.bbe : HRB.assumeBBE);
-              const prior = totAdj != null ? totAdj : HRB.lgHitBrl;
-              const adjBrl = isSplit
-                ? shrinkB(useBrl, prior, effBbe != null ? effBbe : HRB.assumeBBE * 0.3)
-                : shrinkB(useBrl, HRB.lgHitBrl, effBbe != null ? effBbe : HRB.assumeBBE);
-              const adjPitBrl = shrinkB(om.barrel, HRB.lgPitBrl, om.bbe != null ? om.bbe : HRB.assumeBBE);
-              const adjHr9 = shrinkB(om.hr9, HRB.lgHr9, om.bbe != null ? om.bbe : HRB.assumeBBE);
-              const hitR = Math.pow(cappedB(adjBrl / HRB.lgHitBrl), HRB.eHit);
-              const pitR = adjPitBrl != null ? Math.pow(cappedB(adjPitBrl / HRB.lgPitBrl), HRB.ePitBrl) : 1;
-              const hr9R = adjHr9 != null ? Math.pow(cappedB(adjHr9 / HRB.lgHr9), HRB.eHr9) : 1;
-              const spotF = valPA ? HRB.paCurve[Math.min(i, 8)] : 1 - 0.015 * i;
-              let score = 100 * hitR * pitR * hr9R * parkF * spotF;
-              if (om.barrel == null && om.hr9 == null) score *= HRB.unknownSP;
+              const hApi = ppl[pl.person.id] || {};
+              const ev = hrbEval({ hm, hApi: { hr: hApi.hr, pa: hApi.pa }, om, pApi, hand: oh, spot: valPA ? i : 4, parkF, wxF, confirmed: true, penR });
+              if (!ev) return;
+              const score = ev.score;
               const st = pl.stats && pl.stats.batting;
-              cands.push({ team: ab, score, hr: (st && st.homeRuns) || 0, bett: wknd || hrET(g) >= 16 });
+              cands.push({ team: ab, score, prob: ev.prob, hr: (st && st.homeRuns) || 0, bett: wknd || hrET(g) >= 16 });
             });
           }
         }
@@ -2611,7 +2732,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         ? startedN > games.length / 2
         : games.some((x) => isStarted(x) && hourET(x.g) >= 16) || startedN === games.length);
       if (hist[day] && shouldLock) return;
-      hist[day] = { ver: HRB_VERSION, entries: top.map((t) => ({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), pk: t.g.gamePk, st: streaks[t.h.id] ?? null })), results: (hist[day] && hist[day].results) || null };
+      hist[day] = { ver: HRB_VERSION, entries: top.map((t) => ({ id: t.h.id, name: t.h.name, team: t.side.abbr, score: Math.round(t.score), prob: t.prob != null ? Math.round(t.prob * 1000) / 10 : null, pk: t.g.gamePk, st: streaks[t.h.id] ?? null })), results: (hist[day] && hist[day].results) || null };
       localStorage.setItem("hrbHistory", JSON.stringify(hist));
     } catch {}
   }, [topIdsKey, streaks]);
@@ -2699,28 +2820,34 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       </span>
                     </span>
                   </span>
-                  <span className="flex items-center gap-2 mt-0.5 pl-7">
-                    <span className="w-9 text-center shrink-0">
-                      <span className="block text-[7px] font-bold text-slate-400 uppercase">Batting</span>
+                  <span className="flex items-center gap-1.5 mt-0.5 pl-7">
+                    <span className="w-8 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">Bat</span>
                       <span className="block text-[10px] font-extrabold text-slate-700 dark:text-slate-100 tabular-nums">{ordinalize(t.spot + 1)}</span>
                     </span>
-                    <span className="w-12 text-center shrink-0">
+                    <span className="w-11 text-center shrink-0">
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
                       <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbHitClass(t.brl)}>
-                        {Number(t.brl).toFixed(1)}
+                        {t.brl != null ? Number(t.brl).toFixed(1) : "—"}
                       </span>
                     </span>
                     <span className="w-px h-6 bg-slate-200 dark:bg-slate-700 shrink-0" />
-                    <span className="w-12 text-center shrink-0">
+                    <span className="w-11 text-center shrink-0">
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">SP Brl</span>
                       <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbPitBrlClass(t.oppBrl)}>
                         {t.oppBrl != null ? Number(t.oppBrl).toFixed(1) : "—"}
                       </span>
                     </span>
-                    <span className="w-12 text-center shrink-0">
+                    <span className="w-11 text-center shrink-0">
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">SP HR9</span>
                       <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbHr9Class(t.oppHr9)}>
                         {t.oppHr9 != null ? Number(t.oppHr9).toFixed(2) : "—"}
+                      </span>
+                    </span>
+                    <span className="w-11 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">SP GB%</span>
+                      <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbGbClass(t.oppGb)}>
+                        {t.oppGb != null ? Number(t.oppGb).toFixed(0) : "—"}
                       </span>
                     </span>
                     {streaks[t.h.id] >= 5 && (
@@ -2729,7 +2856,11 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     {streaks[t.h.id] <= -5 && (
                       <span className="ml-auto text-[10px] font-extrabold text-sky-400 shrink-0">{-streaks[t.h.id]}❄️</span>
                     )}
-                    <span className={(Math.abs(streaks[t.h.id]) >= 5 ? "" : "ml-auto ") + "w-10 text-center shrink-0"}>
+                    <span className={(Math.abs(streaks[t.h.id]) >= 5 ? "" : "ml-auto ") + "w-11 text-center shrink-0"}>
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">HR%</span>
+                      <span className="block text-[12px] font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">{t.prob != null ? (t.prob * 100).toFixed(0) + "%" : "—"}</span>
+                    </span>
+                    <span className="w-8 text-center shrink-0">
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
                       <span className="block text-[12px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{Math.round(t.score)}</span>
                     </span>
@@ -2748,7 +2879,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </button>
               ))}
             </div>
-            <div className="text-[9px] text-slate-400 mt-1.5 px-1">Score: 100 = league-avg matchup. Hitter Brl%, SP Brl% against & SP HR/9 as capped ratios to league avg (small samples regressed by BBE), multiplied with park + lineup spot (PA curve) + weather (temp/wind) · projected ×{HRB.projMult}</div>
+            <div className="text-[9px] text-slate-400 mt-1.5 px-1">v92 · Score: 100 = league-avg matchup. HR% = chance of at least one HR today. Hitter = Barrel/PA^{HRB.eBrlPa} × HR/PA^{HRB.eHrPa} · SP = Brl%^{HRB.eSpBrl} × HR/9^{HRB.eSpHr9} × GB%⁻¹^{HRB.eGb}, blended {Math.round(HRB.spShare * 100)}/{Math.round((1 - HRB.spShare) * 100)} with opposing bullpen HR/9 · × park × weather · expected PAs by lineup spot · projected ×{HRB.projMult}</div>
           </>
         )}
         {view === "matchups" && (<>
