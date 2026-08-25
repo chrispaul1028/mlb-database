@@ -3166,6 +3166,31 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </div>
               );
             })()}
+            {history != null && (() => {
+              // Calibration: across every graded v92 day, sum of HR% vs. actual
+              // homers. Ratio near 1.0 = HR% is honest; >1 = model too bold,
+              // <1 = too timid. This is the number that decides exponent tweaks.
+              let exp = 0, act = 0, n = 0, days = 0;
+              for (const day of Object.keys(history)) {
+                const h = history[day] || {};
+                if (h.results == null) continue;
+                const es = (h.entries || []).filter((e) => e.prob != null);
+                if (!es.length) continue;
+                days++;
+                for (const e of es) { exp += e.prob / 100; n++; if ((h.results[e.id] || 0) > 0) act++; }
+              }
+              if (!n) return null;
+              const ratio = act > 0 ? exp / act : null;
+              return (
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2 mb-3 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Calibration · {days}d</span>
+                  <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 tabular-nums">
+                    expected {exp.toFixed(1)} · actual {act} · hit {(100 * act / n).toFixed(0)}%
+                    {ratio != null && <span className={"ml-2 " + (ratio > 1.25 ? "text-rose-500" : ratio < 0.8 ? "text-sky-500" : "text-emerald-500")}>{ratio > 1.25 ? "too bold" : ratio < 0.8 ? "too timid" : "honest"}</span>}
+                  </span>
+                </div>
+              );
+            })()}
             {history != null && Object.keys(history).sort().reverse().map((day) => {
               const h = history[day] || {};
               const entries = h.entries || [];
@@ -3176,7 +3201,12 @@ function HRBoardTab({ players, onSelectPlayer }) {
                   <div className="flex items-center justify-between px-4 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800">
                     <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-300">{day}{h.ver && <span className="ml-1 font-bold text-slate-400 dark:text-slate-500">· {h.ver}</span>}</span>
                     <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-300">
-                      {graded ? `${hits}/${entries.length} homered` : "Pending — grades after games end"}
+                      {(() => {
+                        const probs = entries.map((e) => e.prob).filter((x) => x != null);
+                        const exp = probs.length ? probs.reduce((a, b) => a + b, 0) / 100 : null;
+                        if (!graded) return "Pending — grades after games end";
+                        return `${hits}/${entries.length} homered` + (exp != null ? ` · expected ${exp.toFixed(1)}` : "");
+                      })()}
                     </span>
                   </div>
                   <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -3187,6 +3217,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           <span className="w-4 text-center text-[10px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
                           {TEAM_LOGOS[e.team] && <img src={TEAM_LOGOS[e.team]} alt="" className="w-4 h-4 rounded-full object-contain bg-white shrink-0" />}
                           <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{e.name}</span>
+                          {e.prob != null && <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 tabular-nums shrink-0">{Math.round(e.prob)}%</span>}
                           <span className="text-[10px] font-bold text-slate-400 tabular-nums shrink-0">{e.score}</span>
                           <span className="w-12 text-right text-[11px] font-extrabold shrink-0">
                             {hr == null && !graded ? <span className="text-slate-300 dark:text-slate-600">·</span>
