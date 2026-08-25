@@ -2856,13 +2856,9 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     {streaks[t.h.id] <= -5 && (
                       <span className="ml-auto text-[10px] font-extrabold text-sky-400 shrink-0">{-streaks[t.h.id]}❄️</span>
                     )}
-                    <span className={(Math.abs(streaks[t.h.id]) >= 5 ? "" : "ml-auto ") + "w-11 text-center shrink-0"}>
+                    <span className={(Math.abs(streaks[t.h.id]) >= 5 ? "" : "ml-auto ") + "w-12 text-center shrink-0"}>
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">HR%</span>
-                      <span className="block text-[12px] font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">{t.prob != null ? (t.prob * 100).toFixed(0) + "%" : "—"}</span>
-                    </span>
-                    <span className="w-8 text-center shrink-0">
-                      <span className="block text-[7px] font-bold text-slate-400 uppercase">Score</span>
-                      <span className="block text-[12px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{Math.round(t.score)}</span>
+                      <span className="block text-[13px] font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">{t.prob != null ? (t.prob * 100).toFixed(0) + "%" : "—"}</span>
                     </span>
                   </span>
                   <span className="flex items-center justify-between gap-2 mt-0.5 pl-7">
@@ -2879,7 +2875,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </button>
               ))}
             </div>
-            <div className="text-[9px] text-slate-400 mt-1.5 px-1">v92 · Score: 100 = league-avg matchup. HR% = chance of at least one HR today. Hitter = Barrel/PA^{HRB.eBrlPa} × HR/PA^{HRB.eHrPa} · SP = Brl%^{HRB.eSpBrl} × HR/9^{HRB.eSpHr9} × GB%⁻¹^{HRB.eGb}, blended {Math.round(HRB.spShare * 100)}/{Math.round((1 - HRB.spShare) * 100)} with opposing bullpen HR/9 · × park × weather · expected PAs by lineup spot · projected ×{HRB.projMult}</div>
+            <div className="text-[9px] text-slate-400 mt-1.5 px-1">v92 · HR% = chance of at least one HR today. Hitter = Barrel/PA^{HRB.eBrlPa} × HR/PA^{HRB.eHrPa} · SP = Brl%^{HRB.eSpBrl} × HR/9^{HRB.eSpHr9} × GB%⁻¹^{HRB.eGb}, blended {Math.round(HRB.spShare * 100)}/{Math.round((1 - HRB.spShare) * 100)} with opposing bullpen HR/9 · × park × weather · expected PAs by lineup spot · projected ×{HRB.projMult}</div>
           </>
         )}
         {view === "matchups" && (<>
