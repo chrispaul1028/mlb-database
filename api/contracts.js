@@ -472,7 +472,12 @@ export default async function handler(req, res) {
           brlR: coerceNum(getField(r.fields, ["Barrel % vs RHP", "Barrel% vs RHP", "Brl% vs R", "Barrel vs RHP"])),
           hr9: coerceNum(getField(r.fields, ["HR/9", "HR9", "HR per 9"])),
           oaa: coerceNum(getField(r.fields, ["OAA", "Outs Above Average"])),
-          bbe: coerceNum(getField(r.fields, ["Batted Balls", "BBE", "Batted Ball Events"])),
+          bbe: coerceNum(getField(r.fields, ["Batted Balls", "BBE", "Batted Ball Events", "Attempts"])),
+          // v92 additions (all optional - the app falls back to MLB API data):
+          brlPa: coerceNum(getField(r.fields, ["Barrel/PA", "Barrel per PA", "Brl/PA", "brl_pa", "Barrel PA", "Barrel/PA %"])),
+          gb: coerceNum(getField(r.fields, ["GB %", "GB%", "Ground Ball %", "Groundball %", "groundballs_percent", "GB Rate"])),
+          pa: coerceNum(getField(r.fields, ["PA", "Plate Appearances"])),
+          hr: coerceNum(getField(r.fields, ["HR", "Home Runs", "home_run"])),
         };
         const pv = getField(r.fields, ["Player", "Name"]);
         if (Array.isArray(pv) && pv.length) {
@@ -496,6 +501,10 @@ export default async function handler(req, res) {
         if (hit.hr9 != null) p.hr9 = hit.hr9;
         if (hit.oaa != null) p.oaa = hit.oaa;
         if (hit.bbe != null) p.bbe = hit.bbe;
+        if (hit.brlPa != null) p.brlPa = hit.brlPa;
+        if (hit.gb != null) p.gb = hit.gb;
+        if (hit.pa != null) p.pa = hit.pa;
+        if (hit.hr != null) p.hr = hit.hr;
       }
       // League-wide coverage: Stats Import rows with no matching Players
       // record still ship to the app (name + numbers only) so the HR
@@ -513,6 +522,7 @@ export default async function handler(req, res) {
           team: getField(r.fields, ["Team", "Tm"]) || null,
           barrel: entry.barrel, brlL: entry.brlL, brlR: entry.brlR,
           hr9: entry.hr9, bbe: entry.bbe,
+          brlPa: entry.brlPa, gb: entry.gb, pa: entry.pa, hr: entry.hr,
         });
       }
     } catch (e) {
