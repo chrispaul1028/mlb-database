@@ -1335,35 +1335,76 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
     if (hit) used.add(hit.id);
     return hit;
   };
-  // Base corners (viewBox 0-100 x, 0-108 y): home 50,84 · 1B 74,60 · 2B 50,36 · 3B 26,60
+  // Geometry (viewBox 0-100 x, 0-108 y). Home 50,84 · 1B 74,60 · 2B 50,36
+  // · 3B 26,60 · mound 50,60. 90 ft ≈ 34 units. Infielders sit ON the bag;
+  // 2B and SS flank second base the way they actually play it.
   const SPOTS = [
-    { lbl: "CF", x: 50, y: 12, aliases: ["CF", "OF"] },
-    { lbl: "LF", x: 16, y: 22, aliases: ["LF", "OF"] },
-    { lbl: "RF", x: 84, y: 22, aliases: ["RF", "OF"] },
-    { lbl: "2B", x: 62, y: 44, aliases: ["2B"] },
-    { lbl: "SS", x: 38, y: 44, aliases: ["SS"] },
+    { lbl: "CF", x: 50, y: 14, aliases: ["CF", "OF"] },
+    { lbl: "LF", x: 18, y: 25, aliases: ["LF", "OF"] },
+    { lbl: "RF", x: 82, y: 25, aliases: ["RF", "OF"] },
+    { lbl: "2B", x: 58, y: 38, aliases: ["2B"] },
+    { lbl: "SS", x: 42, y: 38, aliases: ["SS"] },
     { lbl: "3B", x: 26, y: 60, aliases: ["3B"] },
     { lbl: "1B", x: 74, y: 60, aliases: ["1B"] },
     { lbl: "P", x: 50, y: 60, aliases: ["P", "SP", "RHP", "LHP"] },
-    { lbl: "C", x: 50, y: 90, aliases: ["C"] },
+    { lbl: "C", x: 50, y: 92, aliases: ["C"] },
   ];
   const oaaChip = (v) => v == null ? "bg-slate-900/70 text-white/70"
     : v >= 8 ? "bg-amber-400 text-slate-900"
     : v >= 3 ? "bg-emerald-500 text-white"
     : v > -3 ? "bg-slate-900/85 text-white"
     : "bg-rose-600 text-white";
+  const tc = teamColor(abbr) || "#1e3a8a";
   return (
     <div className="mt-4">
-      <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm"
-        style={{ paddingBottom: "108%", background: "linear-gradient(180deg,#166534 0%,#15803d 60%,#166534 100%)" }}>
+      <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm bg-[#1f6b34]"
+        style={{ paddingBottom: "108%" }}>
         <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 108" preserveAspectRatio="none">
-          <polygon points="50,84 74,60 50,36 26,60" fill="#b45309" fillOpacity="0.75" stroke="rgba(255,255,255,0.55)" strokeWidth="0.7" />
-          <circle cx="50" cy="60" r="5" fill="#b45309" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
-          <circle cx="50" cy="84" r="7" fill="#b45309" fillOpacity="0.9" />
-          {[[50, 84], [74, 60], [50, 36], [26, 60]].map(([bx, by], i) => (
-            <rect key={i} x={bx - 1.6} y={by - 1.6} width="3.2" height="3.2" fill="#fff"
-              transform={"rotate(45 " + bx + " " + by + ")"} />
+          <defs>
+            {/* fair territory: wedge from home along both foul lines, closed by the fence arc (r 80) */}
+            <clipPath id="fairClip"><path d="M50,84 L110,24 A80,80 0 0 0 -10,24 Z" /></clipPath>
+            <radialGradient id="grassGlow" cx="50%" cy="78%" r="80%">
+              <stop offset="0%" stopColor="#3f9a4e" />
+              <stop offset="100%" stopColor="#1f6b34" />
+            </radialGradient>
+            <radialGradient id="dirtGrad" cx="50%" cy="60%" r="70%">
+              <stop offset="0%" stopColor="#c8925a" />
+              <stop offset="100%" stopColor="#a8703f" />
+            </radialGradient>
+          </defs>
+          {/* grass + concentric mowing arcs centred on home plate */}
+          <rect x="-10" y="-10" width="120" height="130" fill="url(#grassGlow)" />
+          {[12, 24, 36, 48, 60, 72].map((r) => (
+            <circle key={r} cx="50" cy="84" r={r} fill="none" stroke="#ffffff" strokeOpacity="0.06" strokeWidth="6" />
           ))}
+          {/* foul lines run to the wall; anything past the wall becomes stands */}
+          <line x1="50" y1="84" x2="110" y2="24" stroke="#fff" strokeWidth="0.6" strokeOpacity="0.9" />
+          <line x1="50" y1="84" x2="-10" y2="24" stroke="#fff" strokeWidth="0.6" strokeOpacity="0.9" />
+          <circle cx="50" cy="84" r="130" fill="none" stroke="#0b1220" strokeWidth="100" />
+          <circle cx="50" cy="84" r="86" fill="none" stroke="#1e293b" strokeWidth="12" />
+          {/* warning track + outfield wall in team colour */}
+          <g clipPath="url(#fairClip)">
+            <circle cx="50" cy="84" r="80" fill="none" stroke="#b98a5a" strokeWidth="6" />
+            <circle cx="50" cy="84" r="81" fill="none" stroke={tc} strokeWidth="2.4" />
+          </g>
+          {/* skinned infield: arc r 28 from the mound, bounded by the foul lines */}
+          <path d="M50,84 L80.76,53.24 A28,28 0 1 0 19.24,53.24 Z" fill="url(#dirtGrad)" />
+          {/* grass inside the diamond (leaves ~7 ft dirt base paths) */}
+          <polygon points="50,79.5 68.5,60 50,40.5 31.5,60" fill="#3d9a4c" />
+          {/* dirt cutouts at the bags, home circle, mound */}
+          {[[74, 60], [50, 36], [26, 60]].map(([bx, by], i) => (
+            <circle key={i} cx={bx} cy={by} r="4.2" fill="#b47a45" />
+          ))}
+          <circle cx="50" cy="84" r="9.5" fill="#b47a45" />
+          <circle cx="50" cy="60" r="3.6" fill="#c08a52" stroke="#a8703f" strokeWidth="0.4" />
+          <rect x="49.1" y="59.2" width="1.8" height="0.6" fill="#fff" fillOpacity="0.9" />
+          {/* batter's boxes + bases + home plate */}
+          <rect x="44.4" y="80.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.4" strokeOpacity="0.85" />
+          <rect x="52.4" y="80.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.4" strokeOpacity="0.85" />
+          {[[74, 60], [50, 36], [26, 60]].map(([bx, by], i) => (
+            <rect key={i} x={bx - 1.5} y={by - 1.5} width="3" height="3" fill="#fff" transform={"rotate(45 " + bx + " " + by + ")"} />
+          ))}
+          <polygon points="48.6,82.6 51.4,82.6 51.4,84.2 50,85.5 48.6,84.2" fill="#fff" />
         </svg>
         {SPOTS.map((s, i) => {
           const p = pick(s.aliases);
@@ -1617,9 +1658,6 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                           )}
                           {p.name}
                         </span>
-                        {role === "Pitching" && (
-                          <span className="text-[9px] font-bold text-slate-300 dark:text-slate-600 shrink-0">{p.sortLabel || "no sort"}</span>
-                        )}
                         {role === "Batting" && !hasLineup && <StatusBadge status={p.status} />}
                         {role === "Batting" && <span className="flex-1" />}
                         {p.rating2k != null && <Rating2kBadge r={p.rating2k} />}
@@ -2130,6 +2168,7 @@ const HRB = {
   coldMult: 1.0,   // v92: hit streaks are noise for HR purposes - disabled
                    // (set back to 0.9 to restore the old drought discount)
   unknownSP: 0.85, // discount when the opposing SP has NO barrel/HR9 data
+  noSavant: 0.8,   // discount when the HITTER has no barrel data (name mismatch)
                    // (a blind matchup shouldn't rank beside a proven one)
   // Weather (applied only when data exists; domes stay neutral):
   wxTempPer: 0.004, // +0.4% per °F above 72 (capped ±8%)
@@ -2196,6 +2235,7 @@ function hrbEval({ hm, hApi, om, pApi, hand, spot, parkF, wxF, confirmed, penR }
   const hrPaRaw = (hr != null && pa != null && pa > 0) ? hr / pa : null;
   const hrPa = hrPaRaw != null ? (hrPaRaw * pa + HRB.lgHrPa * HRB.shrinkK) / (pa + HRB.shrinkK) : null;
   if (brlPa == null && hrPa == null) return null;
+  const noSavant = brlPa == null; // name didn't match the import - fix the name, don't trust the row
   const brlPaR = brlPa != null ? Math.pow(capped(brlPa / HRB.lgBrlPa), HRB.eBrlPa) : 1;
   const hrPaR = hrPa != null ? Math.pow(capped(hrPa / HRB.lgHrPa), HRB.eHrPa) : 1;
   // If only one hitter input exists, give it the full weight.
@@ -2220,11 +2260,12 @@ function hrbEval({ hm, hApi, om, pApi, hand, spot, parkF, wxF, confirmed, penR }
   // ── Assemble ──
   let pPA = HRB.lgHrPa * hitR * pitR * (parkF || 1) * (wxF || 1);
   if (!spKnown) pPA *= HRB.unknownSP;
+  if (noSavant) pPA *= HRB.noSavant;
   if (confirmed === false) pPA *= HRB.projMult;
   const ePA = HRB.expPA[Math.min(Math.max(spot || 0, 0), 8)];
   const prob = 1 - Math.pow(1 - Math.min(pPA, 0.5), ePA);
   const score = 100 * (pPA / HRB.lgHrPa) * (ePA / HRB.avgPA);
-  return { score, prob, hitR, pitR, brlPa, hrPa, adjBrl, adjPitBrl, adjHr9, gbR, penR, spKnown };
+  return { score, prob, hitR, pitR, brlPa, hrPa, adjBrl, adjPitBrl, adjHr9, gbR, penR, spKnown, noSavant };
 }
 // GB% is INVERTED: low ground-ball rate = more balls in the air = target.
 function hrbGbClass(v) {
@@ -2251,7 +2292,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v92";
+const HRB_VERSION = "v93";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2275,7 +2316,10 @@ if (typeof window !== "undefined" && !window.__hrbTrap) {
   });
   window.addEventListener("unhandledrejection", (e) => show("async: " + String((e.reason && e.reason.message) || e.reason)));
 }
-const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+// Accents, periods, and Jr./Sr./II/III suffixes all dropped so
+// "Luis García Jr." (MLB) matches "Luis Garcia" (Savant/Airtable).
+const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/\./g, "").replace(/\s+(jr|sr|ii|iii|iv)$/i, "").replace(/\s+/g, " ").trim().toLowerCase();
 const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
 // when it exists in Airtable, otherwise fall back to overall Barrel %.
@@ -2354,6 +2398,18 @@ async function hrbBullpenHr9(teamIds, season) {
 }
 
 function HRBoardTab({ players, onSelectPlayer }) {
+  // v93: FanDuel HR prices (via /api/odds). {} when no key / no market.
+  const [odds, setOdds] = useState({});
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const j = await (await fetch("/api/odds")).json();
+        if (alive && j && j.prices) setOdds(j.prices);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, []);
   const [data, setData] = useState(null);
   const [selGame, setSelGame] = useState(null);
   const [view, setView] = useState("matchups"); // matchups | targets | history
@@ -2530,7 +2586,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
         let score = ev.score, prob = ev.prob;
         const stk = streaks[h.id];
         if (stk != null && stk <= -5) { score *= HRB.coldMult; prob *= HRB.coldMult; }
-        targets.push({ h, spot: i, side: s, opp, oppAbbr: oppSide.abbr, oppHand: opp && opp.hand, brl: ev.adjBrl, brlPa: ev.brlPa, hrPa: ev.hrPa, oppBrl: ev.adjPitBrl, oppHr9: ev.adjHr9, oppGb: om.gb != null ? om.gb : null, gbR: ev.gbR, penHr9: oppSide.penHr9, park: rank, score, prob, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
+        const fd = odds[hrbNrm(h.name)] || null;
+        targets.push({ h, spot: i, side: s, opp, oppAbbr: oppSide.abbr, oppHand: opp && opp.hand, fd, brl: ev.adjBrl, brlPa: ev.brlPa, hrPa: ev.hrPa, oppBrl: ev.adjPitBrl, oppHr9: ev.adjHr9, oppGb: om.gb != null ? om.gb : null, gbR: ev.gbR, penHr9: oppSide.penHr9, park: rank, score, prob, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
       }
     }
   }
@@ -2827,8 +2884,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     </span>
                     <span className="w-11 text-center shrink-0">
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
-                      <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbHitClass(t.brl)}>
-                        {t.brl != null ? Number(t.brl).toFixed(1) : "—"}
+                      <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + (t.brl != null ? hrbHitClass(t.brl) : "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300")}>
+                        {t.brl != null ? Number(t.brl).toFixed(1) : "no data"}
                       </span>
                     </span>
                     <span className="w-px h-6 bg-slate-200 dark:bg-slate-700 shrink-0" />
@@ -2860,6 +2917,18 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">HR%</span>
                       <span className="block text-[13px] font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">{t.prob != null ? (t.prob * 100).toFixed(0) + "%" : "—"}</span>
                     </span>
+                    {t.fd && (() => {
+                      // Edge = model HR% minus the book's implied %. Green = bet, amber = coin flip, red = pass.
+                      const edge = t.prob != null ? t.prob * 100 - t.fd.implied : null;
+                      const cls = edge == null ? "text-slate-400" : edge >= 4 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+                        : edge <= -2 ? "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300" : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+                      return (
+                        <span className="w-12 text-center shrink-0">
+                          <span className="block text-[7px] font-bold text-slate-400 uppercase">FD {t.fd.price > 0 ? "+" : ""}{t.fd.price}</span>
+                          <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + cls}>{edge == null ? "—" : (edge > 0 ? "+" : "") + edge.toFixed(0)}</span>
+                        </span>
+                      );
+                    })()}
                   </span>
                   <span className="flex items-center justify-between gap-2 mt-0.5 pl-7">
                     <span className="text-[9px] font-semibold text-slate-400 truncate">
@@ -3269,7 +3338,6 @@ const TABS = [
   { id: "teams", label: "Teams", icon: "⚾" },
   { id: "players", label: "Players", icon: "👤" },
   { id: "stats", label: "Stats", icon: "📊" },
-  { id: "draft", label: "Draft", icon: "🎓" },
 ];
 
 export default function App() {
@@ -3346,7 +3414,6 @@ export default function App() {
       {players && tab === "hrboard" && <HRBoardTab players={players} onSelectPlayer={setSel} />}
       {players && tab === "players" && <PlayersTab players={players} onSelect={setSel} />}
       {players && tab === "stats" && <StatsTab players={players} onSelect={setSel} />}
-      {players && tab === "draft" && <DraftTab players={players} onSelect={setSel} />}
 
       <div className="fixed bottom-0 inset-x-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex pb-[env(safe-area-inset-bottom)] z-20">
         {TABS.map((t) => (
