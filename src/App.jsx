@@ -1413,8 +1413,8 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
               className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
               style={{ left: s.x + "%", top: (s.y / 1.08) + "%" }}>
               <span className="relative">
-                {p && p.photo ? (
-                  <img src={p.photo} alt="" className="w-11 h-11 rounded-full object-cover object-top bg-white border-2 border-white/80 shadow-md" loading="lazy" />
+                {p ? (
+                  <span className="block w-11 h-11 rounded-full overflow-hidden border-2 border-white/80 shadow-md bg-white"><Avatar p={p} /></span>
                 ) : (
                   <span className="w-11 h-11 rounded-full flex items-center justify-center text-[10px] font-extrabold bg-white/25 text-white/80 border-2 border-dashed border-white/50 shadow-md">{s.lbl}</span>
                 )}
@@ -2249,8 +2249,12 @@ function hrbEval({ hm, hApi, om, pApi, hand, spot, parkF, wxF, confirmed, penR }
   const spBrlR = adjPitBrl != null ? Math.pow(capped(adjPitBrl / HRB.lgPitBrl), HRB.eSpBrl) : 1;
   const spHr9R = adjHr9 != null ? Math.pow(capped(adjHr9 / HRB.lgHr9), HRB.eSpHr9) : 1;
   // Ground-ball rate: MORE grounders = FEWER homers, so the ratio is inverted.
+  // Regressed by BBE exactly like Brl% and HR/9 - a 10-batted-ball rookie
+  // with a 10% GB rate is treated as roughly league average, not as a
+  // fly-ball machine.
   let gbR = 1;
-  if (om.gb != null) gbR = Math.pow(capped(HRB.lgGb / Math.max(om.gb, 1)), HRB.eGb);
+  const adjGb = om.gb != null ? shrink(om.gb, HRB.lgGb, om.bbe != null ? om.bbe : HRB.assumeBBE) : null;
+  if (adjGb != null) gbR = Math.pow(capped(HRB.lgGb / Math.max(adjGb, 1)), HRB.eGb);
   else if (pApi.goPct != null) gbR = Math.pow(capped(HRB.lgGoPct / Math.max(pApi.goPct, 1)), HRB.eGb);
   const spKnown = om.barrel != null || om.hr9 != null;
   const spR = spBrlR * spHr9R * gbR;
@@ -2265,7 +2269,7 @@ function hrbEval({ hm, hApi, om, pApi, hand, spot, parkF, wxF, confirmed, penR }
   const ePA = HRB.expPA[Math.min(Math.max(spot || 0, 0), 8)];
   const prob = 1 - Math.pow(1 - Math.min(pPA, 0.5), ePA);
   const score = 100 * (pPA / HRB.lgHrPa) * (ePA / HRB.avgPA);
-  return { score, prob, hitR, pitR, brlPa, hrPa, adjBrl, adjPitBrl, adjHr9, gbR, penR, spKnown, noSavant };
+  return { score, prob, hitR, pitR, brlPa, hrPa, adjBrl, adjPitBrl, adjHr9, adjGb, gbR, penR, spKnown, noSavant };
 }
 // GB% is INVERTED: low ground-ball rate = more balls in the air = target.
 function hrbGbClass(v) {
@@ -2292,7 +2296,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v93";
+const HRB_VERSION = "v94";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2319,6 +2323,7 @@ if (typeof window !== "undefined" && !window.__hrbTrap) {
 // Accents, periods, and Jr./Sr./II/III suffixes all dropped so
 // "Luis García Jr." (MLB) matches "Luis Garcia" (Savant/Airtable).
 const hrbNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[\u0131\u0130]/g, "i").replace(/\u00f8/g, "o").replace(/\u0142/g, "l") // dotless ı, ø, ł
   .replace(/\./g, "").replace(/\s+(jr|sr|ii|iii|iv)$/i, "").replace(/\s+/g, " ").trim().toLowerCase();
 const ABBR_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ABBR).map(([n, a]) => [a, n]));
 // Matchup-aware barrel: use the hitter's split vs the opposing SP's hand
@@ -2398,18 +2403,6 @@ async function hrbBullpenHr9(teamIds, season) {
 }
 
 function HRBoardTab({ players, onSelectPlayer }) {
-  // v93: FanDuel HR prices (via /api/odds). {} when no key / no market.
-  const [odds, setOdds] = useState({});
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const j = await (await fetch("/api/odds")).json();
-        if (alive && j && j.prices) setOdds(j.prices);
-      } catch {}
-    })();
-    return () => { alive = false; };
-  }, []);
   const [data, setData] = useState(null);
   const [selGame, setSelGame] = useState(null);
   const [view, setView] = useState("matchups"); // matchups | targets | history
@@ -2551,9 +2544,18 @@ function HRBoardTab({ players, onSelectPlayer }) {
     return () => { alive = false; };
   }, []);
   const todayLabel = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "2-digit", day: "2-digit" }).format(new Date());
-  const meta = (name, abbr) => {
-    const list = myByName[hrbNrm(name)];
+  // want = "hit" | "pit": with duplicate names (three Luis Garcias) only
+  // consider records that carry that kind of stat, so a hitter can never
+  // silently pick up a pitcher's Brl%-against.
+  const meta = (name, abbr, want) => {
+    let list = myByName[hrbNrm(name)];
     if (!list || !list.length) return {};
+    if (list.length > 1 && want) {
+      const isPit = (r) => r.hr9 != null || r.gb != null;
+      const isHit = (r) => r.brlL != null || r.brlR != null || r.brlPa != null || (r.barrel != null && !isPit(r));
+      const f = list.filter(want === "pit" ? isPit : isHit);
+      if (f.length) list = f;
+    }
     if (list.length > 1 && abbr) {
       const a = String(abbr).toLowerCase();
       const full = (ABBR_TO_NAME[abbr] || "").toLowerCase();
@@ -2576,18 +2578,17 @@ function HRBoardTab({ players, onSelectPlayer }) {
       const s = row.sides[k];
       const oppSide = row.sides[k === "away" ? "home" : "away"];
       const opp = oppSide.pitcher;
-      const om = opp ? meta(opp.name, oppSide.abbr) : {};
+      const om = opp ? meta(opp.name, oppSide.abbr, "pit") : {};
       const penR = oppSide.penHr9 != null ? oppSide.penHr9 / HRB.lgHr9 : null;
       for (let i = 0; i < s.hitters.length; i++) {
         const h = s.hitters[i];
-        const hm = meta(h.name, s.abbr);
+        const hm = meta(h.name, s.abbr, "hit");
         const ev = hrbEval({ hm, hApi: { hr: h.hr, pa: h.pa }, om, pApi: { goPct: opp && opp.goPct }, hand: opp && opp.hand, spot: i, parkF, wxF, confirmed: s.confirmed, penR });
         if (!ev) continue;
         let score = ev.score, prob = ev.prob;
         const stk = streaks[h.id];
         if (stk != null && stk <= -5) { score *= HRB.coldMult; prob *= HRB.coldMult; }
-        const fd = odds[hrbNrm(h.name)] || null;
-        targets.push({ h, spot: i, side: s, opp, oppAbbr: oppSide.abbr, oppHand: opp && opp.hand, fd, brl: ev.adjBrl, brlPa: ev.brlPa, hrPa: ev.hrPa, oppBrl: ev.adjPitBrl, oppHr9: ev.adjHr9, oppGb: om.gb != null ? om.gb : null, gbR: ev.gbR, penHr9: oppSide.penHr9, park: rank, score, prob, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
+        targets.push({ h, spot: i, side: s, opp, oppAbbr: oppSide.abbr, oppHand: opp && opp.hand, brl: ev.adjBrl, brlPa: ev.brlPa, hrPa: ev.hrPa, oppBrl: ev.adjPitBrl, oppHr9: ev.adjHr9, oppGb: ev.adjGb, gbR: ev.gbR, penHr9: oppSide.penHr9, park: rank, score, prob, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
       }
     }
   }
@@ -2680,7 +2681,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
             const oppT = g.teams[k === "away" ? "home" : "away"];
             const oppAb = NAME_TO_ABBR[((oppT.team && oppT.team.name) || "").toLowerCase()] || "";
             const opp = oppT.probablePitcher || null;
-            const om = opp ? meta(opp.fullName, oppAb) : {};
+            const om = opp ? meta(opp.fullName, oppAb, "pit") : {};
             const oh = opp ? hand[opp.id] : null;
             const pmap = (box.teams[k] && box.teams[k].players) || {};
             const starters = Object.values(pmap)
@@ -2691,7 +2692,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
             starters.forEach((pl, i) => {
               const nm = pl.person && pl.person.fullName;
               if (!nm) return;
-              const hm = meta(nm, ab);
+              const hm = meta(nm, ab, "hit");
               const hApi = ppl[pl.person.id] || {};
               const ev = hrbEval({ hm, hApi: { hr: hApi.hr, pa: hApi.pa }, om, pApi, hand: oh, spot: valPA ? i : 4, parkF, wxF, confirmed: true, penR });
               if (!ev) return;
@@ -2829,7 +2830,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
   const hasBbe = (data || []).some(({ sides }) =>
     ["away", "home"].some((k) => {
       const s = sides[k];
-      const pm = s.pitcher ? meta(s.pitcher.name, s.abbr) : {};
+      const pm = s.pitcher ? meta(s.pitcher.name, s.abbr, "pit") : {};
       return pm.bbe != null;
     })
   );
@@ -2917,18 +2918,6 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">HR%</span>
                       <span className="block text-[13px] font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">{t.prob != null ? (t.prob * 100).toFixed(0) + "%" : "—"}</span>
                     </span>
-                    {t.fd && (() => {
-                      // Edge = model HR% minus the book's implied %. Green = bet, amber = coin flip, red = pass.
-                      const edge = t.prob != null ? t.prob * 100 - t.fd.implied : null;
-                      const cls = edge == null ? "text-slate-400" : edge >= 4 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
-                        : edge <= -2 ? "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300" : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
-                      return (
-                        <span className="w-12 text-center shrink-0">
-                          <span className="block text-[7px] font-bold text-slate-400 uppercase">FD {t.fd.price > 0 ? "+" : ""}{t.fd.price}</span>
-                          <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + cls}>{edge == null ? "—" : (edge > 0 ? "+" : "") + edge.toFixed(0)}</span>
-                        </span>
-                      );
-                    })()}
                   </span>
                   <span className="flex items-center justify-between gap-2 mt-0.5 pl-7">
                     <span className="text-[9px] font-semibold text-slate-400 truncate">
@@ -3068,13 +3057,13 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 <div className="flex items-center gap-2 px-4 pt-2 -mb-1">
                   <span className="flex-1" />
                   <span className="w-11 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">Brl%</span>
-                  {hasBbe && <span className="w-9 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">BBE</span>}
+                  <span className="w-11 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">GB%</span>
                   <span className="w-11 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">HR/9</span>
                 </div>
                 {["away", "home"].map((k) => {
                   const s = sides[k];
                   const logo = TEAM_LOGOS[s.abbr];
-                  const pm = s.pitcher ? meta(s.pitcher.name, s.abbr) : {};
+                  const pm = s.pitcher ? meta(s.pitcher.name, s.abbr, "pit") : {};
                   const oppSP = sides[k === "away" ? "home" : "away"].pitcher;
                   const oppHand = oppSP && oppSP.hand;
                   return (
@@ -3100,22 +3089,23 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         </span>
                         <span className="flex-1 min-w-0 text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
                           {s.pitcher ? s.pitcher.name : "TBD"}
+                          {pm.bbe != null && (
+                            <span className={"ml-1.5 text-[9px] font-bold tabular-nums " + (pm.bbe < 60 ? "text-rose-500" : "text-slate-400")}>{Math.round(pm.bbe)} BBE</span>
+                          )}
                         </span>
                         <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbPitBrlClass(pm.barrel)}>
                           {pm.barrel != null ? Number(pm.barrel).toFixed(1) : "—"}
                         </span>
-                        {hasBbe && (
-                          <span className="w-9 text-center text-[10px] font-bold text-slate-400 tabular-nums shrink-0">
-                            {pm.bbe != null ? Math.round(pm.bbe) : "—"}
-                          </span>
-                        )}
+                        <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbGbClass(pm.gb)}>
+                          {pm.gb != null ? Number(pm.gb).toFixed(0) : "—"}
+                        </span>
                         <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHr9Class(pm.hr9)}>
                           {pm.hr9 != null ? Number(pm.hr9).toFixed(2) : "—"}
                         </span>
                       </div>
                       <div className="mt-2 space-y-1">
                         {s.hitters.map((h, i) => {
-                          const hm = meta(h.name, s.abbr);
+                          const hm = meta(h.name, s.abbr, "hit");
                           const hb = brlVsHand(hm, oppHand);
                           return (
                             <div key={h.id} className="flex items-center gap-2">
@@ -3125,7 +3115,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                               <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(hb)}>
                                 {hb != null ? Number(hb).toFixed(1) : "—"}
                               </span>
-                              {hasBbe && <span className="w-9 shrink-0" />}
+                              <span className="w-11 shrink-0" />
                               <span className={"w-11 shrink-0 text-center text-[11px] font-extrabold " + (streaks[h.id] <= -5 ? "text-sky-400" : "text-orange-500")}>
                                 {streaks[h.id] >= 5 ? streaks[h.id] + "🔥" : streaks[h.id] <= -5 ? (-streaks[h.id]) + "❄️" : ""}
                               </span>
