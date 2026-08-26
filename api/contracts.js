@@ -462,7 +462,10 @@ export default async function handler(req, res) {
       const impRecords = await fetchAll(base, T.statsImport, token);
       importDebug.rows = impRecords.length;
       if (impRecords.length) importDebug.sampleFields = Object.keys(impRecords[0].fields || {});
-      const normI = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+      // Accents, dotless-i, periods and Jr./Sr./II/III all dropped so the
+      // MLB roster name and the Savant import name land on the same key.
+      const normI = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[\u0131\u0130]/g, "i").replace(/\./g, "").replace(/\s+(jr|sr|ii|iii|iv)$/i, "").replace(/\s+/g, " ").trim().toLowerCase();
       const impById = {};
       const impByName = {};
       for (const r of impRecords) {
@@ -559,7 +562,8 @@ export default async function handler(req, res) {
         const allGames = (sched.dates || []).flatMap((d) => d.games || []);
         lineupDebug.push(allGames.length + " league game(s) between " + etDay(2) + " and " + etDay(0));
 
-        const normName = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+        const normName = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+          .replace(/[\u0131\u0130]/g, "i").replace(/\./g, "").replace(/\s+(jr|sr|ii|iii|iv)$/i, "").replace(/\s+/g, " ").trim().toLowerCase();
         await Promise.all(myTeams.map(async (t) => {
           const mlbTeam = (dir.teams || []).find((x) => x.name.toLowerCase() === String(t.name).trim().toLowerCase());
           if (!mlbTeam) { lineupDebug.push(t.name + ": no MLB team by that name"); return; }
@@ -664,7 +668,7 @@ export default async function handler(req, res) {
     }
 
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
-    return res.status(200).json({ apiVersion: "v23.8", players: out, teams: teamsOut, imports: importOnly });
+    return res.status(200).json({ apiVersion: "v23.9", players: out, teams: teamsOut, imports: importOnly });
   } catch (e) {
     return res.status(500).json({ error: String(e.message || e) });
   }
