@@ -865,6 +865,63 @@ const PARK_RANK_NORM = (() => {
   for (const k of Object.keys(PARK_HR_RANK)) m[k.toLowerCase().replace(/\s+/g, " ").trim()] = PARK_HR_RANK[k];
   return m;
 })();
+// ═══ HR park factors by BATTER HANDEDNESS (Statcast-style, 100 = avg) ═══
+// 3-year HR factors, updated Aug 2026. Verified anchors: Cincinnati has
+// boosted LHB homers ~40% and Oracle suppressed them ~23% over recent
+// 3-yr windows; Progressive turned LHB-friendly after the 2024 fence/wind
+// change; Citi favors L and punishes R; Petco plays ~+4% for HR.
+// The rest are best available estimates - REFRESH EACH APRIL from
+// baseballsavant.mlb.com/leaderboard/statcast-park-factors
+// (Year → rolling 3 → stat HR → batSide L, then R) and paste over.
+// Scoring damps these by ^0.7, so a few points of error stays small.
+const PARK_HR_LR = {
+  "coors field": { L: 112, R: 112 },
+  "great american ball park": { L: 138, R: 124 },
+  "yankee stadium": { L: 118, R: 104 },
+  "citizens bank park": { L: 112, R: 114 },
+  "angel stadium": { L: 104, R: 112 },
+  "dodger stadium": { L: 112, R: 110 },
+  "truist park": { L: 105, R: 108 },
+  "globe life field": { L: 104, R: 104 },
+  "rogers centre": { L: 104, R: 102 },
+  "oriole park at camden yards": { L: 106, R: 96 },
+  "camden yards": { L: 106, R: 96 },
+  "fenway park": { L: 92, R: 104 },
+  "wrigley field": { L: 102, R: 100 },
+  "target field": { L: 100, R: 102 },
+  "rate field": { L: 110, R: 108 },
+  "guaranteed rate field": { L: 110, R: 108 },
+  "progressive field": { L: 108, R: 96 },
+  "daikin park": { L: 104, R: 110 },
+  "minute maid park": { L: 104, R: 110 },
+  "t-mobile park": { L: 96, R: 100 },
+  "citi field": { L: 106, R: 94 },
+  "nationals park": { L: 106, R: 100 },
+  "busch stadium": { L: 92, R: 90 },
+  "pnc park": { L: 84, R: 90 },
+  "kauffman stadium": { L: 88, R: 90 },
+  "ewing m. kauffman stadium": { L: 88, R: 90 },
+  "comerica park": { L: 94, R: 96 },
+  "american family field": { L: 108, R: 104 },
+  "petco park": { L: 102, R: 104 },
+  "oracle park": { L: 78, R: 94 },
+  "chase field": { L: 104, R: 100 },
+  "loandepot park": { L: 92, R: 94 },
+  "tropicana field": { L: 96, R: 98 },
+  "sutter health park": { L: 112, R: 106 },
+  "george m. steinbrenner field": { L: 120, R: 110 },
+  "steinbrenner field": { L: 120, R: 110 },
+};
+// batHand: "L" | "R" | "S"; pitHand used to resolve switch hitters.
+// Returns { f: multiplier-for-scoring, shown: raw index, hand } or null.
+function parkFactorLR(venueName, batHand, pitHand) {
+  const rec = PARK_HR_LR[String(venueName || "").trim().toLowerCase()];
+  if (!rec) return null;
+  let hand = batHand === "S" ? (pitHand === "L" ? "R" : pitHand === "R" ? "L" : null) : batHand;
+  const idx = hand === "L" ? rec.L : hand === "R" ? rec.R : (rec.L + rec.R) / 2;
+  if (idx == null) return null;
+  return { f: Math.pow(idx / 100, 0.7), shown: Math.round(idx), hand: hand || "S" };
+}
 function parkRankFor(name) {
   const n = String(name || "").toLowerCase().replace(/\s+/g, " ").trim();
   if (PARK_RANK_NORM[n]) return PARK_RANK_NORM[n];
@@ -2296,7 +2353,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v94";
+const HRB_VERSION = "v95";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2583,12 +2640,16 @@ function HRBoardTab({ players, onSelectPlayer }) {
       for (let i = 0; i < s.hitters.length; i++) {
         const h = s.hitters[i];
         const hm = meta(h.name, s.abbr, "hit");
-        const ev = hrbEval({ hm, hApi: { hr: h.hr, pa: h.pa }, om, pApi: { goPct: opp && opp.goPct }, hand: opp && opp.hand, spot: i, parkF, wxF, confirmed: s.confirmed, penR });
+        // Hand-specific park: Rice (L) at Yankee Stadium gets the short
+        // porch, a righty in the same game doesn't. Falls back to the
+        // old rank-based factor when the venue isn't in the table.
+        const plr = parkFactorLR(row.g.venue && row.g.venue.name, h.bats, opp && opp.hand);
+        const ev = hrbEval({ hm, hApi: { hr: h.hr, pa: h.pa }, om, pApi: { goPct: opp && opp.goPct }, hand: opp && opp.hand, spot: i, parkF: plr ? plr.f : parkF, wxF, confirmed: s.confirmed, penR });
         if (!ev) continue;
         let score = ev.score, prob = ev.prob;
         const stk = streaks[h.id];
         if (stk != null && stk <= -5) { score *= HRB.coldMult; prob *= HRB.coldMult; }
-        targets.push({ h, spot: i, side: s, opp, oppAbbr: oppSide.abbr, oppHand: opp && opp.hand, brl: ev.adjBrl, brlPa: ev.brlPa, hrPa: ev.hrPa, oppBrl: ev.adjPitBrl, oppHr9: ev.adjHr9, oppGb: ev.adjGb, gbR: ev.gbR, penHr9: oppSide.penHr9, park: rank, score, prob, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
+        targets.push({ h, spot: i, side: s, opp, oppAbbr: oppSide.abbr, oppHand: opp && opp.hand, brl: ev.adjBrl, brlPa: ev.brlPa, hrPa: ev.hrPa, oppBrl: ev.adjPitBrl, oppHr9: ev.adjHr9, oppGb: ev.adjGb, gbR: ev.gbR, penHr9: oppSide.penHr9, park: rank, parkLR: plr, score, prob, g: row.g, wx: row.wx, oppBbe: om.bbe, confirmed: s.confirmed });
       }
     }
   }
@@ -2694,7 +2755,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
               if (!nm) return;
               const hm = meta(nm, ab, "hit");
               const hApi = ppl[pl.person.id] || {};
-              const ev = hrbEval({ hm, hApi: { hr: hApi.hr, pa: hApi.pa }, om, pApi, hand: oh, spot: valPA ? i : 4, parkF, wxF, confirmed: true, penR });
+              const plr = parkFactorLR(g.venue && g.venue.name, hApi.bat, oh);
+              const ev = hrbEval({ hm, hApi: { hr: hApi.hr, pa: hApi.pa }, om, pApi, hand: oh, spot: valPA ? i : 4, parkF: plr ? plr.f : parkF, wxF, confirmed: true, penR });
               if (!ev) return;
               const score = ev.score;
               const st = pl.stats && pl.stats.batting;
@@ -2922,7 +2984,9 @@ function HRBoardTab({ players, onSelectPlayer }) {
                   <span className="flex items-center justify-between gap-2 mt-0.5 pl-7">
                     <span className="text-[9px] font-semibold text-slate-400 truncate">
                       {(t.g.venue && t.g.venue.name) || ""}
-                      {t.park != null && <span className={"font-extrabold " + parkRankColor(t.park)}> ({ordinalize(t.park)})</span>}
+                      {t.parkLR != null
+                        ? <span className={"font-extrabold " + (t.parkLR.shown >= 105 ? "text-emerald-500" : t.parkLR.shown <= 95 ? "text-rose-500" : "text-amber-500")}> ({t.parkLR.shown} vs {t.parkLR.hand})</span>
+                        : t.park != null && <span className={"font-extrabold " + parkRankColor(t.park)}> ({ordinalize(t.park)})</span>}
                     </span>
                     {t.wx && (
                       <span className="text-[9px] font-semibold text-slate-400 shrink-0">
@@ -2933,7 +2997,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </button>
               ))}
             </div>
-            <div className="text-[9px] text-slate-400 mt-1.5 px-1">v92 · HR% = chance of at least one HR today. Hitter = Barrel/PA^{HRB.eBrlPa} × HR/PA^{HRB.eHrPa} · SP = Brl%^{HRB.eSpBrl} × HR/9^{HRB.eSpHr9} × GB%⁻¹^{HRB.eGb}, blended {Math.round(HRB.spShare * 100)}/{Math.round((1 - HRB.spShare) * 100)} with opposing bullpen HR/9 · × park × weather · expected PAs by lineup spot · projected ×{HRB.projMult}</div>
+            <div className="text-[9px] text-slate-400 mt-1.5 px-1">v92 · HR% = chance of at least one HR today. Hitter = Barrel/PA^{HRB.eBrlPa} × HR/PA^{HRB.eHrPa} · SP = Brl%^{HRB.eSpBrl} × HR/9^{HRB.eSpHr9} × GB%⁻¹^{HRB.eGb}, blended {Math.round(HRB.spShare * 100)}/{Math.round((1 - HRB.spShare) * 100)} with opposing bullpen HR/9 · × park × weather&nbsp;· park is hand-specific (100 = avg, damped) · expected PAs by lineup spot · projected ×{HRB.projMult}</div>
           </>
         )}
         {view === "matchups" && (<>
