@@ -1001,7 +1001,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
       const outP = {};
       await Promise.all((ppl.people || []).map(async (person) => {
         const sp = (person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0] && person.stats[0].splits[0].stat) || {};
-        outP[person.id] = { hand: person.pitchHand && person.pitchHand.code, w: sp.wins, l: sp.losses, era: sp.era, ip: sp.inningsPitched, so: sp.strikeOuts, bb: sp.baseOnBalls, hr: sp.homeRuns, whip: sp.whip };
+        outP[person.id] = { hand: person.pitchHand && person.pitchHand.code, w: sp.wins, l: sp.losses, era: sp.era, ip: sp.inningsPitched, so: sp.strikeOuts, bb: sp.baseOnBalls, hr: sp.homeRuns, whip: sp.whip, gs: sp.gamesStarted };
         try {
           const gl = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${person.id}/stats?stats=gameLog&season=${yr}&group=pitching`)).json();
           const gls = (gl.stats && gl.stats[0] && gl.stats[0].splits) || [];
@@ -1052,10 +1052,9 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
   }, [g.gamePk]);
   const myByName = useMemo(() => {
     const m = {};
-    const nrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
     for (const p of players || []) {
       const st = latestStats(p);
-      m[nrm(p.name)] = { player: p, photo: p.photo || null, streak: st && st.streak != null ? Math.round(st.streak) : 0, barrel: p.barrel, hr9: p.hr9 };
+      m[hrbNrm(p.name)] = { player: p, photo: p.photo || null, streak: st && st.streak != null ? Math.round(st.streak) : 0, barrel: p.barrel, hr9: p.hr9, gb: p.gb, bbe: p.bbe };
     }
     return m;
   }, [players]);
@@ -1074,8 +1073,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
     ? { id: liveDef.id, fullName: liveDef.name } : null;
   const pp = liveNow || probable;
   const ps = pp ? pstats[pp.id] : null;
-  const nrmPP = pp ? String(pp.fullName || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() : "";
-  const myPP = myByName[nrmPP];
+  const myPP = pp ? myByName[hrbNrm(pp.fullName)] : undefined;
   const teamBox = box && box.teams && box.teams[side];
   const order = (teamBox && teamBox.battingOrder) || [];
 
@@ -1152,24 +1150,37 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
             </div>
           </div>
           {ps && (
-            <div className="grid grid-cols-4 gap-y-2 mt-2">
-              {[["W-L", (ps.w ?? 0) + "-" + (ps.l ?? 0)], ["ERA", ps.era ?? "—"], ["IP", ps.ip ?? "—"], ["SO", ps.so ?? "—"],
-                ["BB", ps.bb ?? "—"], ["HR", ps.hr ?? "—"], ["WHIP", ps.whip ?? "—"], ["HR L9", ps.hrL9 ?? "—"],
-                ...(() => {
-                  const nrmP = pp ? String(pp.fullName || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() : "";
-                  const mp = myByName[nrmP];
-                  const extra = [];
-                  if (mp && mp.barrel != null) extra.push(["BRL%", Number(mp.barrel).toFixed(1) + "%"]);
-                  if (mp && mp.gb != null) extra.push(["GB%", Number(mp.gb).toFixed(0) + "%"]);
-                  if (mp && mp.bbe != null) extra.push(["BBE", Math.round(mp.bbe)]);
-                  if (mp && mp.hr9 != null) extra.push(["HR/9", Number(mp.hr9).toFixed(2)]);
-                  return extra;
-                })()].map(([lbl, v]) => (
-                <span key={lbl} className="text-center">
-                  <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
-                  <span className={"block text-xs font-extrabold tabular-nums " + (lbl === "BRL%" ? "rounded px-1 mx-auto w-fit " + hrbPitBrlClass(parseFloat(v)) : lbl === "GB%" ? "rounded px-1 mx-auto w-fit " + hrbGbClass(parseFloat(v)) : lbl === "HR/9" ? "rounded px-1 mx-auto w-fit " + hrbHr9Class(parseFloat(v)) : "text-slate-800 dark:text-slate-100")}>{v}</span>
-                </span>
-              ))}
+            <div className="mt-3">
+              {/* Traditional line - two clean rows of five, scoreboard style */}
+              <div className="grid grid-cols-5 gap-y-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                {[["W-L", (ps.w ?? 0) + "-" + (ps.l ?? 0)], ["ERA", ps.era ?? "—"], ["WHIP", ps.whip ?? "—"], ["IP", ps.ip ?? "—"], ["GS", ps.gs ?? "—"],
+                  ["SO", ps.so ?? "—"], ["BB", ps.bb ?? "—"], ["HR", ps.hr ?? "—"], ["HR L9", ps.hrL9 ?? "—"],
+                  ["BBE", (() => { const mp = pp ? myByName[hrbNrm(pp.fullName)] : null; return mp && mp.bbe != null ? Math.round(mp.bbe) : "—"; })()],
+                ].map(([lbl, v]) => (
+                  <span key={lbl} className="text-center">
+                    <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wide">{lbl}</span>
+                    <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
+                  </span>
+                ))}
+              </div>
+              {/* Statcast strip - the colored, decision-driving numbers */}
+              {(() => {
+                const mp = pp ? myByName[hrbNrm(pp.fullName)] : null;
+                if (!mp || (mp.barrel == null && mp.gb == null && mp.hr9 == null)) return null;
+                return (
+                  <div className="grid grid-cols-3 gap-2 mt-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                    {[["BRL%", mp.barrel != null ? Number(mp.barrel).toFixed(1) + "%" : "—", hrbPitBrlClass(mp.barrel)],
+                      ["GB%", mp.gb != null ? Number(mp.gb).toFixed(0) + "%" : "—", hrbGbClass(mp.gb)],
+                      ["HR/9", mp.hr9 != null ? Number(mp.hr9).toFixed(2) : "—", hrbHr9Class(mp.hr9)],
+                    ].map(([lbl, v, cls]) => (
+                      <span key={lbl} className="text-center">
+                        <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wide">{lbl}</span>
+                        <span className={"block text-xs font-extrabold rounded px-1.5 py-0.5 mx-auto w-fit tabular-nums " + cls}>{v}</span>
+                      </span>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
         </button>
@@ -1193,8 +1204,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
               rbi: sp.rbi != null ? sp.rbi : season.rbi,
               ops: sp.ops != null ? sp.ops : season.ops,
             };
-            const nrm2 = String(nm).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
-            const mine = myByName[nrm2];
+            const mine = myByName[hrbNrm(nm)];
             const streak = (mine && mine.streak) || 0;
             const isBatting = curBatter === pid && state === "Live";
             const RowTag = mine && onSelectPlayer ? "button" : "div";
@@ -2357,7 +2367,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v97";
+const HRB_VERSION = "v98";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -3153,24 +3163,17 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           {s.confirmed ? "CONFIRMED LINEUP" : s.hitters.length ? "PROJECTED LINEUP" : "NO LINEUP"}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="w-9 text-center text-[10px] font-extrabold text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded px-1 py-0.5 shrink-0">
-                          {s.pitcher && s.pitcher.hand ? s.pitcher.hand + "HP" : "SP"}
-                        </span>
-                        <span className="flex-1 min-w-0 text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                          {s.pitcher ? s.pitcher.name : "TBD"}
-                          {s.pitcher && s.pitcher.era != null && (
-                            <span className="ml-1.5 text-[10px] font-bold text-slate-400 tabular-nums">{s.pitcher.era} ERA</span>
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex items-end gap-2 mt-1.5">
-                        <span className="flex-1 min-w-0 text-[9px] font-bold text-slate-400 tabular-nums">
-                          {pm.bbe != null && (
-                            <span className={pm.bbe < 60 ? "text-rose-500 font-extrabold" : ""}>{Math.round(pm.bbe)} BBE</span>
-                          )}
-                          {pm.bbe != null && s.penHr9 != null && " · "}
-                          {s.penHr9 != null && <span>Pen {Number(s.penHr9).toFixed(2)}</span>}
+                      <div className="flex items-end gap-2 mt-2">
+                        <span className="flex items-center gap-2 flex-1 min-w-0 pb-0.5">
+                          <span className="w-9 text-center text-[10px] font-extrabold text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded px-1 py-0.5 shrink-0">
+                            {s.pitcher && s.pitcher.hand ? s.pitcher.hand + "HP" : "SP"}
+                          </span>
+                          <span className="min-w-0 text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                            {s.pitcher ? s.pitcher.name : "TBD"}
+                            {s.pitcher && s.pitcher.era != null && (
+                              <span className="ml-1.5 text-[10px] font-bold text-slate-400 tabular-nums">{s.pitcher.era} ERA</span>
+                            )}
+                          </span>
                         </span>
                         <span className="w-11 text-center shrink-0">
                           <span className="block text-[7px] font-extrabold text-slate-400 uppercase tracking-wide">Brl%</span>
@@ -3191,6 +3194,15 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           </span>
                         </span>
                       </div>
+                      {(pm.bbe != null || s.penHr9 != null) && (
+                        <div className="text-[9px] font-bold text-slate-400 tabular-nums mt-1 pl-11">
+                          {pm.bbe != null && (
+                            <span className={pm.bbe < 60 ? "text-rose-500 font-extrabold" : ""}>{Math.round(pm.bbe)} BBE</span>
+                          )}
+                          {pm.bbe != null && s.penHr9 != null && " · "}
+                          {s.penHr9 != null && <span>(Bullpen {Number(s.penHr9).toFixed(2)})</span>}
+                        </div>
+                      )}
                       <div className="mt-2 space-y-1">
                         {s.hitters.map((h, i) => {
                           const hm = meta(h.name, s.abbr, "hit");
