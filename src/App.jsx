@@ -3173,9 +3173,6 @@ function HRBoardTab({ players, onSelectPlayer }) {
                             {s.pitcher && s.pitcher.era != null && (
                               <span className="ml-1.5 text-[10px] font-bold text-slate-400 tabular-nums">{s.pitcher.era} ERA</span>
                             )}
-                            {pm.bbe != null && (
-                              <span className={"ml-1.5 text-[9px] font-bold tabular-nums " + (pm.bbe < 60 ? "text-rose-500" : "text-slate-400")}>{Math.round(pm.bbe)} BBE</span>
-                            )}
                           </span>
                         </span>
                         <span className="w-11 text-center shrink-0">
@@ -3197,6 +3194,11 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           </span>
                         </span>
                       </div>
+                      {pm.bbe != null && (
+                        <div className={"text-[9px] font-bold tabular-nums mt-1 pl-11 " + (pm.bbe < 60 ? "text-rose-500" : "text-slate-400")}>
+                          {Math.round(pm.bbe)} BBE
+                        </div>
+                      )}
                       {s.penHr9 != null && (
                         <div className="flex items-center gap-2 mt-1.5">
                           <span className="flex-1 min-w-0 text-right text-[9px] font-extrabold text-slate-400 uppercase tracking-wide">Bullpen</span>
