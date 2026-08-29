@@ -2261,6 +2261,16 @@ const HRB = {
                    // API fallback runs on an outs-only scale, hence separate
   // BULLPEN: ~35% of a hitter's PAs come vs relievers, not the SP.
   spShare: 0.65,   // SP factor ^ spShare  x  bullpen factor ^ (1 - spShare)
+  // v100: SP strikeout adjustment. Brl%-against and GB% are per-batted-ball
+  // and blind to how OFTEN the ball gets hit; high-K pitchers (Gausman,
+  // Ober types) were inflated. HR/9 already prices Ks, so the exponent
+  // covers only the K-blind components (eSpBrl + eGb = 0.65).
+  lgK: 22,          // league-avg K% of batters faced
+  eContact: 0.65,
+  // v100: residual platoon. Split Brl% is regressed hard toward a hitter's
+  // overall number, which understates the same-hand penalty for stars.
+  platoonLL: 0.90,  // LHB vs LHP
+  platoonRR: 0.96,  // RHB vs RHP (righties suffer less)
   // Expected plate appearances by lineup spot (leadoff -> 9th). Turns the
   // score into a real per-game HR probability: 1 - (1 - p_PA) ^ expPA.
   expPA: [4.65, 4.55, 4.45, 4.35, 4.25, 4.15, 4.05, 3.95, 3.85],
@@ -2276,7 +2286,7 @@ const HRB = {
 //   pApi = SP from MLB API: { goPct }                (may be {} / undefined)
 //   penR = opposing bullpen HR/9 ratio to league (1 = avg / unknown)
 // Returns null when the hitter has no usable data at all.
-function hrbEval({ hm, hApi, om, pApi, hand, spot, parkF, wxF, confirmed, penR }) {
+function hrbEval({ hm, hApi, om, pApi, hand, batHand, spot, parkF, wxF, confirmed, penR }) {
   hm = hm || {}; hApi = hApi || {}; om = om || {}; pApi = pApi || {};
   const shrink = (v, lg, n) => (v != null && n != null && n > 0) ? (v * n + lg * HRB.shrinkK) / (n + HRB.shrinkK) : v;
   const capped = (r) => Math.min(Math.max(r, 0.2), HRB.capRatio);
@@ -2328,19 +2338,28 @@ function hrbEval({ hm, hApi, om, pApi, hand, spot, parkF, wxF, confirmed, penR }
   if (adjGb != null) gbR = Math.pow(capped(HRB.lgGb / Math.max(adjGb, 1)), HRB.eGb);
   else if (pApi.goPct != null) gbR = Math.pow(capped(HRB.lgGoPct / Math.max(pApi.goPct, 1)), HRB.eGb);
   const spKnown = om.barrel != null || om.hr9 != null;
-  const spR = spBrlR * spHr9R * gbR;
+  // Contact rate: how often this SP lets the ball get hit at all,
+  // regressed by batters faced like every other pitcher input.
+  let contactR = 1;
+  if (pApi.kPct != null) {
+    const adjK = (pApi.kPct * (pApi.bf || 0) + HRB.lgK * HRB.shrinkK) / ((pApi.bf || 0) + HRB.shrinkK);
+    contactR = Math.pow(capped((100 - adjK) / (100 - HRB.lgK)), HRB.eContact);
+  }
+  const spR = spBrlR * spHr9R * gbR * contactR;
   // ── Bullpen blend ──
   const pitR = Math.pow(spR, HRB.spShare) * Math.pow(penR != null ? capped(penR) : 1, 1 - HRB.spShare);
 
   // ── Assemble ──
   let pPA = HRB.lgHrPa * hitR * pitR * (parkF || 1) * (wxF || 1) * HRB.calibration;
+  if (batHand === "L" && hand === "L") pPA *= HRB.platoonLL;
+  else if (batHand === "R" && hand === "R") pPA *= HRB.platoonRR;
   if (!spKnown) pPA *= HRB.unknownSP;
   if (noSavant) pPA *= HRB.noSavant;
   if (confirmed === false) pPA *= HRB.projMult;
   const ePA = HRB.expPA[Math.min(Math.max(spot || 0, 0), 8)];
   const prob = 1 - Math.pow(1 - Math.min(pPA, 0.5), ePA);
   const score = 100 * (pPA / HRB.lgHrPa) * (ePA / HRB.avgPA);
-  return { score, prob, hitR, pitR, brlPa, hrPa, adjBrl, adjPitBrl, adjHr9, adjGb, gbR, penR, spKnown, noSavant };
+  return { score, prob, hitR, pitR, brlPa, hrPa, adjBrl, adjPitBrl, adjHr9, adjGb, gbR, contactR, penR, spKnown, noSavant };
 }
 // GB% is INVERTED: low ground-ball rate = more balls in the air = target.
 function hrbGbClass(v) {
@@ -2367,7 +2386,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v99";
+const HRB_VERSION = "v100";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2442,6 +2461,8 @@ async function hrbPeopleStats(idList) {
           era: pit && pit.era != null ? String(pit.era) : null,
           ip: pit ? ipToNum(pit.inningsPitched) : null,
           goPct: go != null && ao != null && go + ao > 0 ? (go / (go + ao)) * 100 : null,
+          bf: pit && pit.battersFaced != null ? Number(pit.battersFaced) : null,
+          kPct: pit && pit.strikeOuts != null && pit.battersFaced > 0 ? (Number(pit.strikeOuts) / Number(pit.battersFaced)) * 100 : null,
         };
       }
     } catch {}
@@ -2605,6 +2626,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
             s.pitcher.rec = hands[s.pitcher.id].rec;
             s.pitcher.goPct = hands[s.pitcher.id].goPct;
             s.pitcher.era = hands[s.pitcher.id].era;
+            s.pitcher.kPct = hands[s.pitcher.id].kPct;
+            s.pitcher.bf = hands[s.pitcher.id].bf;
           }
           s.penHr9 = penByTeam[row.g.teams[k].team && row.g.teams[k].team.id] ?? null;
           for (const h of s.hitters) if (hands[h.id]) { h.bats = hands[h.id].bat; h.hr = hands[h.id].hr; h.pa = hands[h.id].pa; }
@@ -2660,7 +2683,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         // porch, a righty in the same game doesn't. Falls back to the
         // old rank-based factor when the venue isn't in the table.
         const plr = parkFactorLR(row.g.venue && row.g.venue.name, h.bats, opp && opp.hand);
-        const ev = hrbEval({ hm, hApi: { hr: h.hr, pa: h.pa }, om, pApi: { goPct: opp && opp.goPct }, hand: opp && opp.hand, spot: i, parkF: plr ? plr.f : parkF, wxF, confirmed: s.confirmed, penR });
+        const ev = hrbEval({ hm, hApi: { hr: h.hr, pa: h.pa }, om, pApi: { goPct: opp && opp.goPct, kPct: opp && opp.kPct, bf: opp && opp.bf }, hand: opp && opp.hand, batHand: h.bats, spot: i, parkF: plr ? plr.f : parkF, wxF, confirmed: s.confirmed, penR });
         if (!ev) continue;
         let score = ev.score, prob = ev.prob;
         const stk = streaks[h.id];
@@ -2766,14 +2789,14 @@ function HRBoardTab({ players, onSelectPlayer }) {
               .filter((pl) => pl.battingOrder != null && Number(pl.battingOrder) % 100 === 0)
               .sort((x, y) => Number(x.battingOrder) - Number(y.battingOrder));
             const penR = penV[oppT.team && oppT.team.id] != null ? penV[oppT.team.id] / HRB.lgHr9 : null;
-            const pApi = opp && ppl[opp.id] ? { goPct: ppl[opp.id].goPct } : {};
+            const pApi = opp && ppl[opp.id] ? { goPct: ppl[opp.id].goPct, kPct: ppl[opp.id].kPct, bf: ppl[opp.id].bf } : {};
             starters.forEach((pl, i) => {
               const nm = pl.person && pl.person.fullName;
               if (!nm) return;
               const hm = meta(nm, ab, "hit");
               const hApi = ppl[pl.person.id] || {};
               const plr = parkFactorLR(g.venue && g.venue.name, hApi.bat, oh);
-              const ev = hrbEval({ hm, hApi: { hr: hApi.hr, pa: hApi.pa }, om, pApi, hand: oh, spot: valPA ? i : 4, parkF: plr ? plr.f : parkF, wxF, confirmed: true, penR });
+              const ev = hrbEval({ hm, hApi: { hr: hApi.hr, pa: hApi.pa }, om, pApi, hand: oh, batHand: hApi.bat, spot: valPA ? i : 4, parkF: plr ? plr.f : parkF, wxF, confirmed: true, penR });
               if (!ev) return;
               const score = ev.score;
               const st = pl.stats && pl.stats.batting;
@@ -2992,13 +3015,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         {t.oppGb != null ? Number(t.oppGb).toFixed(0) + "%" : "—"}
                       </span>
                     </span>
-                    {streaks[t.h.id] >= 5 && (
-                      <span className="ml-auto text-[10px] font-extrabold text-orange-500 shrink-0">{streaks[t.h.id]}🔥</span>
-                    )}
-                    {streaks[t.h.id] <= -5 && (
-                      <span className="ml-auto text-[10px] font-extrabold text-sky-400 shrink-0">{-streaks[t.h.id]}❄️</span>
-                    )}
-                    <span className={(Math.abs(streaks[t.h.id]) >= 5 ? "" : "ml-auto ") + "w-12 text-center shrink-0"}>
+                    <span className="ml-auto w-12 text-center shrink-0">
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">HR%</span>
                       <span className="block text-[13px] font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">{t.prob != null ? (t.prob * 100).toFixed(0) + "%" : "—"}</span>
                     </span>
@@ -3019,7 +3036,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </button>
               ))}
             </div>
-            <div className="text-[9px] text-slate-400 mt-1.5 px-1">v92 · HR% = chance of at least one HR today. Hitter = Barrel/PA^{HRB.eBrlPa} × HR/PA^{HRB.eHrPa} · SP = Brl%^{HRB.eSpBrl} × HR/9^{HRB.eSpHr9} × GB%⁻¹^{HRB.eGb}, blended {Math.round(HRB.spShare * 100)}/{Math.round((1 - HRB.spShare) * 100)} with opposing bullpen HR/9 · × park × weather&nbsp;· park is hand-specific (100 = avg, damped) · expected PAs by lineup spot · projected ×{HRB.projMult}</div>
+            <div className="text-[9px] text-slate-400 mt-1.5 px-1">v100 · HR% = chance of at least one HR today. SP K% discounts the per-contact stats · same-hand platoon ×0.90 L/L, ×0.96 R/R · Hitter = Barrel/PA^{HRB.eBrlPa} × HR/PA^{HRB.eHrPa} · SP = Brl%^{HRB.eSpBrl} × HR/9^{HRB.eSpHr9} × GB%⁻¹^{HRB.eGb}, blended {Math.round(HRB.spShare * 100)}/{Math.round((1 - HRB.spShare) * 100)} with opposing bullpen HR/9 · × park × weather&nbsp;· park is hand-specific (100 = avg, damped) · expected PAs by lineup spot · projected ×{HRB.projMult}</div>
           </>
         )}
         {view === "matchups" && (<>
@@ -3194,20 +3211,22 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           </span>
                         </span>
                       </div>
-                      {pm.bbe != null && (
-                        <div className={"text-[9px] font-bold tabular-nums mt-1 pl-11 " + (pm.bbe < 60 ? "text-rose-500" : "text-slate-400")}>
-                          {Math.round(pm.bbe)} BBE
-                        </div>
-                      )}
-                      {s.penHr9 != null && (
+                      {(s.penHr9 != null || pm.bbe != null) && (
                         <div className="flex items-center gap-2 mt-1.5">
-                          <span className="flex-1 min-w-0 text-right text-[9px] font-extrabold text-slate-400 uppercase tracking-wide">Bullpen</span>
+                          <span className="flex-1 min-w-0 flex items-center justify-between pl-11">
+                            <span className={"text-[9px] font-bold tabular-nums " + (pm.bbe != null && pm.bbe < 60 ? "text-rose-500" : "text-slate-400")}>
+                              {pm.bbe != null ? Math.round(pm.bbe) + " BBE" : ""}
+                            </span>
+                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wide">{s.penHr9 != null ? "Bullpen" : ""}</span>
+                          </span>
                           <span className="w-11 shrink-0" />
                           <span className="w-11 shrink-0" />
                           <span className="w-11 text-center shrink-0">
-                            <span className={"block text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums " + hrbHr9Class(Number(s.penHr9))}>
-                              {Number(s.penHr9).toFixed(2)}
-                            </span>
+                            {s.penHr9 != null && (
+                              <span className={"block text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums " + hrbHr9Class(Number(s.penHr9))}>
+                                {Number(s.penHr9).toFixed(2)}
+                              </span>
+                            )}
                           </span>
                         </div>
                       )}
