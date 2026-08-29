@@ -2367,7 +2367,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v98";
+const HRB_VERSION = "v99";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -3173,6 +3173,9 @@ function HRBoardTab({ players, onSelectPlayer }) {
                             {s.pitcher && s.pitcher.era != null && (
                               <span className="ml-1.5 text-[10px] font-bold text-slate-400 tabular-nums">{s.pitcher.era} ERA</span>
                             )}
+                            {pm.bbe != null && (
+                              <span className={"ml-1.5 text-[9px] font-bold tabular-nums " + (pm.bbe < 60 ? "text-rose-500" : "text-slate-400")}>{Math.round(pm.bbe)} BBE</span>
+                            )}
                           </span>
                         </span>
                         <span className="w-11 text-center shrink-0">
@@ -3194,13 +3197,16 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           </span>
                         </span>
                       </div>
-                      {(pm.bbe != null || s.penHr9 != null) && (
-                        <div className="text-[9px] font-bold text-slate-400 tabular-nums mt-1 pl-11">
-                          {pm.bbe != null && (
-                            <span className={pm.bbe < 60 ? "text-rose-500 font-extrabold" : ""}>{Math.round(pm.bbe)} BBE</span>
-                          )}
-                          {pm.bbe != null && s.penHr9 != null && " · "}
-                          {s.penHr9 != null && <span>(Bullpen {Number(s.penHr9).toFixed(2)})</span>}
+                      {s.penHr9 != null && (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="flex-1 min-w-0 text-right text-[9px] font-extrabold text-slate-400 uppercase tracking-wide">Bullpen</span>
+                          <span className="w-11 shrink-0" />
+                          <span className="w-11 shrink-0" />
+                          <span className="w-11 text-center shrink-0">
+                            <span className={"block text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums " + hrbHr9Class(Number(s.penHr9))}>
+                              {Number(s.penHr9).toFixed(2)}
+                            </span>
+                          </span>
                         </div>
                       )}
                       <div className="mt-2 space-y-1">
