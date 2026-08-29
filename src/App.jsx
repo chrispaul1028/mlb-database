@@ -453,7 +453,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
                   <div key={i} className="px-4 py-3">
                     <div className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{st.season || "—"}</div>
                     {showBat && <div className="flex justify-between">
-                      {[["G", st.gp != null ? Math.round(st.gp) : null], ["AVG", st.avg != null ? Number(st.avg).toFixed(3).replace(/^0/, "") : null], ["HR", st.hr != null ? Math.round(st.hr) : null], ["RBI", st.rbi != null ? Math.round(st.rbi) : null], ["SB", st.sb != null ? Math.round(st.sb) : null], ...(i === 0 && p.barrel != null ? [["BRL%", Number(p.barrel).toFixed(1)]] : []), ...(i === 0 && p.bbe != null ? [["BBE", Math.round(p.bbe)]] : [])].map(([lbl, v]) => (
+                      {[["G", st.gp != null ? Math.round(st.gp) : null], ["AVG", st.avg != null ? Number(st.avg).toFixed(3).replace(/^0/, "") : null], ["HR", st.hr != null ? Math.round(st.hr) : null], ["RBI", st.rbi != null ? Math.round(st.rbi) : null], ["SB", st.sb != null ? Math.round(st.sb) : null], ...(i === 0 && p.barrel != null ? [["BRL%", Number(p.barrel).toFixed(1) + "%"]] : []), ...(i === 0 && p.bbe != null ? [["BBE", Math.round(p.bbe)]] : [])].map(([lbl, v]) => (
                         <span key={lbl} className="flex-1 text-center">
                           <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
                           <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v ?? "—"}</span>
@@ -1159,14 +1159,15 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
                   const nrmP = pp ? String(pp.fullName || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() : "";
                   const mp = myByName[nrmP];
                   const extra = [];
-                  if (mp && mp.barrel != null) extra.push(["BRL%", Number(mp.barrel).toFixed(1)]);
+                  if (mp && mp.barrel != null) extra.push(["BRL%", Number(mp.barrel).toFixed(1) + "%"]);
+                  if (mp && mp.gb != null) extra.push(["GB%", Number(mp.gb).toFixed(0) + "%"]);
                   if (mp && mp.bbe != null) extra.push(["BBE", Math.round(mp.bbe)]);
                   if (mp && mp.hr9 != null) extra.push(["HR/9", Number(mp.hr9).toFixed(2)]);
                   return extra;
                 })()].map(([lbl, v]) => (
                 <span key={lbl} className="text-center">
                   <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
-                  <span className={"block text-xs font-extrabold tabular-nums " + (lbl === "BRL%" ? "rounded px-1 mx-auto w-fit " + hrbPitBrlClass(parseFloat(v)) : lbl === "HR/9" ? "rounded px-1 mx-auto w-fit " + hrbHr9Class(parseFloat(v)) : "text-slate-800 dark:text-slate-100")}>{v}</span>
+                  <span className={"block text-xs font-extrabold tabular-nums " + (lbl === "BRL%" ? "rounded px-1 mx-auto w-fit " + hrbPitBrlClass(parseFloat(v)) : lbl === "GB%" ? "rounded px-1 mx-auto w-fit " + hrbGbClass(parseFloat(v)) : lbl === "HR/9" ? "rounded px-1 mx-auto w-fit " + hrbHr9Class(parseFloat(v)) : "text-slate-800 dark:text-slate-100")}>{v}</span>
                 </span>
               ))}
             </div>
@@ -1217,10 +1218,10 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
                     {nm}
                   </span>
                   <span className="flex gap-2 mt-1">
-                    {[["AVG", bat.avg ? String(bat.avg).replace(/^0/, "") : "—"], ["HR", bat.hr != null ? bat.hr : "—"], ["RBI", bat.rbi != null ? bat.rbi : "—"], ["OPS", bat.ops ? String(bat.ops).replace(/^0/, "") : "—"], ...(mine && mine.barrel != null ? [["BRL%", Number(mine.barrel).toFixed(1)]] : [])].map(([lbl, v]) => (
+                    {[["AVG", bat.avg ? String(bat.avg).replace(/^0/, "") : "—"], ["HR", bat.hr != null ? bat.hr : "—"], ["RBI", bat.rbi != null ? bat.rbi : "—"], ["OPS", bat.ops ? String(bat.ops).replace(/^0/, "") : "—"], ["BRL%", mine && mine.barrel != null ? Number(mine.barrel).toFixed(1) + "%" : "—"]].map(([lbl, v]) => (
                       <span key={lbl} className="w-10 text-center">
                         <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
-                        <span className={"block text-[11px] font-extrabold tabular-nums " + (lbl === "BRL%" ? "rounded px-0.5 " + hrbHitClass(parseFloat(v)) : "text-slate-800 dark:text-slate-100")}>{v}</span>
+                        <span className={"block text-[11px] font-extrabold tabular-nums " + (lbl === "BRL%" && v !== "—" ? "rounded px-0.5 " + hrbHitClass(parseFloat(v)) : lbl === "BRL%" ? "text-slate-300 dark:text-slate-600" : "text-slate-800 dark:text-slate-100")}>{v}</span>
                       </span>
                     ))}
                   </span>
@@ -2356,7 +2357,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v96";
+const HRB_VERSION = "v97";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -3040,8 +3041,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
               const m = /^([WL])(\d+)$/.exec(s.streak || "");
               if (!m || Number(m[2]) < 5) return null;
               return m[1] === "W"
-                ? <span className="ml-1 text-[9px] font-extrabold text-orange-500">W{m[2]}</span>
-                : <span className="ml-1 text-[9px] font-extrabold text-sky-400">L{m[2]}</span>;
+                ? <span className="ml-1 text-[9px] font-extrabold text-orange-500">W{m[2]}🔥</span>
+                : <span className="ml-1 text-[9px] font-extrabold text-sky-400">L{m[2]}❄️</span>;
             };
             return (
               <div key={g.gamePk}
@@ -3149,7 +3150,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           : s.hitters.length
                             ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
                             : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500")}>
-                          {s.confirmed ? "CONFIRMED" : s.hitters.length ? "PROJECTED" : "NO LINEUP"}
+                          {s.confirmed ? "CONFIRMED LINEUP" : s.hitters.length ? "PROJECTED LINEUP" : "NO LINEUP"}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mt-2">
@@ -3158,19 +3159,18 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         </span>
                         <span className="flex-1 min-w-0 text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
                           {s.pitcher ? s.pitcher.name : "TBD"}
+                          {s.pitcher && s.pitcher.era != null && (
+                            <span className="ml-1.5 text-[10px] font-bold text-slate-400 tabular-nums">{s.pitcher.era} ERA</span>
+                          )}
                         </span>
-                        {s.pitcher && s.pitcher.era != null && (
-                          <span className="text-[10px] font-extrabold text-slate-500 dark:text-slate-300 tabular-nums shrink-0">{s.pitcher.era} ERA</span>
-                        )}
                       </div>
                       <div className="flex items-end gap-2 mt-1.5">
                         <span className="flex-1 min-w-0 text-[9px] font-bold text-slate-400 tabular-nums">
                           {pm.bbe != null && (
-                            <span className={pm.bbe < 60 ? "text-rose-500" : ""}>{Math.round(pm.bbe)} BBE</span>
+                            <span className={pm.bbe < 60 ? "text-rose-500 font-extrabold" : ""}>{Math.round(pm.bbe)} BBE</span>
                           )}
-                          {s.penHr9 != null && (
-                            <span className="ml-2">Pen {Number(s.penHr9).toFixed(2)} HR/9</span>
-                          )}
+                          {pm.bbe != null && s.penHr9 != null && " · "}
+                          {s.penHr9 != null && <span>Pen {Number(s.penHr9).toFixed(2)}</span>}
                         </span>
                         <span className="w-11 text-center shrink-0">
                           <span className="block text-[7px] font-extrabold text-slate-400 uppercase tracking-wide">Brl%</span>
