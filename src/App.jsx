@@ -2226,6 +2226,9 @@ const HRB = {
                    // (set back to 0.9 to restore the old drought discount)
   unknownSP: 0.85, // discount when the opposing SP has NO barrel/HR9 data
   noSavant: 0.8,   // discount when the HITTER has no barrel data (name mismatch)
+  calibration: 1.0, // global scale on HR%. Leave at 1.0 until the History
+                    // scorecard has 14+ graded days; if it still says "too
+                    // bold", set this to (actual homers ÷ expected) - e.g. 0.75.
                    // (a blind matchup shouldn't rank beside a proven one)
   // Weather (applied only when data exists; domes stay neutral):
   wxTempPer: 0.004, // +0.4% per °F above 72 (capped ±8%)
@@ -2319,7 +2322,7 @@ function hrbEval({ hm, hApi, om, pApi, hand, spot, parkF, wxF, confirmed, penR }
   const pitR = Math.pow(spR, HRB.spShare) * Math.pow(penR != null ? capped(penR) : 1, 1 - HRB.spShare);
 
   // ── Assemble ──
-  let pPA = HRB.lgHrPa * hitR * pitR * (parkF || 1) * (wxF || 1);
+  let pPA = HRB.lgHrPa * hitR * pitR * (parkF || 1) * (wxF || 1) * HRB.calibration;
   if (!spKnown) pPA *= HRB.unknownSP;
   if (noSavant) pPA *= HRB.noSavant;
   if (confirmed === false) pPA *= HRB.projMult;
@@ -2353,7 +2356,7 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
 }
-const HRB_VERSION = "v95";
+const HRB_VERSION = "v96";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2425,6 +2428,7 @@ async function hrbPeopleStats(idList) {
           pa: hit && hit.plateAppearances != null ? Number(hit.plateAppearances) : null,
           hra: pit && pit.homeRuns != null ? Number(pit.homeRuns) : null,
           rec: pit && pit.wins != null ? Math.round(pit.wins) + "-" + Math.round(pit.losses ?? 0) : null,
+          era: pit && pit.era != null ? String(pit.era) : null,
           ip: pit ? ipToNum(pit.inningsPitched) : null,
           goPct: go != null && ao != null && go + ao > 0 ? (go / (go + ao)) * 100 : null,
         };
@@ -2589,6 +2593,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
             s.pitcher.hra = hands[s.pitcher.id].hra;
             s.pitcher.rec = hands[s.pitcher.id].rec;
             s.pitcher.goPct = hands[s.pitcher.id].goPct;
+            s.pitcher.era = hands[s.pitcher.id].era;
           }
           s.penHr9 = penByTeam[row.g.teams[k].team && row.g.teams[k].team.id] ?? null;
           for (const h of s.hitters) if (hands[h.id]) { h.bats = hands[h.id].bat; h.hr = hands[h.id].hr; h.pa = hands[h.id].pa; }
@@ -2669,6 +2674,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
   });
   const [valWin, setValWin] = useState("recent");   // recent | prior
   const [valPA, setValPA] = useState(true);          // PA curve on/off
+  const [showAdv, setShowAdv] = useState(false);     // history: show backtest tools
   const runValidation = async (days = 14) => {
     if (valProg && valProg !== "done") return;
     const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
@@ -2873,11 +2879,16 @@ function HRBoardTab({ players, onSelectPlayer }) {
           try {
             if (!boxCache[e.pk]) boxCache[e.pk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${e.pk}/boxscore`)).json();
             const b = boxCache[e.pk];
-            let hr = 0;
+            // -1 = didn't play (scratched / benched / postponed): excluded
+            // from hit-rate and expected sums instead of counting as a miss.
+            let hr = -1;
             for (const k of ["away", "home"]) {
               const pl = b.teams && b.teams[k] && b.teams[k].players && b.teams[k].players["ID" + e.id];
               const st = pl && pl.stats && pl.stats.batting;
-              if (st && st.homeRuns != null) hr = st.homeRuns;
+              if (!st) continue;
+              const pa = st.plateAppearances != null ? st.plateAppearances
+                : (st.atBats || 0) + (st.baseOnBalls || 0) + (st.hitByPitch || 0) + (st.sacFlies || 0) + (st.sacBunts || 0);
+              if (pa > 0) hr = st.homeRuns || 0;
             }
             results[e.id] = hr;
           } catch { results[e.id] = null; }
@@ -2948,14 +2959,14 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     <span className="w-11 text-center shrink-0">
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
                       <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + (t.brl != null ? hrbHitClass(t.brl) : "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300")}>
-                        {t.brl != null ? Number(t.brl).toFixed(1) : "no data"}
+                        {t.brl != null ? Number(t.brl).toFixed(1) + "%" : "no data"}
                       </span>
                     </span>
                     <span className="w-px h-6 bg-slate-200 dark:bg-slate-700 shrink-0" />
                     <span className="w-11 text-center shrink-0">
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">SP Brl</span>
                       <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbPitBrlClass(t.oppBrl)}>
-                        {t.oppBrl != null ? Number(t.oppBrl).toFixed(1) : "—"}
+                        {t.oppBrl != null ? Number(t.oppBrl).toFixed(1) + "%" : "—"}
                       </span>
                     </span>
                     <span className="w-11 text-center shrink-0">
@@ -2967,7 +2978,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     <span className="w-11 text-center shrink-0">
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">SP GB%</span>
                       <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbGbClass(t.oppGb)}>
-                        {t.oppGb != null ? Number(t.oppGb).toFixed(0) : "—"}
+                        {t.oppGb != null ? Number(t.oppGb).toFixed(0) + "%" : "—"}
                       </span>
                     </span>
                     {streaks[t.h.id] >= 5 && (
@@ -3029,8 +3040,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
               const m = /^([WL])(\d+)$/.exec(s.streak || "");
               if (!m || Number(m[2]) < 5) return null;
               return m[1] === "W"
-                ? <span className="ml-1 text-[9px] font-extrabold text-orange-500">{m[2]}🔥</span>
-                : <span className="ml-1 text-[9px] font-extrabold text-sky-400">{m[2]}❄️</span>;
+                ? <span className="ml-1 text-[9px] font-extrabold text-orange-500">W{m[2]}</span>
+                : <span className="ml-1 text-[9px] font-extrabold text-sky-400">L{m[2]}</span>;
             };
             return (
               <div key={g.gamePk}
@@ -3118,12 +3129,6 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     )}
                   </div>
                 ) : null}
-                <div className="flex items-center gap-2 px-4 pt-2 -mb-1">
-                  <span className="flex-1" />
-                  <span className="w-11 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">Brl%</span>
-                  <span className="w-11 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">GB%</span>
-                  <span className="w-11 text-center text-[8px] font-extrabold text-slate-400 uppercase tracking-wide shrink-0">HR/9</span>
-                </div>
                 {["away", "home"].map((k) => {
                   const s = sides[k];
                   const logo = TEAM_LOGOS[s.abbr];
@@ -3153,18 +3158,37 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         </span>
                         <span className="flex-1 min-w-0 text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
                           {s.pitcher ? s.pitcher.name : "TBD"}
+                        </span>
+                        {s.pitcher && s.pitcher.era != null && (
+                          <span className="text-[10px] font-extrabold text-slate-500 dark:text-slate-300 tabular-nums shrink-0">{s.pitcher.era} ERA</span>
+                        )}
+                      </div>
+                      <div className="flex items-end gap-2 mt-1.5">
+                        <span className="flex-1 min-w-0 text-[9px] font-bold text-slate-400 tabular-nums">
                           {pm.bbe != null && (
-                            <span className={"ml-1.5 text-[9px] font-bold tabular-nums " + (pm.bbe < 60 ? "text-rose-500" : "text-slate-400")}>{Math.round(pm.bbe)} BBE</span>
+                            <span className={pm.bbe < 60 ? "text-rose-500" : ""}>{Math.round(pm.bbe)} BBE</span>
+                          )}
+                          {s.penHr9 != null && (
+                            <span className="ml-2">Pen {Number(s.penHr9).toFixed(2)} HR/9</span>
                           )}
                         </span>
-                        <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbPitBrlClass(pm.barrel)}>
-                          {pm.barrel != null ? Number(pm.barrel).toFixed(1) : "—"}
+                        <span className="w-11 text-center shrink-0">
+                          <span className="block text-[7px] font-extrabold text-slate-400 uppercase tracking-wide">Brl%</span>
+                          <span className={"block text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums " + hrbPitBrlClass(pm.barrel)}>
+                            {pm.barrel != null ? Number(pm.barrel).toFixed(1) + "%" : "—"}
+                          </span>
                         </span>
-                        <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbGbClass(pm.gb)}>
-                          {pm.gb != null ? Number(pm.gb).toFixed(0) : "—"}
+                        <span className="w-11 text-center shrink-0">
+                          <span className="block text-[7px] font-extrabold text-slate-400 uppercase tracking-wide">GB%</span>
+                          <span className={"block text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums " + hrbGbClass(pm.gb)}>
+                            {pm.gb != null ? Number(pm.gb).toFixed(0) + "%" : "—"}
+                          </span>
                         </span>
-                        <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHr9Class(pm.hr9)}>
-                          {pm.hr9 != null ? Number(pm.hr9).toFixed(2) : "—"}
+                        <span className="w-11 text-center shrink-0">
+                          <span className="block text-[7px] font-extrabold text-slate-400 uppercase tracking-wide">HR/9</span>
+                          <span className={"block text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums " + hrbHr9Class(pm.hr9)}>
+                            {pm.hr9 != null ? Number(pm.hr9).toFixed(2) : "—"}
+                          </span>
                         </span>
                       </div>
                       <div className="mt-2 space-y-1">
@@ -3177,7 +3201,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                               <span className="w-4 text-center text-[10px] font-extrabold text-slate-500 dark:text-slate-200 shrink-0">{h.bats || ""}</span>
                               <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{h.name}</span>
                               <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(hb)}>
-                                {hb != null ? Number(hb).toFixed(1) : "—"}
+                                {hb != null ? Number(hb).toFixed(1) + "%" : "—"}
                               </span>
                               <span className="w-11 shrink-0" />
                               <span className={"w-11 shrink-0 text-center text-[11px] font-extrabold " + (streaks[h.id] <= -5 ? "text-sky-400" : "text-orange-500")}>
@@ -3205,7 +3229,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
         </>)}
         {view === "history" && (
           <div className="mt-4 space-y-3">
-            <div className="flex gap-2">
+            <div className="rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900 px-4 py-2.5 text-[10px] font-semibold text-slate-500 dark:text-slate-300 leading-relaxed">
+              Every day the Top 10 is frozen the first time the board loads, stamped with the formula version that made it. After the games end, each pick is graded from the box score: ✅ homered · — played but didn't · DNP scratched (doesn't count for or against). The scorecard shows whether HR% is telling the truth over time.
+            </div>
+            {showAdv && <div className="flex gap-2">
               {[["recent", "Last 14"], ["prior", "Prior 14"]].map(([k, lbl]) => (
                 <button key={k} onClick={() => setValWin(k)}
                   className={"flex-1 py-1.5 rounded-full text-[10px] font-extrabold " + (valWin === k ? "bg-blue-600 text-white" : "bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-800 dark:text-slate-300")}>{lbl}</button>
@@ -3214,13 +3241,13 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 className={"flex-1 py-1.5 rounded-full text-[10px] font-extrabold " + (valPA ? "bg-blue-600 text-white" : "bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-800 dark:text-slate-300")}>
                 {valPA ? "PA curve ON" : "PA curve OFF"}
               </button>
-            </div>
-            <button onClick={() => runValidation(14)}
+            </div>}
+            {showAdv && <button onClick={() => runValidation(14)}
               disabled={valProg != null && valProg !== "done"}
               className="w-full text-center text-[11px] font-extrabold text-blue-600 dark:text-blue-400 py-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
               {valProg == null ? "Validate current scoring (14-day backtest)" : valProg === "done" ? "Validation complete ✓ — re-run" : "Validating… " + valProg}
-            </button>
-            {valResult && (
+            </button>}
+            {showAdv && valResult && (
               <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-blue-200 dark:border-blue-900 shadow-sm px-4 py-3">
                 <div className="text-[10px] font-extrabold uppercase tracking-widest text-blue-500 mb-2">Validation · {valResult.ver} · {valResult.win === "prior" ? "prior" : "last"} 14 days · run {valResult.when}</div>
                 {valResult.health && (
@@ -3262,20 +3289,45 @@ function HRBoardTab({ players, onSelectPlayer }) {
               <div className="text-center text-sm text-slate-400 py-12">No history yet — each day's Top {HRB.topN} is saved automatically from this device.</div>
             )}
             {history != null && (() => {
+              // ═══ THE SCORECARD ═══ One question: is HR% telling the truth?
+              // played  = graded picks that actually got in the game (DNP = -1 excluded)
+              // homered = how many of those homered
+              // expected= what HR% promised, summed over the same picks
+              // Verdict: expected ÷ actual - near 1.0 = honest, >1.25 = too
+              // bold (scale HRB.calibration down), <0.8 = too timid.
               const days = Object.values(history).filter((h) => h.results);
               if (!days.length) return null;
+              let played = 0, homered = 0, exp = 0, dnp = 0;
               const bucket = (lo, hi) => {
                 let hit = 0, tot = 0;
                 for (const h of days) (h.entries || []).forEach((e, i) => {
-                  if (i >= lo && i <= hi) { tot++; if ((h.results[e.id] || 0) > 0) hit++; }
+                  if (i < lo || i > hi || h.results[e.id] === -1) return;
+                  tot++; if ((h.results[e.id] || 0) > 0) hit++;
                 });
                 return tot ? `${hit}/${tot} (${Math.round((hit / tot) * 100)}%)` : "—";
               };
+              for (const h of days) for (const e of h.entries || []) {
+                if (h.results[e.id] === -1) { dnp++; continue; }
+                played++;
+                if ((h.results[e.id] || 0) > 0) homered++;
+                if (e.prob != null) exp += e.prob / 100;
+              }
+              const ratio = homered > 0 ? exp / homered : null;
               return (
                 <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3">
-                  <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">Performance · {days.length} graded day{days.length > 1 ? "s" : ""}</div>
-                  <div className="grid grid-cols-4 gap-2 text-center">
-                    {[["All", bucket(0, 99)], ["#1 pick", bucket(0, 0)], ["Top 5", bucket(0, 4)], ["6-10", bucket(5, 14)]].map(([lbl, v]) => (
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Scorecard · {days.length} graded day{days.length > 1 ? "s" : ""}</span>
+                    {ratio != null && (
+                      <span className={"text-[10px] font-extrabold " + (ratio > 1.25 ? "text-rose-500" : ratio < 0.8 ? "text-sky-500" : "text-emerald-500")}>
+                        {ratio > 1.25 ? "HR% too bold" : ratio < 0.8 ? "HR% too timid" : "HR% honest"}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 tabular-nums mb-2">
+                    {homered} of {played} picks homered ({played ? Math.round((100 * homered) / played) : 0}%) · HR% promised {exp.toFixed(1)}{dnp > 0 ? ` · ${dnp} DNP excluded` : ""}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    {[["#1 pick", bucket(0, 0)], ["Top 5", bucket(0, 4)], ["6-10", bucket(5, 14)]].map(([lbl, v]) => (
                       <span key={lbl}>
                         <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
                         <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
@@ -3285,46 +3337,23 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </div>
               );
             })()}
-            {history != null && (() => {
-              // Calibration: across every graded v92 day, sum of HR% vs. actual
-              // homers. Ratio near 1.0 = HR% is honest; >1 = model too bold,
-              // <1 = too timid. This is the number that decides exponent tweaks.
-              let exp = 0, act = 0, n = 0, days = 0;
-              for (const day of Object.keys(history)) {
-                const h = history[day] || {};
-                if (h.results == null) continue;
-                const es = (h.entries || []).filter((e) => e.prob != null);
-                if (!es.length) continue;
-                days++;
-                for (const e of es) { exp += e.prob / 100; n++; if ((h.results[e.id] || 0) > 0) act++; }
-              }
-              if (!n) return null;
-              const ratio = act > 0 ? exp / act : null;
-              return (
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2 mb-3 flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Calibration · {days}d</span>
-                  <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 tabular-nums">
-                    expected {exp.toFixed(1)} · actual {act} · hit {(100 * act / n).toFixed(0)}%
-                    {ratio != null && <span className={"ml-2 " + (ratio > 1.25 ? "text-rose-500" : ratio < 0.8 ? "text-sky-500" : "text-emerald-500")}>{ratio > 1.25 ? "too bold" : ratio < 0.8 ? "too timid" : "honest"}</span>}
-                  </span>
-                </div>
-              );
-            })()}
             {history != null && Object.keys(history).sort().reverse().map((day) => {
               const h = history[day] || {};
               const entries = h.entries || [];
               const graded = h.results != null;
               const hits = graded ? entries.filter((e) => (h.results[e.id] || 0) > 0).length : null;
+              const dnps = graded ? entries.filter((e) => h.results[e.id] === -1).length : 0;
               return (
                 <div key={day} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800">
                     <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-300">{day}{h.ver && <span className="ml-1 font-bold text-slate-400 dark:text-slate-500">· {h.ver}</span>}</span>
                     <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-300">
                       {(() => {
-                        const probs = entries.map((e) => e.prob).filter((x) => x != null);
-                        const exp = probs.length ? probs.reduce((a, b) => a + b, 0) / 100 : null;
                         if (!graded) return "Pending — grades after games end";
-                        return `${hits}/${entries.length} homered` + (exp != null ? ` · expected ${exp.toFixed(1)}` : "");
+                        const live = entries.filter((e) => h.results[e.id] !== -1);
+                        const probs = live.map((e) => e.prob).filter((x) => x != null);
+                        const exp = probs.length ? probs.reduce((a, b) => a + b, 0) / 100 : null;
+                        return `${hits}/${live.length} homered` + (exp != null ? ` · expected ${exp.toFixed(1)}` : "") + (dnps ? ` · ${dnps} DNP` : "");
                       })()}
                     </span>
                   </div>
@@ -3340,6 +3369,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           <span className="text-[10px] font-bold text-slate-400 tabular-nums shrink-0">{e.score}</span>
                           <span className="w-12 text-right text-[11px] font-extrabold shrink-0">
                             {hr == null && !graded ? <span className="text-slate-300 dark:text-slate-600">·</span>
+                              : hr === -1 ? <span className="text-[9px] font-bold text-slate-300 dark:text-slate-600">DNP</span>
                               : hr == null ? <span className="text-slate-300 dark:text-slate-600">—</span>
                               : hr > 0 ? <span className="text-emerald-500">✅{hr > 1 ? " ×" + hr : ""}</span>
                               : <span className="text-slate-300 dark:text-slate-600">—</span>}
@@ -3351,6 +3381,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </div>
               );
             })}
+            <button onClick={() => setShowAdv((v) => !v)}
+              className="w-full text-center text-[10px] font-bold text-slate-400 py-1">
+              {showAdv ? "Hide advanced tools" : "Advanced: 14-day backtest"}
+            </button>
             {history != null && Object.keys(history).length > 0 && (
               <button
                 onClick={() => {
