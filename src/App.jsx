@@ -24,6 +24,19 @@ const BAR_COLORS = {
 const ACCENT_TEXT = "text-emerald-600";
 const ACCENT_BORDER = "border-emerald-200";
 
+// ═══════════════ CHIP THEME (edit these to restyle every stat pill) ═══
+// Every colored stat chip in the app - Brl%, GB%, HR/9, lineup chips,
+// board pills - reads from these four strings. Green always means
+// "good for the HR bet", red always means "fights it".
+const CHIP = {
+  good: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300",
+  warn: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  bad: "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300",
+  none: "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500",
+};
+// The headline HR% number and scorecard accents.
+const HR_ACCENT = "text-emerald-600 dark:text-emerald-400";
+
 const TEAM_COLORS = {
   ARI: "#A71930", ATL: "#CE1141", BAL: "#DF4601", BOS: "#BD3039",
   CHC: "#0E3386", CWS: "#27251F", CHW: "#27251F", CIN: "#C6011F",
@@ -1442,12 +1455,12 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
           </defs>
           {/* grass + concentric mowing arcs centred on home plate */}
           <rect x="-10" y="-10" width="120" height="130" fill="url(#grassGlow)" />
-          {[12, 24, 36, 48, 60, 72].map((r) => (
-            <circle key={r} cx="50" cy="84" r={r} fill="none" stroke="#ffffff" strokeOpacity="0.06" strokeWidth="6" />
+          {[16, 32, 48, 64].map((r) => (
+            <circle key={r} cx="50" cy="84" r={r} fill="none" stroke="#ffffff" strokeOpacity="0.035" strokeWidth="8" />
           ))}
           {/* foul lines run to the wall; anything past the wall becomes stands */}
-          <line x1="50" y1="84" x2="110" y2="24" stroke="#fff" strokeWidth="0.6" strokeOpacity="0.9" />
-          <line x1="50" y1="84" x2="-10" y2="24" stroke="#fff" strokeWidth="0.6" strokeOpacity="0.9" />
+          <line x1="50" y1="84" x2="110" y2="24" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.75" />
+          <line x1="50" y1="84" x2="-10" y2="24" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.75" />
           <circle cx="50" cy="84" r="130" fill="none" stroke="#0b1220" strokeWidth="100" />
           <circle cx="50" cy="84" r="86" fill="none" stroke="#1e293b" strokeWidth="12" />
           {/* warning track + outfield wall in team colour */}
@@ -1467,8 +1480,8 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
           <circle cx="50" cy="60" r="3.6" fill="#c08a52" stroke="#a8703f" strokeWidth="0.4" />
           <rect x="49.1" y="59.2" width="1.8" height="0.6" fill="#fff" fillOpacity="0.9" />
           {/* batter's boxes + bases + home plate */}
-          <rect x="44.4" y="80.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.4" strokeOpacity="0.85" />
-          <rect x="52.4" y="80.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.4" strokeOpacity="0.85" />
+          <rect x="44.4" y="80.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.35" strokeOpacity="0.6" />
+          <rect x="52.4" y="80.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.35" strokeOpacity="0.6" />
           {[[74, 60], [50, 36], [26, 60]].map(([bx, by], i) => (
             <rect key={i} x={bx - 1.5} y={by - 1.5} width="3" height="3" fill="#fff" transform={"rotate(45 " + bx + " " + by + ")"} />
           ))}
@@ -2363,28 +2376,28 @@ function hrbEval({ hm, hApi, om, pApi, hand, batHand, spot, parkF, wxF, confirme
 }
 // GB% is INVERTED: low ground-ball rate = more balls in the air = target.
 function hrbGbClass(v) {
-  if (v == null) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
-  if (v <= HRB.gbGreen) return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300";
-  if (v >= HRB.gbRed) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
-  return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+  if (v == null) return CHIP.none;
+  if (v <= HRB.gbGreen) return CHIP.good;
+  if (v >= HRB.gbRed) return CHIP.bad;
+  return CHIP.warn;
 }
 function hrbHitClass(v) {
-  if (v == null) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
-  if (v >= HRB.hitGreen) return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300";
-  if (v >= HRB.hitAmber) return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
-  return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
+  if (v == null) return CHIP.none;
+  if (v >= HRB.hitGreen) return CHIP.good;
+  if (v >= HRB.hitAmber) return CHIP.warn;
+  return CHIP.bad;
 }
 function hrbPitBrlClass(v) {
-  if (v == null) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
-  if (v >= HRB.pitGreen) return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300";
-  if (v <= HRB.pitRed) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
-  return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+  if (v == null) return CHIP.none;
+  if (v >= HRB.pitGreen) return CHIP.good;
+  if (v <= HRB.pitRed) return CHIP.bad;
+  return CHIP.warn;
 }
 function hrbHr9Class(v) {
-  if (v == null) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
-  if (v >= HRB.hr9Green) return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300";
-  if (v <= HRB.hr9Red) return "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300";
-  return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+  if (v == null) return CHIP.none;
+  if (v >= HRB.hr9Green) return CHIP.good;
+  if (v <= HRB.hr9Red) return CHIP.bad;
+  return CHIP.warn;
 }
 // ═══ Skeleton loading cards (football-app polish) ═══
 // Grey pulsing placeholders shaped like the real content, so the app
@@ -2417,7 +2430,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v101";
+const HRB_VERSION = "v102";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -3048,7 +3061,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                     </span>
                     <span className="ml-auto w-12 text-center shrink-0">
                       <span className="block text-[7px] font-bold text-slate-400 uppercase">HR%</span>
-                      <span className="block text-[13px] font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">{t.prob != null ? (t.prob * 100).toFixed(0) + "%" : "—"}</span>
+                      <span className={"block text-[13px] font-extrabold " + HR_ACCENT + " tabular-nums"}>{t.prob != null ? (t.prob * 100).toFixed(0) + "%" : "—"}</span>
                     </span>
                   </span>
                   <span className="flex items-center justify-between gap-2 mt-0.5 pl-7">
@@ -3203,11 +3216,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           <span className="w-6 h-6 rounded-full shrink-0" style={{ backgroundColor: teamColor(s.abbr) }} />
                         )}
                         <span className="text-sm font-extrabold" style={{ color: teamColor(s.abbr) }}>{s.abbr}</span>
-                        <span className={"ml-auto text-[9px] font-extrabold px-2 py-0.5 rounded-full " + (s.confirmed
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
-                          : s.hitters.length
-                            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-                            : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500")}>
+                        <span className={"ml-auto text-[9px] font-extrabold px-2 py-0.5 rounded-full " + (s.confirmed ? CHIP.good : s.hitters.length ? CHIP.warn : CHIP.none)}>
                           {s.confirmed ? "CONFIRMED LINEUP" : s.hitters.length ? "PROJECTED LINEUP" : "NO LINEUP"}
                         </span>
                       </div>
@@ -3435,7 +3444,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           <span className="w-4 text-center text-[10px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
                           {TEAM_LOGOS[e.team] && <img src={TEAM_LOGOS[e.team]} alt="" className="w-4 h-4 rounded-full object-contain bg-white shrink-0" />}
                           <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{e.name}</span>
-                          {e.prob != null && <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 tabular-nums shrink-0">{Math.round(e.prob)}%</span>}
+                          {e.prob != null && <span className={"text-[10px] font-bold " + HR_ACCENT + " tabular-nums shrink-0"}>{Math.round(e.prob)}%</span>}
                           <span className="text-[10px] font-bold text-slate-400 tabular-nums shrink-0">{e.score}</span>
                           <span className="w-12 text-right text-[11px] font-extrabold shrink-0">
                             {hr == null && !graded ? <span className="text-slate-300 dark:text-slate-600">·</span>
