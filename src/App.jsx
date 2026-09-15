@@ -1430,6 +1430,19 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
     { lbl: "P", x: 50, y: 60, aliases: ["P", "SP", "RHP", "LHP"] },
     { lbl: "C", x: 50, y: 92, aliases: ["C"] },
   ];
+  // Short injury label for the field: IL10 / IL60 / OUT / DTD, else null.
+  const injTag = (pl) => {
+    const raw = String((pl && pl.status) || "").trim();
+    if (!raw) return null;
+    const low = raw.toLowerCase();
+    if (low === "active" || low === "") return null;
+    const d = /(\d+)/.exec(raw);
+    if (/il|injur|disabled/.test(low)) return d ? "IL" + d[1] : "IL";
+    if (/out|nri|restricted|suspend/.test(low)) return "OUT";
+    if (/day.to.day|dtd|question/.test(low)) return "DTD";
+    if (/minor|option/.test(low)) return "MIN";
+    return raw.slice(0, 6).toUpperCase();
+  };
   const oaaChip = (v) => v == null ? "bg-slate-900/70 text-white/70"
     : v >= 8 ? "bg-amber-400 text-slate-900"
     : v >= 3 ? "bg-emerald-500 text-white"
@@ -1495,7 +1508,7 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
               style={{ left: s.x + "%", top: (s.y / 1.08) + "%" }}>
               <span className="relative">
                 {p ? (
-                  <span className="block w-11 h-11 rounded-full overflow-hidden border-2 border-white/80 shadow-md bg-white"><Avatar p={p} /></span>
+                  <span className={"block w-11 h-11 rounded-full overflow-hidden shadow-md bg-white border-2 " + (injTag(p) ? "border-rose-500" : "border-white/80")}><Avatar p={p} /></span>
                 ) : (
                   <span className="w-11 h-11 rounded-full flex items-center justify-center text-[10px] font-extrabold bg-white/25 text-white/80 border-2 border-dashed border-white/50 shadow-md">{s.lbl}</span>
                 )}
@@ -1509,6 +1522,11 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
                     {p.oaa != null ? (p.oaa > 0 ? "+" : "") + Math.round(p.oaa) : "—"}
                   </span>
                 )}
+                {p && injTag(p) && (
+                  <span className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded-full text-[7px] font-extrabold text-white bg-rose-600 shadow ring-2 ring-white/80 animate-pulse">
+                    {injTag(p)}
+                  </span>
+                )}
               </span>
               <span className="mt-2 text-[8px] font-bold text-white/95 max-w-[64px] truncate drop-shadow">
                 {p ? p.name.split(" ").slice(-1)[0] : ""}
@@ -1517,7 +1535,36 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
           );
         })}
       </div>
-      <div className="text-[9px] text-slate-400 mt-2 px-1">Chip = Outs Above Average (Statcast fielding): gold +8 elite · green +3 · red −3 or worse · tap for profile</div>
+      {/* ── BENCH (football app's sideline strip) ── */}
+      {(() => {
+        const onField = new Set(SPOTS.map((sp) => { const q = pick(sp.aliases); return q && q.id; }).filter(Boolean));
+        const bench = (roster || []).filter((pl) => !onField.has(pl.id) && !["Pitching", "Bullpen"].includes(unitOf(pl)));
+        if (!bench.length) return null;
+        return (
+          <div className="mt-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm px-3 py-3">
+            <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">Bench ({bench.length})</div>
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {bench.map((pl) => (
+                <button key={pl.id} onClick={() => onSelectPlayer(pl)} className="shrink-0 w-16 text-center">
+                  <span className="relative block">
+                    <span className={"block w-12 h-12 mx-auto rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 border-2 " + (injTag(pl) ? "border-rose-500" : "border-transparent")}>
+                      <Avatar p={pl} />
+                    </span>
+                    {injTag(pl) && (
+                      <span className="absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-0.5 rounded-full text-[7px] font-extrabold text-white bg-rose-600 shadow animate-pulse">
+                        {injTag(pl)}
+                      </span>
+                    )}
+                  </span>
+                  <span className="block mt-1 text-[9px] font-bold text-slate-700 dark:text-slate-200 truncate">{pl.name.split(" ").slice(-1)[0]}</span>
+                  <span className="block text-[8px] font-bold text-slate-400 truncate">{pl.pos || ""}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+      <div className="text-[9px] text-slate-400 mt-2 px-1">Chip = Outs Above Average (Statcast fielding): gold +8 elite · green +3 · red −3 or worse · red ring/tag = injured · tap for profile</div>
     </div>
   );
 }
@@ -2399,6 +2446,50 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return CHIP.bad;
   return CHIP.warn;
 }
+// ═══ Bouncing baseball splash (matches the basketball app) ═══
+// Pure CSS/SVG - no image request, so it paints instantly on cold load.
+function BallLoader({ label = "Loading" }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-24 select-none">
+      <style>{`
+        @keyframes mlbBounce {
+          0%, 100% { transform: translateY(-26px) scaleX(1) scaleY(1); animation-timing-function: cubic-bezier(.35,0,.6,1); }
+          45%      { transform: translateY(0)     scaleX(1.08) scaleY(.92); animation-timing-function: cubic-bezier(.35,0,.6,1); }
+          55%      { transform: translateY(0)     scaleX(1.08) scaleY(.92); animation-timing-function: cubic-bezier(.4,0,.5,1); }
+        }
+        @keyframes mlbSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes mlbShadow {
+          0%, 100% { transform: scaleX(.55); opacity: .18; }
+          50%      { transform: scaleX(1);   opacity: .32; }
+        }
+        .mlb-bounce { animation: mlbBounce .62s infinite; }
+        .mlb-spin   { animation: mlbSpin 1.25s linear infinite; }
+        .mlb-shadow { animation: mlbShadow .62s infinite; }
+      `}</style>
+      <div className="h-16 flex items-end">
+        <span className="mlb-bounce block">
+          <svg viewBox="0 0 48 48" className="mlb-spin w-11 h-11 drop-shadow">
+            <circle cx="24" cy="24" r="22" fill="#fff" stroke="#e2e8f0" strokeWidth="1.5" />
+            {/* the two classic seams */}
+            <path d="M12 7.5 A22 22 0 0 0 12 40.5" fill="none" stroke="#dc2626" strokeWidth="1.8" strokeLinecap="round" />
+            <path d="M36 7.5 A22 22 0 0 1 36 40.5" fill="none" stroke="#dc2626" strokeWidth="1.8" strokeLinecap="round" />
+            {[10, 17, 24, 31, 38].map((y, i) => (
+              <g key={i} stroke="#dc2626" strokeWidth="1.2" strokeLinecap="round">
+                <line x1={13.2 - (i === 0 || i === 4 ? -1.2 : 0)} y1={y - 1.6} x2={16.4} y2={y - 2.8} />
+                <line x1={13.2 - (i === 0 || i === 4 ? -1.2 : 0)} y1={y + 1.6} x2={16.4} y2={y + 2.8} />
+                <line x1={34.8 + (i === 0 || i === 4 ? -1.2 : 0)} y1={y - 1.6} x2={31.6} y2={y - 2.8} />
+                <line x1={34.8 + (i === 0 || i === 4 ? -1.2 : 0)} y1={y + 1.6} x2={31.6} y2={y + 2.8} />
+              </g>
+            ))}
+          </svg>
+        </span>
+      </div>
+      <span className="mlb-shadow block w-10 h-1.5 rounded-full bg-slate-900 dark:bg-black mt-1" />
+      <span className="mt-4 text-xs font-bold tracking-widest uppercase text-slate-400">{label}</span>
+    </div>
+  );
+}
+
 // ═══ Skeleton loading cards (football-app polish) ═══
 // Grey pulsing placeholders shaped like the real content, so the app
 // feels loaded before the data lands - no bare "Loading…" text.
@@ -2430,7 +2521,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v102";
+const HRB_VERSION = "v103";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2986,117 +3077,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
     })
   );
   if (selGame) return <HRBoundary onBack={() => setSelGame(null)}><GameDetail g={selGame} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)} /></HRBoundary>;
-  return (
-    <div>
-      <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
-        <div className="text-2xl font-extrabold tracking-tight">Matchups ({todayLabel}) <span role="button" onClick={() => window.__hrbRefetch && window.__hrbRefetch()}
-              className="text-[10px] font-bold text-white/50 align-middle">
-              {HRB_VERSION}{typeof window !== "undefined" && window.__hrbApiVer ? " · api " + window.__hrbApiVer : ""}{typeof window !== "undefined" && window.__hrbDataAt ? " · data " + window.__hrbDataAt + " ↻" : ""}
-            </span></div>
-      </div>
-      <div className="px-4 pb-28">
-        <div className="flex gap-2 mt-3">
-          {[["matchups", "Matchups"], ["targets", "HR Targets"], ["history", "History"]].map(([id, label]) => (
-            <button key={id} onClick={() => setView(id)}
-              className={"flex-1 py-2 rounded-full text-[11px] font-extrabold " + (view === id
-                ? "bg-blue-600 text-white"
-                : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-800")}>
-              {label}
-            </button>
-          ))}
-        </div>
-        {view === "targets" && top.length > 0 && (
-          <>
-            <div className="text-[11px] font-bold tracking-widest uppercase mt-4 mb-2 px-1 text-slate-500 dark:text-slate-400">🎯 HR Targets</div>
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
-              {top.map((t, i) => (
-                <button key={t.h.id + "-" + t.g.gamePk} onClick={() => setSelGame(t.g)}
-                  className="w-full text-left px-3 py-1.5 active:bg-slate-50 dark:active:bg-slate-800">
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 text-center text-[11px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
-                    <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + t.h.id + "/headshot/silo/current"}
-                      alt="" className="w-8 h-8 rounded-full object-cover object-top shrink-0"
-                      style={{ backgroundColor: teamColor(t.side.abbr) + "26" }} loading="lazy" />
-                    {TEAM_LOGOS[t.side.abbr] && <img src={TEAM_LOGOS[t.side.abbr]} alt={t.side.abbr} className="w-4 h-4 rounded-full object-contain bg-white shrink-0" />}
-                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap shrink-0">
-                      {t.h.bats ? t.h.bats + " " : ""}{t.h.name}
-                    </span>
-                    {!t.confirmed && <span className="text-[8px] font-extrabold text-amber-500 uppercase shrink-0">proj</span>}
-                    <span className="ml-auto min-w-0 flex items-center justify-end gap-1">
-                      {TEAM_LOGOS[t.oppAbbr] && <img src={TEAM_LOGOS[t.oppAbbr]} alt={t.oppAbbr} className="w-3.5 h-3.5 rounded-full object-contain bg-white shrink-0" />}
-                      <span className="min-w-0 text-[10px] font-semibold text-slate-400 truncate">
-                        vs {t.oppHand ? t.oppHand + "HP " : ""}{t.opp ? t.opp.name : "TBD"}
-                      </span>
-                    </span>
-                  </span>
-                  <span className="flex items-center gap-1.5 mt-0.5 pl-7">
-                    <span className="w-8 text-center shrink-0">
-                      <span className="block text-[7px] font-bold text-slate-400 uppercase">Bat</span>
-                      <span className="block text-[10px] font-extrabold text-slate-700 dark:text-slate-100 tabular-nums">{ordinalize(t.spot + 1)}</span>
-                    </span>
-                    <span className="w-11 text-center shrink-0">
-                      <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
-                      <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + (t.brl != null ? hrbHitClass(t.brl) : "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300")}>
-                        {t.brl != null ? Number(t.brl).toFixed(1) + "%" : "no data"}
-                      </span>
-                    </span>
-                    <span className="w-px h-6 bg-slate-200 dark:bg-slate-700 shrink-0" />
-                    <span className="w-11 text-center shrink-0">
-                      <span className="block text-[7px] font-bold text-slate-400 uppercase">SP Brl</span>
-                      <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbPitBrlClass(t.oppBrl)}>
-                        {t.oppBrl != null ? Number(t.oppBrl).toFixed(1) + "%" : "—"}
-                      </span>
-                    </span>
-                    <span className="w-11 text-center shrink-0">
-                      <span className="block text-[7px] font-bold text-slate-400 uppercase">SP HR9</span>
-                      <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbHr9Class(t.oppHr9)}>
-                        {t.oppHr9 != null ? Number(t.oppHr9).toFixed(2) : "—"}
-                      </span>
-                    </span>
-                    <span className="w-11 text-center shrink-0">
-                      <span className="block text-[7px] font-bold text-slate-400 uppercase">SP GB%</span>
-                      <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbGbClass(t.oppGb)}>
-                        {t.oppGb != null ? Number(t.oppGb).toFixed(0) + "%" : "—"}
-                      </span>
-                    </span>
-                    <span className="ml-auto w-12 text-center shrink-0">
-                      <span className="block text-[7px] font-bold text-slate-400 uppercase">HR%</span>
-                      <span className={"block text-[13px] font-extrabold " + HR_ACCENT + " tabular-nums"}>{t.prob != null ? (t.prob * 100).toFixed(0) + "%" : "—"}</span>
-                    </span>
-                  </span>
-                  <span className="flex items-center justify-between gap-2 mt-0.5 pl-7">
-                    <span className="text-[9px] font-semibold text-slate-400 truncate">
-                      {(t.g.venue && t.g.venue.name) || ""}
-                      {t.parkLR != null
-                        ? <span className={"font-extrabold " + (t.parkLR.shown >= 105 ? "text-emerald-500" : t.parkLR.shown <= 95 ? "text-rose-500" : "text-amber-500")}> ({t.parkLR.shown} vs {t.parkLR.hand})</span>
-                        : t.park != null && <span className={"font-extrabold " + parkRankColor(t.park)}> ({ordinalize(t.park)})</span>}
-                    </span>
-                    {t.wx && (
-                      <span className="text-[9px] font-semibold text-slate-400 shrink-0">
-                        {wxEmoji(t.wx.condition)} {t.wx.temp}°{t.wx.wind ? " · 💨 " + t.wx.wind : ""}
-                      </span>
-                    )}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="text-[9px] text-slate-400 mt-1.5 px-1">v100 · HR% = chance of at least one HR today. SP K% discounts the per-contact stats · same-hand platoon ×0.90 L/L, ×0.96 R/R · Hitter = Barrel/PA^{HRB.eBrlPa} × HR/PA^{HRB.eHrPa} · SP = Brl%^{HRB.eSpBrl} × HR/9^{HRB.eSpHr9} × GB%⁻¹^{HRB.eGb}, blended {Math.round(HRB.spShare * 100)}/{Math.round((1 - HRB.spShare) * 100)} with opposing bullpen HR/9 · × park × weather&nbsp;· park is hand-specific (100 = avg, damped) · expected PAs by lineup spot · projected ×{HRB.projMult}</div>
-          </>
-        )}
-        {view === "matchups" && (<>
-        <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-500 dark:text-slate-400">Matchups</div>
-        <div className="space-y-3">
-          {data == null && <SkeletonCards cards={3} rows={4} />}
-          {data && data.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
-          {data && [...data]
-            .sort((a, b) => {
-              const pri = (g) => {
-                const st = g.status && g.status.abstractGameState;
-                return st === "Live" ? 0 : st === "Final" ? 2 : 1;
-              };
-              return pri(a.g) - pri(b.g);
-            })
-            .map(({ g, sides, wx }) => {
+  // ── Broadcast game card (one per game) ──
+  const renderGameCard = ({ g, sides, wx }) => {
             const state = g.status && g.status.abstractGameState;
             const aScore = g.teams.away.score, hScore = g.teams.home.score;
             const scoreStr = aScore != null && hScore != null ? aScore + "-" + hScore : "";
@@ -3141,50 +3123,72 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       })).then((pairs) => setStreaks((s2) => ({ ...s2, ...Object.fromEntries(pairs) })));
                     }
                   }}
-                  className="w-full text-left px-4 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
-<span className="flex items-center gap-2">
-                    <span className="flex-1 min-w-0 space-y-1.5">
-                      {["away", "home"].map((kk) => {
+                  className="relative w-full text-left px-4 py-3 active:bg-slate-50 dark:active:bg-slate-800">
+<span className="block">
+                    {/* ── Broadcast row: logo · score · center status · score · logo ── */}
+                    <span className="flex items-center gap-1">
+                      {["away", "home"].map((kk, idx) => {
                         const sd = sides[kk];
                         const sc = kk === "away" ? aScore : hScore;
+                        const other = kk === "away" ? hScore : aScore;
+                        const lost = state === "Final" && sc != null && other != null && sc < other;
+                        const batting = state === "Live" && g.linescore && g.linescore.currentInning != null &&
+                          ((String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "away" : "home") === kk);
+                        const logo = (
+                          <span key="lg" className="relative shrink-0">
+                            {TEAM_LOGOS[sd.abbr]
+                              ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-14 h-14 rounded-full object-contain bg-white " + (lost ? "opacity-40 grayscale" : "")} />
+                              : <span className="w-14 h-14 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm font-extrabold" style={{ color: teamColor(sd.abbr) }}>{sd.abbr}</span>}
+                            {batting && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900 animate-pulse" />}
+                          </span>
+                        );
+                        const score = sc != null && state !== "Preview" ? (
+                          <span key="sc" className={"text-[34px] leading-none font-extrabold tabular-nums " + (lost ? "text-slate-300 dark:text-slate-600" : "text-slate-900 dark:text-white")}>{sc}</span>
+                        ) : <span key="sc" />;
                         return (
-                          <span key={kk} className="flex items-center gap-2">
-                            {TEAM_LOGOS[sd.abbr] && <img src={TEAM_LOGOS[sd.abbr]} alt="" className="w-6 h-6 rounded-full object-contain bg-white shrink-0" />}
-                            <span className="min-w-0">
-                              <span className="block text-xs font-extrabold" style={{ color: teamColor(sd.abbr) }}>
-                                {sd.abbr}<span className="ml-1 font-bold text-slate-400 text-[9px] tabular-nums">{sd.rec}</span>{streakBadge(sd)}
-                              </span>
-                              {sd.pitcher && <span className="block text-[9px] font-bold text-slate-400 truncate">{sd.pitcher.name}{sd.pitcher.rec ? " (" + sd.pitcher.rec + ")" : ""}</span>}
+                          <span key={kk} className={"flex-1 min-w-0 flex items-center gap-2 " + (idx === 0 ? "" : "flex-row-reverse")}>
+                            {logo}
+                            {score}
+                          </span>
+                        );
+                      })}
+                      {/* center status pill */}
+                      <span className="absolute left-1/2 -translate-x-1/2 shrink-0 text-center pointer-events-none">
+                        {state === "Live" ? (
+                          <span className="block rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-1">
+                            <span className="block text-[13px] font-extrabold text-slate-900 dark:text-white tabular-nums leading-tight">
+                              {g.linescore && g.linescore.currentInning != null ? g.linescore.currentInning : ""}
+                              <span className="ml-0.5">{g.linescore && String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "▲" : "▼"}</span>
                             </span>
-                            {sc != null && (
-                              <span className="ml-auto flex items-center shrink-0">
-                                <span className="text-lg font-extrabold text-slate-800 dark:text-slate-100 tabular-nums min-w-[26px] text-right">{sc}</span>
-                                <span className="w-3.5 text-center text-red-500 text-[10px]">
-                                  {state === "Live" && g.linescore && g.linescore.currentInning != null &&
-                                    ((String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "away" : "home") === kk)
-                                    ? (kk === "away" ? "▲" : "▼") : ""}
-                                </span>
-                              </span>
-                            )}
+                            <span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">
+                              {g.linescore && g.linescore.outs != null ? g.linescore.outs + " OUT" + (g.linescore.outs === 1 ? "" : "S") : "LIVE"}
+                            </span>
+                          </span>
+                        ) : state === "Final" ? (
+                          <span className="block rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-300">Final</span>
+                        ) : (
+                          <span className="block rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:text-slate-200 tabular-nums">{timeLabel}</span>
+                        )}
+                      </span>
+                    </span>
+                    {/* ── abbr · record · probable, under each logo ── */}
+                    <span className="flex items-start gap-1 mt-1">
+                      {["away", "home"].map((kk, idx) => {
+                        const sd = sides[kk];
+                        return (
+                          <span key={kk} className={"flex-1 min-w-0 " + (idx === 0 ? "text-left" : "text-right")}>
+                            <span className="block text-[13px] font-extrabold leading-tight" style={{ color: teamColor(sd.abbr) }}>
+                              {sd.abbr}{streakBadge(sd)}
+                            </span>
+                            <span className="block text-[10px] font-bold text-slate-400 tabular-nums leading-tight">{sd.rec}</span>
+                            {sd.pitcher && <span className="block text-[9px] font-bold text-slate-400 truncate leading-tight">{sd.pitcher.name}{sd.pitcher.rec ? " (" + sd.pitcher.rec + ")" : ""}</span>}
                           </span>
                         );
                       })}
                     </span>
-                    <span className={"w-20 text-center text-[10px] font-extrabold shrink-0 " + (state === "Live" ? "text-slate-800 dark:text-white" : "text-slate-400")}>
-                      {state === "Live" ? (
-                        <span>
-                          <span className="block text-[12px]">
-                            {g.linescore && g.linescore.currentInning != null
-                              ? (String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "TOP " : "BOT ") + g.linescore.currentInning
-                              : "LIVE"}
-                          </span>
-                          {g.linescore && g.linescore.outs != null && (
-                            <span className="block text-[8px] font-bold text-slate-400">{g.linescore.outs} OUT{g.linescore.outs === 1 ? "" : "S"}</span>
-                          )}
-                        </span>
-                      ) : state === "Final" ? "Final" : timeLabel}
+                    <span className="flex justify-center mt-1">
+                      <span className={"text-slate-300 dark:text-slate-600 text-[10px] transition-transform inline-block " + (isOpen ? "rotate-90" : "")}>▶</span>
                     </span>
-                    <span className={"text-slate-300 dark:text-slate-600 text-[10px] shrink-0 transition-transform " + (isOpen ? "rotate-90" : "")}>▶</span>
                   </span>
                 </button>
                 {isOpen && <div>
@@ -3303,7 +3307,137 @@ function HRBoardTab({ players, onSelectPlayer }) {
                 </div>}
               </div>
             );
-          })}
+  };
+
+  return (
+    <div>
+      <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
+        <div className="text-2xl font-extrabold tracking-tight">Matchups ({todayLabel}) <span role="button" onClick={() => window.__hrbRefetch && window.__hrbRefetch()}
+              className="text-[10px] font-bold text-white/50 align-middle">
+              {HRB_VERSION}{typeof window !== "undefined" && window.__hrbApiVer ? " · api " + window.__hrbApiVer : ""}{typeof window !== "undefined" && window.__hrbDataAt ? " · data " + window.__hrbDataAt + " ↻" : ""}
+            </span></div>
+      </div>
+      <div className="px-4 pb-28">
+        <div className="flex gap-2 mt-3">
+          {[["matchups", "Matchups"], ["targets", "HR Targets"], ["history", "History"]].map(([id, label]) => (
+            <button key={id} onClick={() => setView(id)}
+              className={"flex-1 py-2 rounded-full text-[11px] font-extrabold " + (view === id
+                ? "bg-blue-600 text-white"
+                : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-800")}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {view === "targets" && top.length > 0 && (
+          <>
+            <div className="text-[11px] font-bold tracking-widest uppercase mt-4 mb-2 px-1 text-slate-500 dark:text-slate-400">🎯 HR Targets</div>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+              {top.map((t, i) => (
+                <button key={t.h.id + "-" + t.g.gamePk} onClick={() => setSelGame(t.g)}
+                  className="w-full text-left px-3 py-1.5 active:bg-slate-50 dark:active:bg-slate-800">
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 text-center text-[11px] font-extrabold text-slate-400 tabular-nums shrink-0">{i + 1}</span>
+                    <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + t.h.id + "/headshot/silo/current"}
+                      alt="" className="w-8 h-8 rounded-full object-cover object-top shrink-0"
+                      style={{ backgroundColor: teamColor(t.side.abbr) + "26" }} loading="lazy" />
+                    {TEAM_LOGOS[t.side.abbr] && <img src={TEAM_LOGOS[t.side.abbr]} alt={t.side.abbr} className="w-4 h-4 rounded-full object-contain bg-white shrink-0" />}
+                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap shrink-0">
+                      {t.h.bats ? t.h.bats + " " : ""}{t.h.name}
+                    </span>
+                    {!t.confirmed && <span className="text-[8px] font-extrabold text-amber-500 uppercase shrink-0">proj</span>}
+                    <span className="ml-auto min-w-0 flex items-center justify-end gap-1">
+                      {TEAM_LOGOS[t.oppAbbr] && <img src={TEAM_LOGOS[t.oppAbbr]} alt={t.oppAbbr} className="w-3.5 h-3.5 rounded-full object-contain bg-white shrink-0" />}
+                      <span className="min-w-0 text-[10px] font-semibold text-slate-400 truncate">
+                        vs {t.oppHand ? t.oppHand + "HP " : ""}{t.opp ? t.opp.name : "TBD"}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-1.5 mt-0.5 pl-7">
+                    <span className="w-8 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">Bat</span>
+                      <span className="block text-[10px] font-extrabold text-slate-700 dark:text-slate-100 tabular-nums">{ordinalize(t.spot + 1)}</span>
+                    </span>
+                    <span className="w-11 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">Brl%</span>
+                      <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + (t.brl != null ? hrbHitClass(t.brl) : "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300")}>
+                        {t.brl != null ? Number(t.brl).toFixed(1) + "%" : "no data"}
+                      </span>
+                    </span>
+                    <span className="w-px h-6 bg-slate-200 dark:bg-slate-700 shrink-0" />
+                    <span className="w-11 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">SP Brl</span>
+                      <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbPitBrlClass(t.oppBrl)}>
+                        {t.oppBrl != null ? Number(t.oppBrl).toFixed(1) + "%" : "—"}
+                      </span>
+                    </span>
+                    <span className="w-11 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">SP HR9</span>
+                      <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbHr9Class(t.oppHr9)}>
+                        {t.oppHr9 != null ? Number(t.oppHr9).toFixed(2) : "—"}
+                      </span>
+                    </span>
+                    <span className="w-11 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">SP GB%</span>
+                      <span className={"block text-[10px] font-extrabold rounded px-0.5 tabular-nums " + hrbGbClass(t.oppGb)}>
+                        {t.oppGb != null ? Number(t.oppGb).toFixed(0) + "%" : "—"}
+                      </span>
+                    </span>
+                    <span className="ml-auto w-12 text-center shrink-0">
+                      <span className="block text-[7px] font-bold text-slate-400 uppercase">HR%</span>
+                      <span className={"block text-[13px] font-extrabold " + HR_ACCENT + " tabular-nums"}>{t.prob != null ? (t.prob * 100).toFixed(0) + "%" : "—"}</span>
+                    </span>
+                  </span>
+                  <span className="flex items-center justify-between gap-2 mt-0.5 pl-7">
+                    <span className="text-[9px] font-semibold text-slate-400 truncate">
+                      {(t.g.venue && t.g.venue.name) || ""}
+                      {t.parkLR != null
+                        ? <span className={"font-extrabold " + (t.parkLR.shown >= 105 ? "text-emerald-500" : t.parkLR.shown <= 95 ? "text-rose-500" : "text-amber-500")}> ({t.parkLR.shown} vs {t.parkLR.hand})</span>
+                        : t.park != null && <span className={"font-extrabold " + parkRankColor(t.park)}> ({ordinalize(t.park)})</span>}
+                    </span>
+                    {t.wx && (
+                      <span className="text-[9px] font-semibold text-slate-400 shrink-0">
+                        {wxEmoji(t.wx.condition)} {t.wx.temp}°{t.wx.wind ? " · 💨 " + t.wx.wind : ""}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="text-[9px] text-slate-400 mt-1.5 px-1">v100 · HR% = chance of at least one HR today. SP K% discounts the per-contact stats · same-hand platoon ×0.90 L/L, ×0.96 R/R · Hitter = Barrel/PA^{HRB.eBrlPa} × HR/PA^{HRB.eHrPa} · SP = Brl%^{HRB.eSpBrl} × HR/9^{HRB.eSpHr9} × GB%⁻¹^{HRB.eGb}, blended {Math.round(HRB.spShare * 100)}/{Math.round((1 - HRB.spShare) * 100)} with opposing bullpen HR/9 · × park × weather&nbsp;· park is hand-specific (100 = avg, damped) · expected PAs by lineup spot · projected ×{HRB.projMult}</div>
+          </>
+        )}
+        {view === "matchups" && (<>
+        <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-500 dark:text-slate-400">Matchups</div>
+        <div className="space-y-3">
+          {data == null && <BallLoader label="Loading today's games" />}
+          {data && data.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
+          {data && (() => {
+            // Broadcast grouping: live games first under a pulsing LIVE
+            // header, then upcoming, then finals - same shape as the
+            // football app's day groups.
+            const pri = (g) => { const st = g.status && g.status.abstractGameState; return st === "Live" ? 0 : st === "Final" ? 2 : 1; };
+            const sorted = [...data].sort((a, b) => pri(a.g) - pri(b.g) || new Date(a.g.gameDate) - new Date(b.g.gameDate));
+            let lastBucket = null;
+            return sorted.map((row) => {
+              const bucket = pri(row.g);
+              const showHead = bucket !== lastBucket;
+              lastBucket = bucket;
+              return (
+                <React.Fragment key={"grp" + row.g.gamePk}>
+                  {showHead && (
+                    <div className={"flex items-center gap-1.5 text-[10px] font-extrabold tracking-widest uppercase px-1 " + (bucket === 0 ? "text-rose-500" : "text-slate-400") + (lastBucket != null ? " pt-1" : "")}>
+                      {bucket === 0 && <span className="relative flex w-2 h-2">
+                        <span className="absolute inline-flex w-full h-full rounded-full bg-rose-500 opacity-75 animate-ping" />
+                        <span className="relative inline-flex w-2 h-2 rounded-full bg-rose-500" />
+                      </span>}
+                      {bucket === 0 ? "Live" : bucket === 1 ? "Upcoming" : "Final"}
+                    </div>
+                  )}
+                  {renderGameCard(row)}
+                </React.Fragment>
+              );
+            });
+          })()}
         </div>
         </>)}
         {view === "history" && (
@@ -3559,7 +3693,7 @@ export default function App() {
           Couldn't load data: {error}
         </div>
       )}
-      {!players && !error && <div className="px-4 pt-6"><SkeletonCards cards={3} rows={3} /></div>}
+      {!players && !error && <BallLoader />}
 
       {players && tab === "teams" && !selTeam && (
         <TeamsTab teams={teams} players={players} onSelect={setSelTeam} onSelectPlayer={setSel} />
