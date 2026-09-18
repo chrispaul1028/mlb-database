@@ -604,7 +604,7 @@ function PlayersTab({ players, onSelect }) {
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
           {list.map((p) => (
             <button key={p.id} onClick={() => onSelect(p)} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-slate-50 dark:active:bg-slate-800">
-              <span className="w-7 text-center text-[11px] font-extrabold text-slate-400 uppercase shrink-0">{p.pos || "—"}</span>
+              <span className="w-7 text-center text-[11px] font-extrabold uppercase shrink-0" style={{ color: teamColor(teamOfPlayer(p)) }}>{p.pos || "—"}</span>
               <Avatar p={p} />
               <span className="flex-1 min-w-0">
                 <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{p.name}</span>
@@ -1410,36 +1410,69 @@ function seasonsAhead(n) {
 }
 const LINE_COLORS = ["#2563eb", "#16a34a", "#dc2626", "#9333ea", "#f59e0b", "#0891b2"];
 
-function FieldView({ roster, abbr, onSelectPlayer }) {
-  const used = new Set();
-  const pick = (aliases) => {
-    const cands = roster
-      .filter((p) => aliases.includes(String(p.pos || "").toUpperCase()) && !used.has(p.id))
-      .sort((a, b) => (b.rating2k ?? -1) - (a.rating2k ?? -1));
-    const hit = cands[0] || null;
-    if (hit) used.add(hit.id);
-    return hit;
-  };
-  // Geometry (viewBox 0-100 x, 0-108 y). Home 50,84 · 1B 74,60 · 2B 50,36
-  // · 3B 26,60 · mound 50,60. 90 ft ≈ 34 units. Infielders sit ON the bag;
-  // 2B and SS flank second base the way they actually play it.
-  const SPOTS = [
-    { lbl: "CF", x: 50, y: 14, aliases: ["CF", "OF"] },
-    { lbl: "LF", x: 18, y: 25, aliases: ["LF", "OF"] },
-    { lbl: "RF", x: 82, y: 25, aliases: ["RF", "OF"] },
-    { lbl: "2B", x: 58, y: 38, aliases: ["2B"] },
-    { lbl: "SS", x: 42, y: 38, aliases: ["SS"] },
-    { lbl: "3B", x: 26, y: 60, aliases: ["3B"] },
-    { lbl: "1B", x: 74, y: 60, aliases: ["1B"] },
-    { lbl: "P", x: 50, y: 60, aliases: ["P", "SP", "RHP", "LHP"] },
-    { lbl: "C", x: 50, y: 92, aliases: ["C"] },
-  ];
-  // Short injury label for the field: IL10 / IL60 / OUT / DTD, else null.
+function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
+  // ── Today's lineup from MLB (confirmed) with auto-refresh ──────────
+  // Polls every 3 min until the box score carries a batting order, then
+  // stops. Until then the field is a PROJECTED lineup built from Airtable
+  // positions, skipping anyone on the IL.
+  const [lineup, setLineup] = useState(null); // { confirmed, spots: {POS: name}, pitcher }
+  const [coaches, setCoaches] = useState(null);
+  useEffect(() => {
+    let alive = true, timer = null;
+    const load = async () => {
+      try {
+        if (!MLB_TEAMID_MAP) {
+          const d = await (await fetch("https://statsapi.mlb.com/api/v1/teams?sportId=1")).json();
+          MLB_TEAMID_MAP = {};
+          for (const t of d.teams || []) MLB_TEAMID_MAP[String(t.name).toLowerCase()] = t.id;
+        }
+        const tid = MLB_TEAMID_MAP[String(teamName || "").toLowerCase()];
+        if (!tid) return;
+        if (!coaches) {
+          try {
+            const c = await (await fetch(`https://statsapi.mlb.com/api/v1/teams/${tid}/coaches`)).json();
+            const roles = {};
+            for (const r of c.roster || []) {
+              const job = String((r.job || r.jobId || "")).toLowerCase();
+              const nm = r.person && r.person.fullName;
+              if (!nm) continue;
+              if (job === "manager") roles.manager = nm;
+              else if (job.includes("bench")) roles.bench = nm;
+              else if (job.includes("pitching") && !job.includes("assistant") && !job.includes("bullpen")) roles.pitching = nm;
+              else if (job.includes("hitting") && !job.includes("assistant")) roles.hitting = nm;
+            }
+            if (alive) setCoaches(roles);
+          } catch {}
+        }
+        const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+        const sch = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${tid}&date=${today}&hydrate=probablePitcher`)).json();
+        const g = sch.dates && sch.dates[0] && sch.dates[0].games && sch.dates[0].games[0];
+        if (!g) { if (alive) setLineup({ confirmed: false, spots: {}, pitcher: null, noGame: true }); return; }
+        const side = g.teams.away.team.id === tid ? "away" : "home";
+        const pp = g.teams[side].probablePitcher ? g.teams[side].probablePitcher.fullName : null;
+        const box = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json();
+        const pl = (box.teams && box.teams[side] && box.teams[side].players) || {};
+        const spots = {};
+        let confirmed = false;
+        for (const x of Object.values(pl)) {
+          if (x.battingOrder == null || Number(x.battingOrder) % 100 !== 0) continue;
+          confirmed = true;
+          const pos = x.position && String(x.position.abbreviation || "").toUpperCase();
+          if (pos && x.person) spots[pos] = x.person.fullName;
+        }
+        if (alive) setLineup({ confirmed, spots, pitcher: pp });
+        if (!confirmed && alive) timer = setTimeout(load, 180000);
+      } catch { if (alive) timer = setTimeout(load, 180000); }
+    };
+    load();
+    return () => { alive = false; if (timer) clearTimeout(timer); };
+  }, [teamName]);
+
   const injTag = (pl) => {
     const raw = String((pl && pl.status) || "").trim();
     if (!raw) return null;
     const low = raw.toLowerCase();
-    if (low === "active" || low === "") return null;
+    if (low === "active") return null;
     const d = /(\d+)/.exec(raw);
     if (/il|injur|disabled/.test(low)) return d ? "IL" + d[1] : "IL";
     if (/out|nri|restricted|suspend/.test(low)) return "OUT";
@@ -1447,141 +1480,194 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
     if (/minor|option/.test(low)) return "MIN";
     return raw.slice(0, 6).toUpperCase();
   };
+  const byName = {};
+  for (const pl of roster) byName[hrbNrm(pl.name)] = pl;
+
+  // Geometry (viewBox 0-100 x, 0-116 y) - the whole diamond sits 8 units
+  // lower than before so the outfield and wall get room to breathe.
+  // Home 50,92 · 1B 74,68 · 2B 50,44 · 3B 26,68 · mound 50,68.
+  // Infielders are offset OFF the bags so the bases stay visible.
+  const SPOTS = [
+    { lbl: "CF", x: 50, y: 20, aliases: ["CF", "OF"] },
+    { lbl: "LF", x: 17, y: 32, aliases: ["LF", "OF"] },
+    { lbl: "RF", x: 83, y: 32, aliases: ["RF", "OF"] },
+    { lbl: "2B", x: 61, y: 47, aliases: ["2B"] },
+    { lbl: "SS", x: 39, y: 47, aliases: ["SS"] },
+    { lbl: "3B", x: 22, y: 61, aliases: ["3B"] },
+    { lbl: "1B", x: 78, y: 61, aliases: ["1B"] },
+    { lbl: "P",  x: 50, y: 68, aliases: ["P", "SP", "RHP", "LHP"] },
+    { lbl: "C",  x: 50, y: 101, aliases: ["C"] },
+  ];
+  // ── Assign ONE player per spot, computed once (no side effects) ──
+  const used = new Set();
+  const assigned = SPOTS.map((sp) => {
+    let hit = null;
+    if (lineup && lineup.confirmed) {
+      const nm = sp.lbl === "P" ? (lineup.spots.P || lineup.pitcher) : lineup.spots[sp.lbl];
+      if (nm) hit = byName[hrbNrm(nm)] || { name: nm, pos: sp.lbl, id: "mlb:" + nm, _virtual: true };
+    }
+    if (!hit) {
+      const cands = roster
+        .filter((pl) => sp.aliases.includes(String(pl.pos || "").toUpperCase()) && !used.has(pl.id) && !injTag(pl))
+        .sort((a, b) => (b.rating2k ?? -1) - (a.rating2k ?? -1));
+      hit = cands[0] || null;
+    }
+    if (hit) used.add(hit.id);
+    return hit;
+  });
+  const onField = new Set(assigned.filter(Boolean).map((pl) => hrbNrm(pl.name)));
+
   const oaaChip = (v) => v == null ? "bg-slate-900/70 text-white/70"
     : v >= 8 ? "bg-amber-400 text-slate-900"
     : v >= 3 ? "bg-emerald-500 text-white"
     : v > -3 ? "bg-slate-900/85 text-white"
     : "bg-rose-600 text-white";
   const tc = teamColor(abbr) || "#1e3a8a";
+  const isConf = !!(lineup && lineup.confirmed);
+
+  // ── Bench groups: infield · outfield · bullpen, excluding anyone on the field ──
+  const grpOf = (pl) => {
+    const pos = String(pl.pos || "").toUpperCase();
+    const unit = unitOf(pl);
+    if (unit === "Pitching" || unit === "Bullpen" || /^(P|SP|RP|CL|CP|RHP|LHP)$/.test(pos)) return "Bullpen";
+    if (/^(LF|CF|RF|OF)$/.test(pos)) return "Outfielders";
+    return "Infielders";
+  };
+  const benchAll = roster.filter((pl) => !onField.has(hrbNrm(pl.name)));
+  const benchGroups = ["Infielders", "Outfielders", "Bullpen"].map((gname) => ({
+    name: gname,
+    list: benchAll.filter((pl) => grpOf(pl) === gname).sort((a, b) => statusRank(a) - statusRank(b) || (b.rating2k ?? -1) - (a.rating2k ?? -1)),
+  })).filter((g) => g.list.length);
+
+  const PlayerBubble = ({ pl, size = "w-12 h-12" }) => (
+    <button onClick={pl._virtual ? undefined : () => onSelectPlayer(pl)} className="text-center w-full">
+      <span className="relative block">
+        <span className={"block " + size + " mx-auto rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 border-2 " + (injTag(pl) ? "border-rose-500" : "border-transparent")}>
+          {pl._virtual ? <span className="w-full h-full flex items-center justify-center text-[9px] font-extrabold text-slate-500">{pl.pos}</span> : <Avatar p={pl} />}
+        </span>
+        {injTag(pl) && (
+          <span className="absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-0.5 rounded-full text-[7px] font-extrabold text-white bg-rose-600 shadow animate-pulse">{injTag(pl)}</span>
+        )}
+      </span>
+      <span className="block mt-1 text-[9px] font-bold text-slate-700 dark:text-slate-200 truncate">{String(pl.name).split(" ").slice(-1)[0]}</span>
+      <span className="block text-[8px] font-extrabold truncate" style={{ color: tc }}>{pl.pos || ""}</span>
+    </button>
+  );
+
   return (
     <div className="mt-4">
       <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm bg-[#1f6b34]"
-        style={{ paddingBottom: "108%" }}>
-        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 108" preserveAspectRatio="none">
+        style={{ paddingBottom: "116%" }}>
+        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 116" preserveAspectRatio="none">
           <defs>
-            <clipPath id="fairClip"><path d="M50,84 L110,24 A80,80 0 0 0 -10,24 Z" /></clipPath>
-            {/* turf: deeper at the edges, lit toward the infield */}
+            <clipPath id="fairClip"><path d="M50,92 L110,32 A80,80 0 0 0 -10,32 Z" /></clipPath>
             <radialGradient id="grassGlow" cx="50%" cy="72%" r="78%">
-              <stop offset="0%" stopColor="#4aa95c" />
-              <stop offset="55%" stopColor="#2f8544" />
-              <stop offset="100%" stopColor="#17542c" />
+              <stop offset="0%" stopColor="#4aa95c" /><stop offset="55%" stopColor="#2f8544" /><stop offset="100%" stopColor="#17542c" />
             </radialGradient>
             <radialGradient id="dirtGrad" cx="45%" cy="45%" r="75%">
-              <stop offset="0%" stopColor="#d59b65" />
-              <stop offset="60%" stopColor="#bd8049" />
-              <stop offset="100%" stopColor="#9d6537" />
+              <stop offset="0%" stopColor="#d59b65" /><stop offset="60%" stopColor="#bd8049" /><stop offset="100%" stopColor="#9d6537" />
             </radialGradient>
-            {/* soft vignette so the crowd recedes and the diamond pops */}
             <radialGradient id="vig" cx="50%" cy="62%" r="72%">
-              <stop offset="55%" stopColor="#000" stopOpacity="0" />
-              <stop offset="100%" stopColor="#000" stopOpacity=".38" />
+              <stop offset="55%" stopColor="#000" stopOpacity="0" /><stop offset="100%" stopColor="#000" stopOpacity=".38" />
             </radialGradient>
           </defs>
-          <rect x="-10" y="-10" width="120" height="130" fill="url(#grassGlow)" />
-          {/* mowing arcs - alternating light/dark bands, broadcast style */}
+          <rect x="-10" y="-10" width="120" height="140" fill="url(#grassGlow)" />
           <g clipPath="url(#fairClip)">
-            {[20, 36, 52, 68].map((r) => (
-              <circle key={r} cx="50" cy="84" r={r} fill="none" stroke="#ffffff" strokeOpacity="0.045" strokeWidth="8" />
-            ))}
+            {[20, 36, 52, 68].map((r) => <circle key={r} cx="50" cy="92" r={r} fill="none" stroke="#ffffff" strokeOpacity="0.045" strokeWidth="8" />)}
           </g>
-          {/* stands, then warning track + wall in team color */}
-          <circle cx="50" cy="84" r="130" fill="none" stroke="#0b1220" strokeWidth="100" />
-          <circle cx="50" cy="84" r="86" fill="none" stroke="#1e293b" strokeWidth="12" />
+          {/* stands */}
+          <circle cx="50" cy="92" r="130" fill="none" stroke="#0b1220" strokeWidth="100" />
+          <circle cx="50" cy="92" r="87" fill="none" stroke="#1e293b" strokeWidth="14" />
+          {/* warning track, padded wall in team colour, yellow home-run line on top */}
           <g clipPath="url(#fairClip)">
-            <circle cx="50" cy="84" r="80" fill="none" stroke="#b98a5a" strokeWidth="6" />
-            <circle cx="50" cy="84" r="81.5" fill="none" stroke={tc} strokeWidth="3" />
-            <circle cx="50" cy="84" r="80.2" fill="none" stroke="#fff" strokeOpacity=".25" strokeWidth="0.5" />
+            <circle cx="50" cy="92" r="79.5" fill="none" stroke="#b98a5a" strokeWidth="7" />
+            <circle cx="50" cy="92" r="83.5" fill="none" stroke={tc} strokeWidth="5" />
+            <circle cx="50" cy="92" r="83.5" fill="none" stroke="#000" strokeOpacity=".25" strokeWidth="5" strokeDasharray="0.6 3.2" />
+            <circle cx="50" cy="92" r="86.2" fill="none" stroke="#facc15" strokeWidth="1.1" />
+            <circle cx="50" cy="92" r="81" fill="none" stroke="#fff" strokeOpacity=".3" strokeWidth="0.5" />
           </g>
-          {/* foul lines */}
-          <line x1="50" y1="84" x2="110" y2="24" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.75" />
-          <line x1="50" y1="84" x2="-10" y2="24" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.75" />
-          {/* skinned infield */}
-          <path d="M50,84 L80.76,53.24 A28,28 0 1 0 19.24,53.24 Z" fill="url(#dirtGrad)" />
-          <path d="M50,84 L80.76,53.24 A28,28 0 1 0 19.24,53.24 Z" fill="none" stroke="#000" strokeOpacity=".07" strokeWidth="0.6" />
-          {/* infield grass with a soft edge */}
-          <polygon points="50,79.5 68.5,60 50,40.5 31.5,60" fill="#3d9a4c" />
-          <polygon points="50,79.5 68.5,60 50,40.5 31.5,60" fill="none" stroke="#fff" strokeOpacity=".12" strokeWidth="0.5" />
-          {/* base cutouts, home circle, mound with rubber */}
-          {[[74, 60], [50, 36], [26, 60]].map(([bx, by], i) => (
-            <circle key={i} cx={bx} cy={by} r="4.4" fill="#c98f57" />
+          <line x1="50" y1="92" x2="110" y2="32" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.75" />
+          <line x1="50" y1="92" x2="-10" y2="32" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.75" />
+          <path d="M50,92 L80.76,61.24 A28,28 0 1 0 19.24,61.24 Z" fill="url(#dirtGrad)" />
+          <path d="M50,92 L80.76,61.24 A28,28 0 1 0 19.24,61.24 Z" fill="none" stroke="#000" strokeOpacity=".07" strokeWidth="0.6" />
+          <polygon points="50,87.5 68.5,68 50,48.5 31.5,68" fill="#3d9a4c" />
+          <polygon points="50,87.5 68.5,68 50,48.5 31.5,68" fill="none" stroke="#fff" strokeOpacity=".12" strokeWidth="0.5" />
+          {[[74, 68], [50, 44], [26, 68]].map(([bx, by], i) => <circle key={i} cx={bx} cy={by} r="4.4" fill="#c98f57" />)}
+          <circle cx="50" cy="92" r="9.5" fill="#c98f57" />
+          <circle cx="50" cy="68" r="4" fill="#cf9760" stroke="#a8703f" strokeWidth="0.4" />
+          <ellipse cx="50" cy="67.4" rx="1.1" ry="0.45" fill="#fff" fillOpacity="0.92" />
+          <rect x="44.4" y="88.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.35" strokeOpacity="0.6" />
+          <rect x="52.4" y="88.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.35" strokeOpacity="0.6" />
+          {/* bases - drawn LAST so they sit on top of the dirt, and fielders are offset off them */}
+          {[[74, 68], [50, 44], [26, 68]].map(([bx, by], i) => (
+            <rect key={i} x={bx - 1.7} y={by - 1.7} width="3.4" height="3.4" fill="#fff" stroke="#000" strokeOpacity=".2" strokeWidth="0.3" transform={"rotate(45 " + bx + " " + by + ")"} />
           ))}
-          <circle cx="50" cy="84" r="9.5" fill="#c98f57" />
-          <circle cx="50" cy="60" r="4" fill="#cf9760" stroke="#a8703f" strokeWidth="0.4" />
-          <ellipse cx="50" cy="59.4" rx="1.1" ry="0.45" fill="#fff" fillOpacity="0.92" />
-          {/* batter's boxes + bases + plate */}
-          <rect x="44.4" y="80.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.35" strokeOpacity="0.6" />
-          <rect x="52.4" y="80.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.35" strokeOpacity="0.6" />
-          {[[74, 60], [50, 36], [26, 60]].map(([bx, by], i) => (
-            <rect key={i} x={bx - 1.5} y={by - 1.5} width="3" height="3" fill="#fff" transform={"rotate(45 " + bx + " " + by + ")"} />
-          ))}
-          <polygon points="48.6,82.6 51.4,82.6 51.4,84.2 50,85.5 48.6,84.2" fill="#fff" />
-          <rect x="-10" y="-10" width="120" height="130" fill="url(#vig)" />
+          <polygon points="48.6,90.6 51.4,90.6 51.4,92.2 50,93.5 48.6,92.2" fill="#fff" />
+          <rect x="-10" y="-10" width="120" height="140" fill="url(#vig)" />
         </svg>
-        {SPOTS.map((s, i) => {
-          const p = pick(s.aliases);
+        {/* lineup badge */}
+        <span className={"absolute top-2 right-2 z-10 px-2.5 py-1 rounded-full text-[9px] font-extrabold tracking-wider uppercase shadow " + (isConf ? "bg-emerald-500 text-white" : lineup && lineup.noGame ? "bg-slate-700 text-white/80" : "bg-amber-400 text-slate-900")}>
+          {isConf ? "Lineup Confirmed" : lineup && lineup.noGame ? "No Game Today" : "Projected Lineup"}
+        </span>
+        {SPOTS.map((sp, i) => {
+          const p = assigned[i];
           return (
-            <button key={i} disabled={!p} onClick={p ? () => onSelectPlayer(p) : undefined}
+            <button key={i} disabled={!p || p._virtual} onClick={p && !p._virtual ? () => onSelectPlayer(p) : undefined}
               className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
-              style={{ left: s.x + "%", top: (s.y / 1.08) + "%" }}>
+              style={{ left: sp.x + "%", top: (sp.y / 1.16) + "%" }}>
               <span className="relative">
                 {p ? (
-                  <span className={"block w-11 h-11 rounded-full overflow-hidden shadow-md bg-white border-2 " + (injTag(p) ? "border-rose-500" : "border-white/80")}><Avatar p={p} /></span>
+                  <span className={"block w-11 h-11 rounded-full overflow-hidden shadow-md bg-white border-2 " + (injTag(p) ? "border-rose-500" : "border-white/80")}>
+                    {p._virtual ? <span className="w-full h-full flex items-center justify-center text-[10px] font-extrabold text-slate-600">{sp.lbl}</span> : <Avatar p={p} />}
+                  </span>
                 ) : (
-                  <span className="w-11 h-11 rounded-full flex items-center justify-center text-[10px] font-extrabold bg-white/25 text-white/80 border-2 border-dashed border-white/50 shadow-md">{s.lbl}</span>
+                  <span className="w-11 h-11 rounded-full flex items-center justify-center text-[10px] font-extrabold bg-white/25 text-white/80 border-2 border-dashed border-white/50 shadow-md">{sp.lbl}</span>
                 )}
                 {p && cleanNo(p.no) && (
-                  <span className="absolute top-1/2 -translate-y-1/2 -left-2.5 px-1 rounded text-[8px] font-extrabold bg-white/85 text-slate-700 tabular-nums shadow">
-                    #{cleanNo(p.no)}
-                  </span>
+                  <span className="absolute top-1/2 -translate-y-1/2 -left-2.5 px-1 rounded text-[8px] font-extrabold bg-white/85 text-slate-700 tabular-nums shadow">#{cleanNo(p.no)}</span>
                 )}
-                {p && (
+                {p && !p._virtual && (
                   <span className={"absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 rounded-full text-[8px] font-extrabold tabular-nums shadow " + oaaChip(p.oaa)}>
                     {p.oaa != null ? (p.oaa > 0 ? "+" : "") + Math.round(p.oaa) : "—"}
                   </span>
                 )}
                 {p && injTag(p) && (
-                  <span className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded-full text-[7px] font-extrabold text-white bg-rose-600 shadow ring-2 ring-white/80 animate-pulse">
-                    {injTag(p)}
-                  </span>
+                  <span className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded-full text-[7px] font-extrabold text-white bg-rose-600 shadow ring-2 ring-white/80 animate-pulse">{injTag(p)}</span>
                 )}
               </span>
-              <span className="mt-2 text-[8px] font-bold text-white/95 max-w-[64px] truncate drop-shadow">
-                {p ? p.name.split(" ").slice(-1)[0] : ""}
-              </span>
+              <span className="mt-2 text-[8px] font-bold text-white/95 max-w-[64px] truncate drop-shadow">{p ? String(p.name).split(" ").slice(-1)[0] : ""}</span>
             </button>
           );
         })}
       </div>
-      {/* ── BENCH (football app's sideline strip) ── */}
-      {(() => {
-        const onField = new Set(SPOTS.map((sp) => { const q = pick(sp.aliases); return q && q.id; }).filter(Boolean));
-        const bench = (roster || []).filter((pl) => !onField.has(pl.id) && !["Pitching", "Bullpen"].includes(unitOf(pl)));
-        if (!bench.length) return null;
-        return (
-          <div className="mt-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm px-3 py-3">
-            <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">Bench ({bench.length})</div>
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {bench.map((pl) => (
-                <button key={pl.id} onClick={() => onSelectPlayer(pl)} className="shrink-0 w-16 text-center">
-                  <span className="relative block">
-                    <span className={"block w-12 h-12 mx-auto rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 border-2 " + (injTag(pl) ? "border-rose-500" : "border-transparent")}>
-                      <Avatar p={pl} />
-                    </span>
-                    {injTag(pl) && (
-                      <span className="absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-0.5 rounded-full text-[7px] font-extrabold text-white bg-rose-600 shadow animate-pulse">
-                        {injTag(pl)}
-                      </span>
-                    )}
-                  </span>
-                  <span className="block mt-1 text-[9px] font-bold text-slate-700 dark:text-slate-200 truncate">{pl.name.split(" ").slice(-1)[0]}</span>
-                  <span className="block text-[8px] font-bold text-slate-400 truncate">{pl.pos || ""}</span>
-                </button>
-              ))}
+
+      {/* ── BENCH: grouped, wrapping grid, no sideways scroll ── */}
+      {benchGroups.length > 0 && (
+        <div className="mt-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm px-3 py-3 space-y-3">
+          <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Bench</div>
+          {benchGroups.map((g) => (
+            <div key={g.name}>
+              <div className="text-[10px] font-extrabold uppercase tracking-wider mb-1.5 pl-2 border-l-2" style={{ color: tc, borderColor: tc }}>
+                {g.name} ({g.list.length})
+              </div>
+              <div className="grid grid-cols-5 gap-y-3 gap-x-1">
+                {g.list.map((pl) => <PlayerBubble key={pl.id} pl={pl} />)}
+              </div>
             </div>
-          </div>
-        );
-      })()}
-      <div className="text-[9px] text-slate-400 mt-2 px-1">Chip = Outs Above Average (Statcast fielding): gold +8 elite · green +3 · red −3 or worse · red ring/tag = injured · tap for profile</div>
+          ))}
+        </div>
+      )}
+
+      {/* ── COACHING STAFF (MLB API) ── */}
+      <div className="mt-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3 grid grid-cols-2 gap-y-2.5 gap-x-3">
+        {[["Manager", coaches && coaches.manager], ["Bench Coach", coaches && coaches.bench], ["Pitching Coach", coaches && coaches.pitching], ["Hitting Coach", coaches && coaches.hitting]].map(([lbl, v]) => (
+          <span key={lbl} className="min-w-0">
+            <span className="block text-[8px] font-extrabold uppercase tracking-widest text-slate-400">{lbl}</span>
+            <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 truncate">{v || (coaches ? "—" : "…")}</span>
+          </span>
+        ))}
+      </div>
+      <div className="text-[9px] text-slate-400 mt-2 px-1">Chip = Outs Above Average: gold +8 elite · green +3 · red −3 or worse · red ring/tag = injured · green badge = today's confirmed lineup, refreshes automatically · tap for profile</div>
     </div>
   );
 }
@@ -1738,7 +1824,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
         </div>
 
         <div className="flex gap-2 mt-4">
-          {[["roster", "Roster"], ["field", "Field"], ["contracts", "Contracts"], ["charts", "Charts"]].map(([k, lbl]) => (
+          {[["roster", "Roster"], ["field", "Field"], ["contracts", "Contracts"]].map(([k, lbl]) => (
             <button key={k} onClick={() => setSeg(k)}
               className={"flex-1 py-2 rounded-full text-xs font-bold transition-colors " + (seg === k
                 ? "text-white"
@@ -1764,7 +1850,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
         )}
         {seg === "roster" && (roleFilter ? orderedRoles.filter((role) => role === roleFilter) : CAT_ORDER).map((role) => (
           <div key={role}>
-            <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">{CAT_LABELS[role] || UNIT_LABELS[role] || role}</div>
+            <div className="text-[11px] font-extrabold tracking-widest uppercase mt-6 mb-2 pl-2 border-l-[3px]" style={{ color: teamColor(abbr), borderColor: teamColor(abbr) }}>{CAT_LABELS[role] || UNIT_LABELS[role] || role}</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
               {(CAT_LABELS[role] ? roster.filter((p) => catOf(p) === role) : groups[role])
                 .sort((a, b) => {
@@ -1855,7 +1941,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
             </div>
           </div>
         ))}
-        {seg === "field" && <FieldView roster={roster} abbr={toAbbr(team.name)} onSelectPlayer={onSelectPlayer} />}
+        {seg === "field" && <FieldView roster={roster} abbr={toAbbr(team.name)} teamName={team.name} onSelectPlayer={onSelectPlayer} />}
         {seg === "contracts" && (
           <>
             <div className="flex items-baseline justify-between mt-6 mb-2 px-1">
@@ -2548,7 +2634,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v104";
+const HRB_VERSION = "v105";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -3247,8 +3333,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
                           <span className="w-6 h-6 rounded-full shrink-0" style={{ backgroundColor: teamColor(s.abbr) }} />
                         )}
                         <span className="text-sm font-extrabold" style={{ color: teamColor(s.abbr) }}>{s.abbr}</span>
-                        <span className={"ml-auto text-[9px] font-extrabold px-2 py-0.5 rounded-full " + (s.confirmed ? CHIP.good : s.hitters.length ? CHIP.warn : CHIP.none)}>
-                          {s.confirmed ? "CONFIRMED LINEUP" : s.hitters.length ? "PROJECTED LINEUP" : "NO LINEUP"}
+                        <span className={"ml-auto text-[9px] font-extrabold px-2 py-0.5 rounded-full " + (s.confirmed ? "bg-emerald-500 text-white" : s.hitters.length ? "bg-amber-400 text-slate-900" : CHIP.none)}>
+                          {s.confirmed ? "LINEUP CONFIRMED" : s.hitters.length ? "PROJECTED LINEUP" : "NO LINEUP"}
                         </span>
                       </div>
                       <div className="flex items-end gap-2 mt-2">
