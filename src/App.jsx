@@ -1333,28 +1333,32 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
             ))}
           </div>
         )}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden mt-4">
+        {/* Each team is its own pill in that club's primary color. */}
+        <div className="space-y-2 mt-4">
           {list.map((t) => {
             const abbr = t.abbr || toAbbr(t.name);
+            const col = teamColor(abbr);
             return (
-              <button key={t.id} onClick={() => onSelect(t)} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-slate-50 dark:active:bg-slate-800">
+              <button key={t.id} onClick={() => onSelect(t)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left shadow-sm active:opacity-90 transition-opacity"
+                style={{ backgroundColor: col }}>
                 {t.logo ? (
-                  <img src={t.logo} alt="" className="w-11 h-11 rounded-full object-contain bg-white shrink-0" />
+                  <img src={t.logo} alt="" className="w-11 h-11 rounded-full object-contain bg-white shrink-0 ring-2 ring-white/70" />
                 ) : (
-                  <span className="w-11 h-11 rounded-full shrink-0" style={{ backgroundColor: teamColor(abbr) }} />
+                  <span className="w-11 h-11 rounded-full shrink-0 bg-white/90 flex items-center justify-center text-[11px] font-extrabold" style={{ color: col }}>{abbr}</span>
                 )}
                 <span className="flex-1 min-w-0">
-                  <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{t.name}</span>
-                  <span className="block text-[11px] text-slate-400 font-medium truncate">
+                  <span className="block text-sm font-extrabold text-white truncate drop-shadow-sm">{t.name}</span>
+                  <span className="block text-[11px] font-semibold text-white/70 truncate">
                     {t.division ? (divRank[t.id] ? `${divRank[t.id]} in ${t.division}` : t.division) : "—"}
                   </span>
                 </span>
                 {(t.wins != null || t.losses != null) && (
-                  <span className="flex gap-2.5 shrink-0">
+                  <span className="flex gap-2 shrink-0 pr-1">
                     {[["W", t.wins ?? 0], ["L", t.losses ?? 0]].map(([lbl, v]) => (
                       <span key={lbl} className="w-7 text-center">
-                        <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
-                        <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
+                        <span className="block text-[8px] font-bold text-white/60 uppercase">{lbl}</span>
+                        <span className="block text-xs font-extrabold text-white tabular-nums">{v}</span>
                       </span>
                     ))}
                   </span>
@@ -1455,50 +1459,63 @@ function FieldView({ roster, abbr, onSelectPlayer }) {
         style={{ paddingBottom: "108%" }}>
         <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 108" preserveAspectRatio="none">
           <defs>
-            {/* fair territory: wedge from home along both foul lines, closed by the fence arc (r 80) */}
             <clipPath id="fairClip"><path d="M50,84 L110,24 A80,80 0 0 0 -10,24 Z" /></clipPath>
-            <radialGradient id="grassGlow" cx="50%" cy="78%" r="80%">
-              <stop offset="0%" stopColor="#3f9a4e" />
-              <stop offset="100%" stopColor="#1f6b34" />
+            {/* turf: deeper at the edges, lit toward the infield */}
+            <radialGradient id="grassGlow" cx="50%" cy="72%" r="78%">
+              <stop offset="0%" stopColor="#4aa95c" />
+              <stop offset="55%" stopColor="#2f8544" />
+              <stop offset="100%" stopColor="#17542c" />
             </radialGradient>
-            <radialGradient id="dirtGrad" cx="50%" cy="60%" r="70%">
-              <stop offset="0%" stopColor="#c8925a" />
-              <stop offset="100%" stopColor="#a8703f" />
+            <radialGradient id="dirtGrad" cx="45%" cy="45%" r="75%">
+              <stop offset="0%" stopColor="#d59b65" />
+              <stop offset="60%" stopColor="#bd8049" />
+              <stop offset="100%" stopColor="#9d6537" />
+            </radialGradient>
+            {/* soft vignette so the crowd recedes and the diamond pops */}
+            <radialGradient id="vig" cx="50%" cy="62%" r="72%">
+              <stop offset="55%" stopColor="#000" stopOpacity="0" />
+              <stop offset="100%" stopColor="#000" stopOpacity=".38" />
             </radialGradient>
           </defs>
-          {/* grass + concentric mowing arcs centred on home plate */}
           <rect x="-10" y="-10" width="120" height="130" fill="url(#grassGlow)" />
-          {[16, 32, 48, 64].map((r) => (
-            <circle key={r} cx="50" cy="84" r={r} fill="none" stroke="#ffffff" strokeOpacity="0.035" strokeWidth="8" />
-          ))}
-          {/* foul lines run to the wall; anything past the wall becomes stands */}
-          <line x1="50" y1="84" x2="110" y2="24" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.75" />
-          <line x1="50" y1="84" x2="-10" y2="24" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.75" />
+          {/* mowing arcs - alternating light/dark bands, broadcast style */}
+          <g clipPath="url(#fairClip)">
+            {[20, 36, 52, 68].map((r) => (
+              <circle key={r} cx="50" cy="84" r={r} fill="none" stroke="#ffffff" strokeOpacity="0.045" strokeWidth="8" />
+            ))}
+          </g>
+          {/* stands, then warning track + wall in team color */}
           <circle cx="50" cy="84" r="130" fill="none" stroke="#0b1220" strokeWidth="100" />
           <circle cx="50" cy="84" r="86" fill="none" stroke="#1e293b" strokeWidth="12" />
-          {/* warning track + outfield wall in team colour */}
           <g clipPath="url(#fairClip)">
             <circle cx="50" cy="84" r="80" fill="none" stroke="#b98a5a" strokeWidth="6" />
-            <circle cx="50" cy="84" r="81" fill="none" stroke={tc} strokeWidth="2.4" />
+            <circle cx="50" cy="84" r="81.5" fill="none" stroke={tc} strokeWidth="3" />
+            <circle cx="50" cy="84" r="80.2" fill="none" stroke="#fff" strokeOpacity=".25" strokeWidth="0.5" />
           </g>
-          {/* skinned infield: arc r 28 from the mound, bounded by the foul lines */}
+          {/* foul lines */}
+          <line x1="50" y1="84" x2="110" y2="24" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.75" />
+          <line x1="50" y1="84" x2="-10" y2="24" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.75" />
+          {/* skinned infield */}
           <path d="M50,84 L80.76,53.24 A28,28 0 1 0 19.24,53.24 Z" fill="url(#dirtGrad)" />
-          {/* grass inside the diamond (leaves ~7 ft dirt base paths) */}
+          <path d="M50,84 L80.76,53.24 A28,28 0 1 0 19.24,53.24 Z" fill="none" stroke="#000" strokeOpacity=".07" strokeWidth="0.6" />
+          {/* infield grass with a soft edge */}
           <polygon points="50,79.5 68.5,60 50,40.5 31.5,60" fill="#3d9a4c" />
-          {/* dirt cutouts at the bags, home circle, mound */}
+          <polygon points="50,79.5 68.5,60 50,40.5 31.5,60" fill="none" stroke="#fff" strokeOpacity=".12" strokeWidth="0.5" />
+          {/* base cutouts, home circle, mound with rubber */}
           {[[74, 60], [50, 36], [26, 60]].map(([bx, by], i) => (
-            <circle key={i} cx={bx} cy={by} r="4.2" fill="#b47a45" />
+            <circle key={i} cx={bx} cy={by} r="4.4" fill="#c98f57" />
           ))}
-          <circle cx="50" cy="84" r="9.5" fill="#b47a45" />
-          <circle cx="50" cy="60" r="3.6" fill="#c08a52" stroke="#a8703f" strokeWidth="0.4" />
-          <rect x="49.1" y="59.2" width="1.8" height="0.6" fill="#fff" fillOpacity="0.9" />
-          {/* batter's boxes + bases + home plate */}
+          <circle cx="50" cy="84" r="9.5" fill="#c98f57" />
+          <circle cx="50" cy="60" r="4" fill="#cf9760" stroke="#a8703f" strokeWidth="0.4" />
+          <ellipse cx="50" cy="59.4" rx="1.1" ry="0.45" fill="#fff" fillOpacity="0.92" />
+          {/* batter's boxes + bases + plate */}
           <rect x="44.4" y="80.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.35" strokeOpacity="0.6" />
           <rect x="52.4" y="80.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.35" strokeOpacity="0.6" />
           {[[74, 60], [50, 36], [26, 60]].map(([bx, by], i) => (
             <rect key={i} x={bx - 1.5} y={by - 1.5} width="3" height="3" fill="#fff" transform={"rotate(45 " + bx + " " + by + ")"} />
           ))}
           <polygon points="48.6,82.6 51.4,82.6 51.4,84.2 50,85.5 48.6,84.2" fill="#fff" />
+          <rect x="-10" y="-10" width="120" height="130" fill="url(#vig)" />
         </svg>
         {SPOTS.map((s, i) => {
           const p = pick(s.aliases);
@@ -2446,48 +2463,58 @@ function hrbHr9Class(v) {
   if (v <= HRB.hr9Red) return CHIP.bad;
   return CHIP.warn;
 }
-// ═══ Bouncing baseball splash (matches the basketball app) ═══
-// Pure CSS/SVG - no image request, so it paints instantly on cold load.
-function BallLoader({ label = "Loading" }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-24 select-none">
+// ═══ Bouncing baseball splash (centered, fills the screen) ═══
+// Realistic leather + figure-8 seams, drawn in SVG so it paints instantly.
+function BallLoader({ label = "Loading", full = true }) {
+  const ball = (
+    <div className="flex flex-col items-center select-none">
       <style>{`
         @keyframes mlbBounce {
-          0%, 100% { transform: translateY(-26px) scaleX(1) scaleY(1); animation-timing-function: cubic-bezier(.35,0,.6,1); }
-          45%      { transform: translateY(0)     scaleX(1.08) scaleY(.92); animation-timing-function: cubic-bezier(.35,0,.6,1); }
-          55%      { transform: translateY(0)     scaleX(1.08) scaleY(.92); animation-timing-function: cubic-bezier(.4,0,.5,1); }
+          0%,100% { transform: translateY(-30px) scaleX(1) scaleY(1); animation-timing-function: cubic-bezier(.35,0,.6,1); }
+          46%     { transform: translateY(0) scaleX(1.09) scaleY(.91); animation-timing-function: cubic-bezier(.35,0,.6,1); }
+          54%     { transform: translateY(0) scaleX(1.09) scaleY(.91); animation-timing-function: cubic-bezier(.4,0,.5,1); }
         }
-        @keyframes mlbSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes mlbShadow {
-          0%, 100% { transform: scaleX(.55); opacity: .18; }
-          50%      { transform: scaleX(1);   opacity: .32; }
-        }
-        .mlb-bounce { animation: mlbBounce .62s infinite; }
-        .mlb-spin   { animation: mlbSpin 1.25s linear infinite; }
-        .mlb-shadow { animation: mlbShadow .62s infinite; }
+        @keyframes mlbSpin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+        @keyframes mlbShadow { 0%,100% { transform: scaleX(.5); opacity:.14; } 50% { transform: scaleX(1); opacity:.28; } }
+        .mlb-bounce { animation: mlbBounce .68s infinite; }
+        .mlb-spin { animation: mlbSpin 1.6s linear infinite; }
+        .mlb-shadow { animation: mlbShadow .68s infinite; }
       `}</style>
-      <div className="h-16 flex items-end">
+      <div className="h-20 flex items-end">
         <span className="mlb-bounce block">
-          <svg viewBox="0 0 48 48" className="mlb-spin w-11 h-11 drop-shadow">
-            <circle cx="24" cy="24" r="22" fill="#fff" stroke="#e2e8f0" strokeWidth="1.5" />
-            {/* the two classic seams */}
-            <path d="M12 7.5 A22 22 0 0 0 12 40.5" fill="none" stroke="#dc2626" strokeWidth="1.8" strokeLinecap="round" />
-            <path d="M36 7.5 A22 22 0 0 1 36 40.5" fill="none" stroke="#dc2626" strokeWidth="1.8" strokeLinecap="round" />
-            {[10, 17, 24, 31, 38].map((y, i) => (
-              <g key={i} stroke="#dc2626" strokeWidth="1.2" strokeLinecap="round">
-                <line x1={13.2 - (i === 0 || i === 4 ? -1.2 : 0)} y1={y - 1.6} x2={16.4} y2={y - 2.8} />
-                <line x1={13.2 - (i === 0 || i === 4 ? -1.2 : 0)} y1={y + 1.6} x2={16.4} y2={y + 2.8} />
-                <line x1={34.8 + (i === 0 || i === 4 ? -1.2 : 0)} y1={y - 1.6} x2={31.6} y2={y - 2.8} />
-                <line x1={34.8 + (i === 0 || i === 4 ? -1.2 : 0)} y1={y + 1.6} x2={31.6} y2={y + 2.8} />
-              </g>
-            ))}
+          <svg viewBox="0 0 100 100" className="mlb-spin w-16 h-16">
+            <defs>
+              <radialGradient id="mlbLeather" cx="35%" cy="30%" r="75%">
+                <stop offset="0%" stopColor="#ffffff" />
+                <stop offset="62%" stopColor="#f7f4ef" />
+                <stop offset="100%" stopColor="#d8d2c8" />
+              </radialGradient>
+              <radialGradient id="mlbShine" cx="32%" cy="26%" r="34%">
+                <stop offset="0%" stopColor="#fff" stopOpacity=".95" />
+                <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+              </radialGradient>
+            </defs>
+            <circle cx="50" cy="50" r="46" fill="url(#mlbLeather)" />
+            <circle cx="50" cy="50" r="46" fill="url(#mlbShine)" />
+            <path d="M22 12 C 36 30, 36 70, 22 88" fill="none" stroke="#c81e1e" strokeWidth="2" strokeLinecap="round" />
+            <path d="M78 12 C 64 30, 64 70, 78 88" fill="none" stroke="#c81e1e" strokeWidth="2" strokeLinecap="round" />
+            <g stroke="#c81e1e" strokeWidth="1.7" strokeLinecap="round">
+              {[[26,21,32.5,17],[29.5,29,36,25.5],[31.5,38,38,35.5],[32.3,47,39,46],[32.3,56,39,57],[31.5,65,38,67.5],[29.5,74,36,77.5],[26,82,32.5,86],
+                [74,21,67.5,17],[70.5,29,64,25.5],[68.5,38,62,35.5],[67.7,47,61,46],[67.7,56,61,57],[68.5,65,62,67.5],[70.5,74,64,77.5],[74,82,67.5,86]]
+                .map(([x1, y1, x2, y2], i) => <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} />)}
+            </g>
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#000" strokeOpacity=".1" strokeWidth="1.2" />
           </svg>
         </span>
       </div>
-      <span className="mlb-shadow block w-10 h-1.5 rounded-full bg-slate-900 dark:bg-black mt-1" />
-      <span className="mt-4 text-xs font-bold tracking-widest uppercase text-slate-400">{label}</span>
+      <span className="mlb-shadow block w-12 h-1.5 rounded-full bg-slate-900 dark:bg-black mt-1.5" />
+      <span className="mt-5 text-[11px] font-extrabold tracking-[0.2em] uppercase text-slate-400">{label}</span>
     </div>
   );
+  // full = true centers it in the viewport (cold start); false = inline block.
+  return full
+    ? <div className="fixed inset-0 z-10 flex items-center justify-center bg-slate-50 dark:bg-slate-950">{ball}</div>
+    : <div className="flex justify-center py-16">{ball}</div>;
 }
 
 // ═══ Skeleton loading cards (football-app polish) ═══
@@ -2521,7 +2548,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v103";
+const HRB_VERSION = "v104";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -3123,7 +3150,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       })).then((pairs) => setStreaks((s2) => ({ ...s2, ...Object.fromEntries(pairs) })));
                     }
                   }}
-                  className="relative w-full text-left px-4 py-3 active:bg-slate-50 dark:active:bg-slate-800">
+                  className="relative w-full text-left px-4 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
 <span className="block">
                     {/* ── Broadcast row: logo · score · center status · score · logo ── */}
                     <span className="flex items-center gap-1">
@@ -3137,13 +3164,13 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         const logo = (
                           <span key="lg" className="relative shrink-0">
                             {TEAM_LOGOS[sd.abbr]
-                              ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-14 h-14 rounded-full object-contain bg-white " + (lost ? "opacity-40 grayscale" : "")} />
-                              : <span className="w-14 h-14 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm font-extrabold" style={{ color: teamColor(sd.abbr) }}>{sd.abbr}</span>}
+                              ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-10 h-10 rounded-full object-contain bg-white " + (lost ? "opacity-40 grayscale" : "")} />
+                              : <span className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px] font-extrabold" style={{ color: teamColor(sd.abbr) }}>{sd.abbr}</span>}
                             {batting && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900 animate-pulse" />}
                           </span>
                         );
                         const score = sc != null && state !== "Preview" ? (
-                          <span key="sc" className={"text-[34px] leading-none font-extrabold tabular-nums " + (lost ? "text-slate-300 dark:text-slate-600" : "text-slate-900 dark:text-white")}>{sc}</span>
+                          <span key="sc" className={"text-[26px] leading-none font-extrabold tabular-nums " + (lost ? "text-slate-300 dark:text-slate-600" : "text-slate-900 dark:text-white")}>{sc}</span>
                         ) : <span key="sc" />;
                         return (
                           <span key={kk} className={"flex-1 min-w-0 flex items-center gap-2 " + (idx === 0 ? "" : "flex-row-reverse")}>
@@ -3165,19 +3192,19 @@ function HRBoardTab({ players, onSelectPlayer }) {
                             </span>
                           </span>
                         ) : state === "Final" ? (
-                          <span className="block rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-300">Final</span>
+                          <span className="block rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-300">Final</span>
                         ) : (
-                          <span className="block rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-[11px] font-extrabold text-slate-700 dark:text-slate-200 tabular-nums">{timeLabel}</span>
+                          <span className="block rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[10px] font-extrabold text-slate-700 dark:text-slate-200 tabular-nums">{timeLabel}</span>
                         )}
                       </span>
                     </span>
                     {/* ── abbr · record · probable, under each logo ── */}
-                    <span className="flex items-start gap-1 mt-1">
+                    <span className="flex items-start gap-1 mt-0.5">
                       {["away", "home"].map((kk, idx) => {
                         const sd = sides[kk];
                         return (
                           <span key={kk} className={"flex-1 min-w-0 " + (idx === 0 ? "text-left" : "text-right")}>
-                            <span className="block text-[13px] font-extrabold leading-tight" style={{ color: teamColor(sd.abbr) }}>
+                            <span className="block text-[12px] font-extrabold leading-tight" style={{ color: teamColor(sd.abbr) }}>
                               {sd.abbr}{streakBadge(sd)}
                             </span>
                             <span className="block text-[10px] font-bold text-slate-400 tabular-nums leading-tight">{sd.rec}</span>
@@ -3186,8 +3213,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         );
                       })}
                     </span>
-                    <span className="flex justify-center mt-1">
-                      <span className={"text-slate-300 dark:text-slate-600 text-[10px] transition-transform inline-block " + (isOpen ? "rotate-90" : "")}>▶</span>
+                    <span className="flex justify-center">
+                      <span className={"text-slate-300 dark:text-slate-600 text-[9px] transition-transform inline-block " + (isOpen ? "rotate-90" : "")}>▶</span>
                     </span>
                   </span>
                 </button>
@@ -3409,7 +3436,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         {view === "matchups" && (<>
         <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-500 dark:text-slate-400">Matchups</div>
         <div className="space-y-3">
-          {data == null && <BallLoader label="Loading today's games" />}
+          {data == null && <BallLoader label="Loading today's games" full={false} />}
           {data && data.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
           {data && (() => {
             // Broadcast grouping: live games first under a pulsing LIVE
