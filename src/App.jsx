@@ -1,5 +1,5 @@
 import React from "react";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 
 // ═══════════════ THEME (edit these to restyle the app) ═══════════
 // Player detail header color:
@@ -1005,6 +1005,71 @@ function ordinalize(n) {
   return n + "th";
 }
 
+// ── Swipe gestures (same hook as the football app): right→left = next, left→right = previous/back ──
+function useSwipe({ onLeft, onRight }) {
+  const start = useRef(null);
+  return {
+    onTouchStart: (e) => { const t = e.touches[0]; start.current = { x: t.clientX, y: t.clientY, t: Date.now() }; },
+    onTouchEnd: (e) => {
+      if (!start.current) return;
+      const t = e.changedTouches[0], dx = t.clientX - start.current.x, dy = t.clientY - start.current.y, dt = Date.now() - start.current.t;
+      start.current = null;
+      if (dt > 700 || Math.abs(dy) > 70 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      if (dx > 0) onRight && onRight(); else onLeft && onLeft();
+    },
+  };
+}
+
+// Live game feed from our own /api/game (Step 1). Ticks every 20s while the
+// game is live, every 2 min before first pitch, stops at Final, and refreshes
+// the moment the app comes back to the foreground. Returns null until loaded
+// (or if the endpoint is unreachable) — every caller falls back to the
+// schedule data it already had, so nothing breaks without it.
+function useLiveGame(gamePk) {
+  const [live, setLive] = useState(null);
+  useEffect(() => {
+    let alive = true, timer = null;
+    const load = async () => {
+      clearTimeout(timer);
+      let next = 60000;
+      try {
+        const r = await fetch("/api/game?pk=" + gamePk);
+        const d = r.ok ? await r.json() : null;
+        if (d && !d.error && alive) { setLive(d); next = d.state === "in" ? 20000 : d.state === "pre" ? 120000 : 0; }
+      } catch {}
+      if (alive && next) timer = setTimeout(load, next);
+    };
+    load();
+    const onVis = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { alive = false; clearTimeout(timer); document.removeEventListener("visibilitychange", onVis); };
+  }, [gamePk]);
+  return live;
+}
+
+// Bases diamond + count + outs — the baseball answer to football's "2nd & 7 at the DAL 34".
+function SituationStrip({ sit }) {
+  const on = (b) => !!(sit.runners && sit.runners[b]);
+  const base = (x, y, lit) => <rect x={x} y={y} width="9" height="9" rx="1.5" transform={`rotate(45 ${x + 4.5} ${y + 4.5})`} className={lit ? "fill-amber-400 stroke-amber-500" : "fill-transparent stroke-slate-300 dark:stroke-slate-600"} strokeWidth="1.5" />;
+  return (
+    <div className="flex items-center gap-3 mt-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+      <svg width="40" height="30" viewBox="0 0 40 30" className="shrink-0" aria-label="Runners on base">
+        {base(15.5, 3, on("second"))}{base(3.5, 15, on("third"))}{base(27.5, 15, on("first"))}
+      </svg>
+      <div className="shrink-0 text-center">
+        <div className="text-sm font-extrabold tabular-nums text-slate-900 dark:text-slate-100 leading-none">{sit.balls ?? 0}-{sit.strikes ?? 0}</div>
+        <div className="flex gap-1 mt-1.5 justify-center">
+          {[0, 1, 2].map((i) => <span key={i} className={"w-1.5 h-1.5 rounded-full " + (i < (sit.outs ?? 0) ? "bg-rose-500" : "bg-slate-200 dark:bg-slate-700")} />)}
+        </div>
+      </div>
+      <div className="min-w-0 flex-1 text-[11px] leading-snug">
+        {sit.batter && <div className="truncate text-slate-800 dark:text-slate-100"><span className="font-bold text-slate-400">AB </span><span className="font-bold">{sit.batter.name}</span></div>}
+        {sit.pitcher && <div className="truncate text-slate-500 dark:text-slate-400"><span className="font-bold text-slate-400">P </span>{sit.pitcher.name}</div>}
+      </div>
+    </div>
+  );
+}
+
 class HRBoundary extends React.Component {
   constructor(p) { super(p); this.state = { err: null }; }
   static getDerivedStateFromError(e) { return { err: e }; }
@@ -1019,8 +1084,10 @@ class HRBoundary extends React.Component {
   }
 }
 
-function GameDetail({ g, players, onSelectPlayer, onBack }) {
+function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index, total }) {
   const [side, setSide] = useState("away");
+  const live = useLiveGame(g.gamePk);                       // /api/game — score, inning, count, last play, HRs
+  const swipe = useSwipe({ onLeft: onNext || undefined, onRight: onPrev || onBack });
   const [box, setBox] = useState(null);
   const [pstats, setPstats] = useState({});
   const [vsHand, setVsHand] = useState({});
@@ -1112,14 +1179,21 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
     const nm = (g.teams[k].team && g.teams[k].team.name) || "";
     return NAME_TO_ABBR[nm.toLowerCase()] || toAbbr(nm) || "";
   };
-  const state = g.status && g.status.abstractGameState;
-  const timeLabel = state === "Final" ? "Final" : state === "Live" ? "LIVE" :
+  // Live feed wins when it has loaded; the schedule snapshot from the board is the fallback.
+  const state = live ? { pre: "Preview", in: "Live", post: "Final" }[live.state] : g.status && g.status.abstractGameState;
+  const sit = live && live.state === "in" ? live.situation : null;
+  const scoreOf = (k) => (live && live.state !== "pre" && live[k].score != null ? live[k].score : g.teams[k].score);
+  const inningNow = live && live.state === "in" && live.inning ? { half: live.inningHalf === "Top" ? "TOP" : "BOT", num: live.inning } : inning;
+  const batterNow = sit && sit.batter ? sit.batter.id : curBatter;
+  const timeLabel = live && /delay|postpon|suspend|cancel/i.test(live.detail) ? live.detail : state === "Final" ? "Final" : state === "Live" ? "LIVE" :
     new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
   const oppKey = side === "away" ? "home" : "away";
   const probable = g.teams[oppKey].probablePitcher;
   const sideTeamId = g.teams[side].team && g.teams[side].team.id;
-  const liveNow = state === "Live" && liveDef && liveDef.offenseTeamId === sideTeamId && liveDef.id !== (probable && probable.id)
-    ? { id: liveDef.id, fullName: liveDef.name } : null;
+  const liveDefNow = sit && sit.pitcher && sit.battingTeam
+    ? { id: sit.pitcher.id, name: sit.pitcher.name, offenseTeamId: live.home.abbr === sit.battingTeam ? live.home.id : live.away.id } : liveDef;
+  const liveNow = state === "Live" && liveDefNow && liveDefNow.offenseTeamId === sideTeamId && liveDefNow.id !== (probable && probable.id)
+    ? { id: liveDefNow.id, fullName: liveDefNow.name } : null;
   const pp = liveNow || probable;
   const ps = pp ? pstats[pp.id] : null;
   const myPP = pp ? myByName[hrbNrm(pp.fullName)] : undefined;
@@ -1127,9 +1201,18 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
   const order = (teamBox && teamBox.battingOrder) || [];
 
   return (
-    <div>
+    <div {...swipe}>
       <div className="px-4 pb-5" style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)", backgroundColor: teamColor(abbrOf(side)) }}>
-        <button onClick={onBack} className="text-white/90 text-sm font-semibold mb-3">‹ Matchups</button>
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={onBack} className="text-white/90 text-sm font-semibold">‹ Matchups</button>
+          {total > 1 && (
+            <div className="flex items-center gap-1 text-white/80">
+              <button onClick={onPrev || undefined} disabled={!onPrev} aria-label="Previous game" className={"w-7 h-7 rounded-full text-base font-bold leading-none " + (onPrev ? "bg-white/15 active:bg-white/30" : "opacity-30")}>‹</button>
+              <span className="text-[11px] font-bold tabular-nums px-1">{index + 1} / {total}</span>
+              <button onClick={onNext || undefined} disabled={!onNext} aria-label="Next game" className={"w-7 h-7 rounded-full text-base font-bold leading-none " + (onNext ? "bg-white/15 active:bg-white/30" : "opacity-30")}>›</button>
+            </div>
+          )}
+        </div>
         <div className="flex items-center justify-between">
           {["away", "home"].map((k) => {
             const ab = abbrOf(k);
@@ -1151,12 +1234,12 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
           })}
         </div>
         <div className="flex items-center justify-center gap-4 mt-2">
-          <span className="text-white text-3xl font-extrabold tabular-nums">{g.teams.away.score != null ? g.teams.away.score : "–"}</span>
+          <span className="text-white text-3xl font-extrabold tabular-nums">{scoreOf("away") != null ? scoreOf("away") : "–"}</span>
           <span className={"text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-white/70")}>{timeLabel}</span>
-          <span className="text-white text-3xl font-extrabold tabular-nums">{g.teams.home.score != null ? g.teams.home.score : "–"}</span>
+          <span className="text-white text-3xl font-extrabold tabular-nums">{scoreOf("home") != null ? scoreOf("home") : "–"}</span>
         </div>
-        {state === "Live" && inning && (
-          <div className="text-center text-[11px] font-extrabold text-white/80 mt-1">{inning.half} {inning.num}</div>
+        {state === "Live" && inningNow && (
+          <div className="text-center text-[11px] font-extrabold text-white/80 mt-1">{inningNow.half} {inningNow.num}</div>
         )}
         {wx && (
           <div className="text-center text-[11px] font-bold text-white/70 mt-1">
@@ -1166,6 +1249,41 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
         )}
       </div>
       <div className="px-4 pb-28">
+        {sit && (sit.lastPlay || sit.batter) && (
+          <div className="mt-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3">
+            {sit.lastPlay && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[9px] font-semibold tracking-widest uppercase text-rose-500">● Last play</span>
+                  {sit.last && sit.last.hit && sit.last.hit.ev != null && (
+                    <span className={"text-[10px] font-extrabold tabular-nums " + (sit.last.event === "Home Run" ? "text-orange-500" : "text-slate-400")}>
+                      {sit.last.hit.ev.toFixed(1)} mph{sit.last.hit.dist ? " · " + Math.round(sit.last.hit.dist) + " ft" : ""}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[12px] text-slate-800 dark:text-slate-100 leading-snug">{sit.lastPlay}</div>
+              </div>
+            )}
+            <SituationStrip sit={sit} />
+          </div>
+        )}
+        {live && live.homeRuns && live.homeRuns.length > 0 && (
+          <div className="mt-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3">
+            <div className="text-[9px] font-semibold tracking-widest uppercase text-orange-500 mb-1.5">Home runs · {live.homeRuns.length}</div>
+            <div className="space-y-1">
+              {live.homeRuns.map((h, i) => (
+                <div key={i} className="flex items-center gap-2 text-[12px]">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: teamColor(h.team) }} />
+                  <span className="font-bold text-slate-800 dark:text-slate-100 truncate">{h.batter ? h.batter.name : "—"}</span>
+                  <span className="text-[10px] font-bold text-slate-400 shrink-0">{h.half} {h.inning}{h.rbi > 1 ? " · " + h.rbi + "-run" : ""}</span>
+                  <span className="ml-auto text-[10px] font-extrabold tabular-nums text-slate-500 dark:text-slate-400 shrink-0">
+                    {h.hit && h.hit.dist ? Math.round(h.hit.dist) + " ft" : ""}{h.hit && h.hit.ev != null ? " · " + h.hit.ev.toFixed(1) : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="flex gap-2 mt-4">
           {["away", "home"].map((k) => (
             <button key={k} onClick={() => setSide(k)}
@@ -1255,7 +1373,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
             };
             const mine = myByName[hrbNrm(nm)];
             const streak = (mine && mine.streak) || 0;
-            const isBatting = curBatter === pid && state === "Live";
+            const isBatting = batterNow === pid && state === "Live";
             const RowTag = mine && onSelectPlayer ? "button" : "div";
             return (
               <RowTag key={pid}
@@ -2670,7 +2788,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v106";
+const HRB_VERSION = "v107";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -3225,7 +3343,20 @@ function HRBoardTab({ players, onSelectPlayer }) {
       return pm.bbe != null;
     })
   );
-  if (selGame) return <HRBoundary onBack={() => setSelGame(null)}><GameDetail g={selGame} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)} /></HRBoundary>;
+  if (selGame) {
+    const pri = (x) => { const st = x.status && x.status.abstractGameState; return st === "Live" ? 0 : st === "Final" ? 2 : 1; };
+    const order = [...(data || [])].map((row) => row.g).sort((a, b) => pri(a) - pri(b) || new Date(a.gameDate) - new Date(b.gameDate));
+    const i = order.findIndex((x) => x.gamePk === selGame.gamePk);
+    const cur = i >= 0 ? order[i] : selGame;               // freshest copy of this game
+    return (
+      <HRBoundary key={"b" + cur.gamePk} onBack={() => setSelGame(null)}>
+        <GameDetail key={cur.gamePk} g={cur} players={players} onSelectPlayer={onSelectPlayer} onBack={() => setSelGame(null)}
+          index={i >= 0 ? i : 0} total={order.length || 1}
+          onPrev={i > 0 ? () => { setSelGame(order[i - 1]); window.scrollTo(0, 0); } : null}
+          onNext={i >= 0 && i < order.length - 1 ? () => { setSelGame(order[i + 1]); window.scrollTo(0, 0); } : null} />
+      </HRBoundary>
+    );
+  }
   // ── Broadcast game card (one per game) ──
   const renderGameCard = ({ g, sides, wx }) => {
             const state = g.status && g.status.abstractGameState;
