@@ -125,6 +125,42 @@ function matchesQuery(p, q) {
 }
 
 
+// ═══════════════ MLB DATA LAYER (v106) ═══════════════════════════
+// Every MLB Stats API call goes through mlbFetch() → /api/mlb on our own
+// server (Vercel edge-cached). Same JSON as before, so no screen changes.
+//  • identical requests made at the same moment share ONE network call
+//    (the board, the game screen and the field view all want the same box)
+//  • answers are remembered briefly, so flipping between screens is instant
+//  • if /api/mlb is ever unreachable it falls back to MLB directly — the app
+//    can't be bricked by a missing server file
+const MLB_DIRECT = "https://statsapi.mlb.com/api/";
+const MLB_MEMO = new Map(); // path -> { at, job: Promise<{ok,status,body}> }
+const mlbTtl = (path) => (/^v1(\.1)?\/game\/|^v1\/schedule/.test(path) ? 10000
+  : /^v1\/people\/search|^v1\/teams(\?|$|\/\d+\/coaches)/.test(path) ? 3600000
+  : 300000);
+function mlbFetch(path) {
+  path = String(path).replace(MLB_DIRECT, "");
+  const now = Date.now();
+  const hit = MLB_MEMO.get(path);
+  let job = hit && now - hit.at < mlbTtl(path) ? hit.job : null;
+  if (!job) {
+    job = (async () => {
+      try {
+        const r = await fetch("/api/mlb?path=" + encodeURIComponent(path));
+        if (r.ok) { const t = await r.text(); if (/^\s*[\[{]/.test(t)) return { ok: true, status: 200, body: t }; } // must be JSON
+      } catch {}
+      const d = await fetch(MLB_DIRECT + path);                 // fallback: straight to MLB
+      return { ok: d.ok, status: d.status, body: await d.text() };
+    })();
+    MLB_MEMO.set(path, { at: now, job });
+    const forget = () => { if ((MLB_MEMO.get(path) || {}).job === job) MLB_MEMO.delete(path); };
+    job.then((x) => { if (!x.ok) forget(); }, forget);          // never remember a failure
+    for (const [k, v] of MLB_MEMO) { if (now - v.at > Math.max(mlbTtl(k), 60000)) MLB_MEMO.delete(k); } // drop stale copies (box scores are big)
+  }
+  // Looks like a fetch Response to the callers; each gets its own parsed copy.
+  return job.then((x) => ({ ok: x.ok, status: x.status, json: async () => JSON.parse(x.body), text: async () => x.body }));
+}
+
 // ═══════════════ SHARED PIECES ═══════════════════════════════════
 const MLB_ID_CACHE = {};
 const STREAK_BY_ID = {};
@@ -137,12 +173,12 @@ function LiveStreak({ p }) {
       try {
         let mid = MLB_ID_CACHE[key];
         if (mid === undefined) {
-          const d = await (await fetch(`https://statsapi.mlb.com/api/v1/people/search?names=${encodeURIComponent(p.name)}`)).json();
+          const d = await (await mlbFetch(`v1/people/search?names=${encodeURIComponent(p.name)}`)).json();
           mid = (d.people || [])[0] ? d.people[0].id : null;
           MLB_ID_CACHE[key] = mid;
         }
         if (!mid || STREAK_BY_ID[mid] !== undefined) { if (alive) force((x) => x + 1); return; }
-        const gl = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${mid}/stats?stats=gameLog&group=hitting`)).json();
+        const gl = await (await mlbFetch(`v1/people/${mid}/stats?stats=gameLog&group=hitting`)).json();
         const splits = (gl.stats && gl.stats[0] && gl.stats[0].splits) || [];
         const todayET = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
         let n = 0;
@@ -174,7 +210,7 @@ function Avatar({ p, size }) {
     if (p.photo || MLB_ID_CACHE[key] !== undefined) return;
     let alive = true;
     MLB_ID_CACHE[key] = null; // claim so parallel rows don't double-fetch
-    fetch(`https://statsapi.mlb.com/api/v1/people/search?names=${encodeURIComponent(p.name)}`)
+    mlbFetch(`v1/people/search?names=${encodeURIComponent(p.name)}`)
       .then((r) => r.json())
       .then((d) => {
         const person = (d.people || [])[0];
@@ -326,10 +362,10 @@ function TrendsChart({ p }) {
     let alive = true;
     (async () => {
       try {
-        const s = await (await fetch(`https://statsapi.mlb.com/api/v1/people/search?names=${encodeURIComponent(p.name)}`)).json();
+        const s = await (await mlbFetch(`v1/people/search?names=${encodeURIComponent(p.name)}`)).json();
         const person = (s.people || [])[0];
         if (!person) { if (alive) setGl([]); return; }
-        const g = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${person.id}/stats?stats=gameLog&group=hitting`)).json();
+        const g = await (await mlbFetch(`v1/people/${person.id}/stats?stats=gameLog&group=hitting`)).json();
         const splits = (g.stats && g.stats[0] && g.stats[0].splits) || [];
         if (alive) setGl(splits.filter((x) => x.stat && x.stat.atBats != null).slice(-30));
       } catch { if (alive) setGl([]); }
@@ -998,10 +1034,10 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
       const yr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date()).slice(0, 4);
       const ids = ["away", "home"].map((k) => g.teams[k].probablePitcher && g.teams[k].probablePitcher.id).filter(Boolean);
       const [b, ppl, ls, feed] = await Promise.all([
-        fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`).then((r) => r.json()).catch(() => ({})),
-        ids.length ? fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${ids.join(",")}&hydrate=stats(group=[pitching],type=[season])`).then((r) => r.json()).catch(() => ({})) : Promise.resolve({}),
-        fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/linescore`).then((r) => r.json()).catch(() => ({})),
-        fetch(`https://statsapi.mlb.com/api/v1.1/game/${g.gamePk}/feed/live?fields=gameData,weather,condition,temp,wind`).then((r) => r.json()).catch(() => ({})),
+        mlbFetch(`v1/game/${g.gamePk}/boxscore`).then((r) => r.json()).catch(() => ({})),
+        ids.length ? mlbFetch(`v1/people?personIds=${ids.join(",")}&hydrate=stats(group=[pitching],type=[season])`).then((r) => r.json()).catch(() => ({})) : Promise.resolve({}),
+        mlbFetch(`v1/game/${g.gamePk}/linescore`).then((r) => r.json()).catch(() => ({})),
+        mlbFetch(`v1.1/game/${g.gamePk}/feed/live?fields=gameData,weather,condition,temp,wind`).then((r) => r.json()).catch(() => ({})),
       ]);
       if (!alive) return;
       setBox(b);
@@ -1016,7 +1052,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
         const sp = (person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0] && person.stats[0].splits[0].stat) || {};
         outP[person.id] = { hand: person.pitchHand && person.pitchHand.code, w: sp.wins, l: sp.losses, era: sp.era, ip: sp.inningsPitched, so: sp.strikeOuts, bb: sp.baseOnBalls, hr: sp.homeRuns, whip: sp.whip, gs: sp.gamesStarted };
         try {
-          const gl = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${person.id}/stats?stats=gameLog&season=${yr}&group=pitching`)).json();
+          const gl = await (await mlbFetch(`v1/people/${person.id}/stats?stats=gameLog&season=${yr}&group=pitching`)).json();
           const gls = (gl.stats && gl.stats[0] && gl.stats[0].splits) || [];
           outP[person.id].hrL9 = gls.slice(-9).reduce((acc, s) => acc + Number((s.stat && s.stat.homeRuns) || 0), 0);
         } catch {}
@@ -1025,7 +1061,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
       const lp2 = ls && ls.defense && ls.defense.pitcher;
       if (lp2 && lp2.id && !outP[lp2.id]) {
         try {
-          const extra = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${lp2.id}&hydrate=stats(group=[pitching],type=[season])`)).json();
+          const extra = await (await mlbFetch(`v1/people?personIds=${lp2.id}&hydrate=stats(group=[pitching],type=[season])`)).json();
           for (const person of extra.people || []) {
             const sp2 = (person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0] && person.stats[0].splits[0].stat) || {};
             outP[person.id] = { hand: person.pitchHand && person.pitchHand.code, w: sp2.wins, l: sp2.losses, era: sp2.era, ip: sp2.inningsPitched, so: sp2.strikeOuts, bb: sp2.baseOnBalls, hr: sp2.homeRuns, whip: sp2.whip };
@@ -1041,7 +1077,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack }) {
           const hand = oppP && outP[oppP.id] && outP[oppP.id].hand === "L" ? "vl" : "vr";
           const orderIds = (b.teams && b.teams[k] && b.teams[k].battingOrder) || [];
           if (!orderIds.length) return;
-          const res = await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${orderIds.join(",")}&hydrate=stats(group=[hitting],type=[statSplits],sitCodes=[${hand}],season=${yr})`);
+          const res = await mlbFetch(`v1/people?personIds=${orderIds.join(",")}&hydrate=stats(group=[hitting],type=[statSplits],sitCodes=[${hand}],season=${yr})`);
           const data = await res.json();
           for (const person of data.people || []) {
             outSplits[person.id] = outSplits[person.id] || {};
@@ -1422,7 +1458,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
     const load = async () => {
       try {
         if (!MLB_TEAMID_MAP) {
-          const d = await (await fetch("https://statsapi.mlb.com/api/v1/teams?sportId=1")).json();
+          const d = await (await mlbFetch("v1/teams?sportId=1")).json();
           MLB_TEAMID_MAP = {};
           for (const t of d.teams || []) MLB_TEAMID_MAP[String(t.name).toLowerCase()] = t.id;
         }
@@ -1430,7 +1466,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
         if (!tid) return;
         if (!coaches) {
           try {
-            const c = await (await fetch(`https://statsapi.mlb.com/api/v1/teams/${tid}/coaches`)).json();
+            const c = await (await mlbFetch(`v1/teams/${tid}/coaches`)).json();
             const roles = {};
             for (const r of c.roster || []) {
               const job = String((r.job || r.jobId || "")).toLowerCase();
@@ -1445,12 +1481,12 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
           } catch {}
         }
         const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-        const sch = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${tid}&date=${today}&hydrate=probablePitcher`)).json();
+        const sch = await (await mlbFetch(`v1/schedule?sportId=1&teamId=${tid}&date=${today}&hydrate=probablePitcher`)).json();
         const g = sch.dates && sch.dates[0] && sch.dates[0].games && sch.dates[0].games[0];
         if (!g) { if (alive) setLineup({ confirmed: false, spots: {}, pitcher: null, noGame: true }); return; }
         const side = g.teams.away.team.id === tid ? "away" : "home";
         const pp = g.teams[side].probablePitcher ? g.teams[side].probablePitcher.fullName : null;
-        const box = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json();
+        const box = await (await mlbFetch(`v1/game/${g.gamePk}/boxscore`)).json();
         const pl = (box.teams && box.teams[side] && box.teams[side].players) || {};
         const spots = {};
         let confirmed = false;
@@ -1680,14 +1716,14 @@ function TeamFormChart({ teamName }) {
     (async () => {
       try {
         if (!MLB_TEAMID_MAP) {
-          const d = await (await fetch("https://statsapi.mlb.com/api/v1/teams?sportId=1")).json();
+          const d = await (await mlbFetch("v1/teams?sportId=1")).json();
           MLB_TEAMID_MAP = {};
           for (const t of d.teams || []) MLB_TEAMID_MAP[String(t.name).toLowerCase()] = t.id;
         }
         const tid = MLB_TEAMID_MAP[String(teamName).toLowerCase()];
         if (!tid) { if (alive) setGames([]); return; }
         const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
-        const sched = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${tid}&startDate=${dayStr(30)}&endDate=${dayStr(0)}`)).json();
+        const sched = await (await mlbFetch(`v1/schedule?sportId=1&teamId=${tid}&startDate=${dayStr(30)}&endDate=${dayStr(0)}`)).json();
         const gs = (sched.dates || []).flatMap((d) => d.games || [])
           .filter((g) => g.status && g.status.abstractGameState === "Final")
           .map((g) => {
@@ -2634,7 +2670,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v105";
+const HRB_VERSION = "v106";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2689,7 +2725,7 @@ async function hrbPeopleStats(idList) {
   for (let i = 0; i < idList.length; i += 90) {
     const chunk = idList.slice(i, i + 90);
     try {
-      const ppl = await (await fetch(`https://statsapi.mlb.com/api/v1/people?personIds=${chunk.join(",")}&hydrate=stats(group=[hitting,pitching],type=[season])`)).json();
+      const ppl = await (await mlbFetch(`v1/people?personIds=${chunk.join(",")}&hydrate=stats(group=[hitting,pitching],type=[season])`)).json();
       for (const person of ppl.people || []) {
         const grp = (name) => {
           const st = (person.stats || []).find((x) => x.group && String(x.group.displayName).toLowerCase() === name);
@@ -2733,9 +2769,9 @@ async function hrbBullpenHr9(teamIds, season) {
       const ip = ipToNum(st.inningsPitched);
       return ip > 0 ? (Number(st.homeRuns) / ip) * 9 : null;
     };
-    try { val = pick(await (await fetch(`https://statsapi.mlb.com/api/v1/teams/${tid}/stats?stats=statSplits&group=pitching&sitCodes=rp&season=${season}`)).json()); } catch {}
+    try { val = pick(await (await mlbFetch(`v1/teams/${tid}/stats?stats=statSplits&group=pitching&sitCodes=rp&season=${season}`)).json()); } catch {}
     if (val == null) {
-      try { val = pick(await (await fetch(`https://statsapi.mlb.com/api/v1/teams/${tid}/stats?stats=season&group=pitching&season=${season}`)).json()); } catch {}
+      try { val = pick(await (await mlbFetch(`v1/teams/${tid}/stats?stats=season&group=pitching&season=${season}`)).json()); } catch {}
     }
     hrbPenCache[key] = val;
     out[tid] = val;
@@ -2765,8 +2801,8 @@ function HRBoardTab({ players, onSelectPlayer }) {
       try {
         const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
         const [sched, standings] = await Promise.all([
-          (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${dayStr(0)}&hydrate=team,linescore,probablePitcher,venue`)).json(),
-          fetch("https://statsapi.mlb.com/api/v1/standings?leagueId=103,104").then((r) => r.json()).catch(() => ({})),
+          (await mlbFetch(`v1/schedule?sportId=1&date=${dayStr(0)}&hydrate=team,linescore,probablePitcher,venue`)).json(),
+          mlbFetch("v1/standings?leagueId=103,104").then((r) => r.json()).catch(() => ({})),
         ]);
         const teamRec = {};
         for (const rec of standings.records || []) for (const tr of rec.teamRecords || []) {
@@ -2782,11 +2818,11 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const wxByPk = {};
         await Promise.all(gs.flatMap((g) => [
           (async () => {
-            try { boxes[g.gamePk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json(); } catch {}
+            try { boxes[g.gamePk] = await (await mlbFetch(`v1/game/${g.gamePk}/boxscore`)).json(); } catch {}
           })(),
           (async () => {
             try {
-              const f = await (await fetch(`https://statsapi.mlb.com/api/v1.1/game/${g.gamePk}/feed/live?fields=gameData,weather,condition,temp,wind`)).json();
+              const f = await (await mlbFetch(`v1.1/game/${g.gamePk}/feed/live?fields=gameData,weather,condition,temp,wind`)).json();
               if (f && f.gameData && f.gameData.weather && f.gameData.weather.temp) wxByPk[g.gamePk] = f.gameData.weather;
             } catch {}
           })(),
@@ -2801,7 +2837,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const prevByTeam = {};
         if (need.size) {
           try {
-            const past = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=${dayStr(3)}&endDate=${dayStr(1)}`)).json();
+            const past = await (await mlbFetch(`v1/schedule?sportId=1&startDate=${dayStr(3)}&endDate=${dayStr(1)}`)).json();
             for (const d of past.dates || []) for (const pg of d.games || []) {
               for (const k of ["away", "home"]) {
                 const tid = pg.teams[k].team && pg.teams[k].team.id;
@@ -2813,7 +2849,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
             const pks = [...new Set(Object.values(prevByTeam).map((x) => x.pk))];
             const prevBoxes = {};
             await Promise.all(pks.map(async (pk) => {
-              try { prevBoxes[pk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${pk}/boxscore`)).json(); } catch {}
+              try { prevBoxes[pk] = await (await mlbFetch(`v1/game/${pk}/boxscore`)).json(); } catch {}
             }));
             for (const tid of Object.keys(prevByTeam)) prevByTeam[tid].box = prevBoxes[prevByTeam[tid].pk];
           } catch {}
@@ -2989,7 +3025,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
       setValProg(`${d - off0}/${days}`);
       try {
         const day = dayStr(d);
-        const sched = await (await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${day}&hydrate=team,probablePitcher,venue`)).json();
+        const sched = await (await mlbFetch(`v1/schedule?sportId=1&date=${day}&hydrate=team,probablePitcher,venue`)).json();
         // Rank the FULL slate exactly like the live board does; the
         // evening-bettable distinction is applied at GRADING time below.
         const wkd = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short" }).format(new Date(day + "T12:00:00-04:00"));
@@ -3001,10 +3037,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const boxes = {};
         const wxV = {};
         await Promise.all(gs.flatMap((g) => [
-          (async () => { try { boxes[g.gamePk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${g.gamePk}/boxscore`)).json(); } catch {} })(),
+          (async () => { try { boxes[g.gamePk] = await (await mlbFetch(`v1/game/${g.gamePk}/boxscore`)).json(); } catch {} })(),
           (async () => {
             try {
-              const f = await (await fetch(`https://statsapi.mlb.com/api/v1.1/game/${g.gamePk}/feed/live?fields=gameData,weather,condition,temp,wind`)).json();
+              const f = await (await mlbFetch(`v1.1/game/${g.gamePk}/feed/live?fields=gameData,weather,condition,temp,wind`)).json();
               if (f && f.gameData && f.gameData.weather && f.gameData.weather.temp) wxV[g.gamePk] = f.gameData.weather;
             } catch {}
           })(),
@@ -3098,7 +3134,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
       const out = {};
       await Promise.all(ids.map(async (pid) => {
         try {
-          const gl = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${pid}/stats?stats=gameLog&group=hitting`)).json();
+          const gl = await (await mlbFetch(`v1/people/${pid}/stats?stats=gameLog&group=hitting`)).json();
           const splits = (gl.stats && gl.stats[0] && gl.stats[0].splits) || [];
           const todayET = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
           let n = 0;
@@ -3159,7 +3195,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         const results = {};
         for (const e of h.entries || []) {
           try {
-            if (!boxCache[e.pk]) boxCache[e.pk] = await (await fetch(`https://statsapi.mlb.com/api/v1/game/${e.pk}/boxscore`)).json();
+            if (!boxCache[e.pk]) boxCache[e.pk] = await (await mlbFetch(`v1/game/${e.pk}/boxscore`)).json();
             const b = boxCache[e.pk];
             // -1 = didn't play (scratched / benched / postponed): excluded
             // from hit-rate and expected sums instead of counting as a miss.
@@ -3220,7 +3256,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       const need = ["away", "home"].flatMap((kk) => sides[kk].hitters.map((h2) => h2.id)).filter((pid) => streaks[pid] == null);
                       Promise.all(need.map(async (pid) => {
                         try {
-                          const gl = await (await fetch(`https://statsapi.mlb.com/api/v1/people/${pid}/stats?stats=gameLog&group=hitting`)).json();
+                          const gl = await (await mlbFetch(`v1/people/${pid}/stats?stats=gameLog&group=hitting`)).json();
                           const sp2 = (gl.stats && gl.stats[0] && gl.stats[0].splits) || [];
                           const todayET2 = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
                           let n2 = 0;
