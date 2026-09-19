@@ -1758,20 +1758,22 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
   const byName = {};
   for (const pl of roster) byName[hrbNrm(pl.name)] = pl;
 
-  // Geometry (viewBox 0-100 x, 0-116 y) - the whole diamond sits 8 units
-  // lower than before so the outfield and wall get room to breathe.
-  // Home 50,92 · 1B 74,68 · 2B 50,44 · 3B 26,68 · mound 50,68.
+  // Geometry (viewBox 0-100 x, 0-124 y). The diamond sits low so the catcher is
+  // at the bottom edge and the outfield gets the room: the fence is 95 units
+  // from home (was 80) while the infield keeps its size.
+  // Home 50,106 · 1B 74,82 · 2B 50,58 · 3B 26,82 · mound 50,82.
   // Infielders are offset OFF the bags so the bases stay visible.
+  const FIELD_H = 124;
   const SPOTS = [
-    { lbl: "CF", x: 50, y: 20, aliases: ["CF", "OF"] },
-    { lbl: "LF", x: 17, y: 32, aliases: ["LF", "OF"] },
-    { lbl: "RF", x: 83, y: 32, aliases: ["RF", "OF"] },
-    { lbl: "2B", x: 61, y: 47, aliases: ["2B"] },
-    { lbl: "SS", x: 39, y: 47, aliases: ["SS"] },
-    { lbl: "3B", x: 22, y: 61, aliases: ["3B"] },
-    { lbl: "1B", x: 78, y: 61, aliases: ["1B"] },
-    { lbl: "P",  x: 50, y: 68, aliases: ["P", "SP", "RHP", "LHP"] },
-    { lbl: "C",  x: 50, y: 101, aliases: ["C"] },
+    { lbl: "CF", x: 50, y: 27, aliases: ["CF", "OF"] },
+    { lbl: "LF", x: 17, y: 42, aliases: ["LF", "OF"] },
+    { lbl: "RF", x: 83, y: 42, aliases: ["RF", "OF"] },
+    { lbl: "2B", x: 61, y: 61, aliases: ["2B"] },
+    { lbl: "SS", x: 39, y: 61, aliases: ["SS"] },
+    { lbl: "3B", x: 22, y: 75, aliases: ["3B"] },
+    { lbl: "1B", x: 78, y: 75, aliases: ["1B"] },
+    { lbl: "P",  x: 50, y: 82, aliases: ["P", "SP", "RHP", "LHP"] },
+    { lbl: "C",  x: 50, y: 112.5, aliases: ["C"] },
   ];
   // ── Assign ONE player per spot, computed once (no side effects) ──
   const used = new Set();
@@ -1832,12 +1834,12 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
   return (
     <div className="mt-4">
       <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm bg-[#1f6b34]"
-        style={{ paddingBottom: "116%" }}>
-        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 116" preserveAspectRatio="none">
+        style={{ paddingBottom: FIELD_H + "%" }}>
+        <svg className="absolute inset-0 w-full h-full" viewBox={"0 0 100 " + FIELD_H} preserveAspectRatio="none">
           <defs>
-            <clipPath id="fairClip"><path d="M50,92 L110,32 A80,80 0 0 0 -10,32 Z" /></clipPath>
-            <clipPath id="fvDirtClip"><path d="M50,92 L80.76,61.24 A28,28 0 1 0 19.24,61.24 Z" /></clipPath>
-            <clipPath id="fvInGrassClip"><polygon points="50,87.5 68.5,68 50,48.5 31.5,68" /></clipPath>
+            <clipPath id="fairClip"><path d="M50,106 L125,31 A107,107 0 0 0 -25,31 Z" /></clipPath>
+            <clipPath id="fvDirtClip"><path d="M50,106 L80.76,75.24 A28,28 0 1 0 19.24,75.24 Z" /></clipPath>
+            <clipPath id="fvInGrassClip"><polygon points="50,101.5 68.5,82 50,62.5 31.5,82" /></clipPath>
             <radialGradient id="grassGlow" cx="50%" cy="72%" r="78%">
               <stop offset="0%" stopColor="#57a85c" /><stop offset="50%" stopColor="#38853f" /><stop offset="100%" stopColor="#1c5a2b" />
             </radialGradient>
@@ -1845,13 +1847,13 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
               <stop offset="0%" stopColor="#56ab5d" /><stop offset="100%" stopColor="#3a8e45" />
             </radialGradient>
             {/* mowing pattern: two sets of stripes crossing on the foul-line angles = the classic ballpark checkerboard */}
-            <pattern id="fvMowA" width="11" height="11" patternUnits="userSpaceOnUse" patternTransform="rotate(45 50 92)">
+            <pattern id="fvMowA" width="11" height="11" patternUnits="userSpaceOnUse" patternTransform="rotate(45 50 106)">
               <rect width="5.5" height="11" fill="#ffffff" fillOpacity="0.08" />
             </pattern>
-            <pattern id="fvMowB" width="11" height="11" patternUnits="userSpaceOnUse" patternTransform="rotate(-45 50 92)">
+            <pattern id="fvMowB" width="11" height="11" patternUnits="userSpaceOnUse" patternTransform="rotate(-45 50 106)">
               <rect width="5.5" height="11" fill="#04260f" fillOpacity="0.13" />
             </pattern>
-            <pattern id="fvMowIn" width="4.6" height="4.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45 50 68)">
+            <pattern id="fvMowIn" width="4.6" height="4.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45 50 82)">
               <rect width="2.3" height="4.6" fill="#ffffff" fillOpacity="0.09" />
             </pattern>
             {/* fine speckle so the turf and the clay read as texture, not flat paint */}
@@ -1874,57 +1876,57 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
             </radialGradient>
           </defs>
           {/* ── turf: colour, mowing checkerboard, grain ── */}
-          <rect x="-10" y="-10" width="120" height="140" fill="url(#grassGlow)" />
-          <rect x="-10" y="-10" width="120" height="140" fill="url(#fvMowA)" />
-          <rect x="-10" y="-10" width="120" height="140" fill="url(#fvMowB)" />
-          <rect x="-10" y="-10" width="120" height="140" filter="url(#fvGrain)" opacity="0.24" />
+          <rect x="-10" y="-10" width="120" height="150" fill="url(#grassGlow)" />
+          <rect x="-10" y="-10" width="120" height="150" fill="url(#fvMowA)" />
+          <rect x="-10" y="-10" width="120" height="150" fill="url(#fvMowB)" />
+          <rect x="-10" y="-10" width="120" height="150" filter="url(#fvGrain)" opacity="0.24" />
           {/* stands */}
-          <circle cx="50" cy="92" r="130" fill="none" stroke="#0b1220" strokeWidth="100" />
-          <circle cx="50" cy="92" r="87" fill="none" stroke="#1e293b" strokeWidth="14" />
+          <circle cx="50" cy="106" r="151" fill="none" stroke="#0b1220" strokeWidth="100" />
+          <circle cx="50" cy="106" r="106" fill="none" stroke="#1e293b" strokeWidth="14" />
           {/* warning track, padded wall in team colour, yellow home-run line on top */}
           <g clipPath="url(#fairClip)">
-            <circle cx="50" cy="92" r="79.5" fill="none" stroke="#b98a5a" strokeWidth="7" />
-            <circle cx="50" cy="92" r="76.1" fill="none" stroke="#123d1e" strokeOpacity=".45" strokeWidth="0.4" />
-            <circle cx="50" cy="92" r="83.5" fill="none" stroke={tc} strokeWidth="5" />
-            <circle cx="50" cy="92" r="83.5" fill="none" stroke="#000" strokeOpacity=".25" strokeWidth="5" strokeDasharray="0.6 3.2" />
-            <circle cx="50" cy="92" r="86.2" fill="none" stroke="#facc15" strokeWidth="1.1" />
-            <circle cx="50" cy="92" r="81" fill="none" stroke="#fff" strokeOpacity=".3" strokeWidth="0.5" />
+            <circle cx="50" cy="106" r="93.5" fill="none" stroke="#b98a5a" strokeWidth="7" />
+            <circle cx="50" cy="106" r="90.1" fill="none" stroke="#123d1e" strokeOpacity=".45" strokeWidth="0.4" />
+            <circle cx="50" cy="106" r="97.5" fill="none" stroke={tc} strokeWidth="5" />
+            <circle cx="50" cy="106" r="97.5" fill="none" stroke="#000" strokeOpacity=".25" strokeWidth="5" strokeDasharray="0.6 3.2" />
+            <circle cx="50" cy="106" r="100.2" fill="none" stroke="#facc15" strokeWidth="1.1" />
+            <circle cx="50" cy="106" r="95" fill="none" stroke="#fff" strokeOpacity=".3" strokeWidth="0.5" />
           </g>
           {/* ── infield clay: grass lip, clay, raked texture, drag arcs, shaded edge ── */}
-          <path d="M50,92 L80.76,61.24 A28,28 0 1 0 19.24,61.24 Z" fill="none" stroke="#0f3a1b" strokeOpacity=".6" strokeWidth="1" strokeLinejoin="round" />
-          <path d="M50,92 L80.76,61.24 A28,28 0 1 0 19.24,61.24 Z" fill="url(#dirtGrad)" />
+          <path d="M50,106 L80.76,75.24 A28,28 0 1 0 19.24,75.24 Z" fill="none" stroke="#0f3a1b" strokeOpacity=".6" strokeWidth="1" strokeLinejoin="round" />
+          <path d="M50,106 L80.76,75.24 A28,28 0 1 0 19.24,75.24 Z" fill="url(#dirtGrad)" />
           <g clipPath="url(#fvDirtClip)">
-            <rect x="15" y="28" width="70" height="68" filter="url(#fvClay)" opacity="0.42" />
-            {[28.2, 25.4, 22.6, 19.8].map((r, i) => <circle key={r} cx="50" cy="61.24" r={r} fill="none" stroke={i % 2 ? "#5b3716" : "#fff3df"} strokeOpacity={i % 2 ? 0.1 : 0.09} strokeWidth="1.3" />)}
-            <path d="M50,92 L80.76,61.24 A28,28 0 1 0 19.24,61.24 Z" fill="none" stroke="#4a2a10" strokeOpacity=".38" strokeWidth="2.4" strokeLinejoin="round" />
+            <rect x="15" y="42" width="70" height="68" filter="url(#fvClay)" opacity="0.42" />
+            {[28.2, 25.4, 22.6, 19.8].map((r, i) => <circle key={r} cx="50" cy="75.24" r={r} fill="none" stroke={i % 2 ? "#5b3716" : "#fff3df"} strokeOpacity={i % 2 ? 0.1 : 0.09} strokeWidth="1.3" />)}
+            <path d="M50,106 L80.76,75.24 A28,28 0 1 0 19.24,75.24 Z" fill="none" stroke="#4a2a10" strokeOpacity=".38" strokeWidth="2.4" strokeLinejoin="round" />
           </g>
           {/* foul lines in chalk, laid over the clay */}
-          <line x1="50" y1="92" x2="110" y2="32" stroke="#fff" strokeWidth="0.55" strokeOpacity="0.85" />
-          <line x1="50" y1="92" x2="-10" y2="32" stroke="#fff" strokeWidth="0.55" strokeOpacity="0.85" />
+          <line x1="50" y1="106" x2="120" y2="36" stroke="#fff" strokeWidth="0.55" strokeOpacity="0.85" />
+          <line x1="50" y1="106" x2="-20" y2="36" stroke="#fff" strokeWidth="0.55" strokeOpacity="0.85" />
           {/* ── infield grass: its own lip, finer mowing stripes, grain ── */}
-          <polygon points="50,87.5 68.5,68 50,48.5 31.5,68" fill="url(#fvInGrass)" />
+          <polygon points="50,101.5 68.5,82 50,62.5 31.5,82" fill="url(#fvInGrass)" />
           <g clipPath="url(#fvInGrassClip)">
-            <rect x="30" y="47" width="40" height="42" fill="url(#fvMowIn)" />
-            <rect x="30" y="47" width="40" height="42" filter="url(#fvGrain)" opacity="0.22" />
+            <rect x="30" y="61" width="40" height="42" fill="url(#fvMowIn)" />
+            <rect x="30" y="61" width="40" height="42" filter="url(#fvGrain)" opacity="0.22" />
           </g>
-          <polygon points="50,87.5 68.5,68 50,48.5 31.5,68" fill="none" stroke="#0f3a1b" strokeOpacity=".55" strokeWidth="0.7" strokeLinejoin="round" />
+          <polygon points="50,101.5 68.5,82 50,62.5 31.5,82" fill="none" stroke="#0f3a1b" strokeOpacity=".55" strokeWidth="0.7" strokeLinejoin="round" />
           {/* base cut-outs, home-plate circle, mound (with a little height) */}
-          {[[74, 68], [50, 44], [26, 68]].map(([bx, by], i) => <circle key={i} cx={bx} cy={by} r="4.4" fill="#cb9259" stroke="#6b421c" strokeOpacity=".3" strokeWidth="0.4" />)}
-          <circle cx="50" cy="92" r="9.5" fill="#cb9259" stroke="#6b421c" strokeOpacity=".3" strokeWidth="0.5" />
-          <ellipse cx="50.5" cy="69" rx="4.5" ry="4.2" fill="#000" fillOpacity="0.2" />
-          <circle cx="50" cy="68" r="4" fill="url(#fvMound)" stroke="#8a5a30" strokeWidth="0.45" />
-          <ellipse cx="50" cy="67.4" rx="1.1" ry="0.45" fill="#fff" fillOpacity="0.95" />
-          <rect x="44.4" y="88.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.4" strokeOpacity="0.75" />
-          <rect x="52.4" y="88.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.4" strokeOpacity="0.75" />
+          {[[74, 82], [50, 58], [26, 82]].map(([bx, by], i) => <circle key={i} cx={bx} cy={by} r="4.4" fill="#cb9259" stroke="#6b421c" strokeOpacity=".3" strokeWidth="0.4" />)}
+          <circle cx="50" cy="106" r="9.5" fill="#cb9259" stroke="#6b421c" strokeOpacity=".3" strokeWidth="0.5" />
+          <ellipse cx="50.5" cy="83" rx="4.5" ry="4.2" fill="#000" fillOpacity="0.2" />
+          <circle cx="50" cy="82" r="4" fill="url(#fvMound)" stroke="#8a5a30" strokeWidth="0.45" />
+          <ellipse cx="50" cy="81.4" rx="1.1" ry="0.45" fill="#fff" fillOpacity="0.95" />
+          <rect x="44.4" y="102.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.4" strokeOpacity="0.75" />
+          <rect x="52.4" y="102.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.4" strokeOpacity="0.75" />
           {/* bases - drawn LAST so they sit on top of the dirt (with a small shadow), and fielders are offset off them */}
-          {[[74, 68], [50, 44], [26, 68]].map(([bx, by], i) => (
+          {[[74, 82], [50, 58], [26, 82]].map(([bx, by], i) => (
             <g key={i}>
               <rect x={bx - 1.4} y={by - 1.2} width="3.4" height="3.4" fill="#000" fillOpacity=".28" transform={"rotate(45 " + bx + " " + by + ")"} />
               <rect x={bx - 1.7} y={by - 1.7} width="3.4" height="3.4" fill="#fff" stroke="#000" strokeOpacity=".2" strokeWidth="0.3" transform={"rotate(45 " + bx + " " + by + ")"} />
             </g>
           ))}
-          <polygon points="48.6,90.6 51.4,90.6 51.4,92.2 50,93.5 48.6,92.2" fill="#fff" />
-          <rect x="-10" y="-10" width="120" height="140" fill="url(#vig)" />
+          <polygon points="48.6,104.6 51.4,104.6 51.4,106.2 50,107.5 48.6,106.2" fill="#fff" />
+          <rect x="-10" y="-10" width="120" height="150" fill="url(#vig)" />
         </svg>
         {/* lineup badge */}
         <span className={"absolute top-2 right-2 z-10 px-2.5 py-1 rounded-full text-[9px] font-extrabold tracking-wider uppercase shadow " + (isConf ? "bg-emerald-500 text-white" : lineup && lineup.noGame ? "bg-slate-700 text-white/80" : "bg-amber-400 text-slate-900")}>
@@ -1935,7 +1937,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
           return (
             <button key={i} disabled={!p || p._virtual} onClick={p && !p._virtual ? () => onSelectPlayer(p) : undefined}
               className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
-              style={{ left: sp.x + "%", top: (sp.y / 1.16) + "%" }}>
+              style={{ left: sp.x + "%", top: (sp.y / FIELD_H * 100) + "%" }}>
               <span className="relative">
                 {p ? (
                   <span className={"block w-11 h-11 rounded-full overflow-hidden shadow-md bg-white border-2 " + (tagOf(p) ? TAG_RING[tagOf(p).kind] : "border-white/80")}>
@@ -2054,12 +2056,288 @@ function TeamFormChart({ teamName }) {
   );
 }
 
+// ═══════════════ TEAM PAGE PIECES (football-app layout) ══════════
+const MLB_TEAM_ID = { LAA: 108, ARI: 109, BAL: 110, BOS: 111, CHC: 112, CIN: 113, CLE: 114, COL: 115, DET: 116, HOU: 117, KC: 118, LAD: 119, WSH: 120, NYM: 121, ATH: 133, PIT: 134,
+  SD: 135, SEA: 136, SF: 137, STL: 138, TB: 139, TEX: 140, TOR: 141, MIN: 142, PHI: 143, ATL: 144, CWS: 145, MIA: 146, NYY: 147, MIL: 158 };
+
+// League season stats + standings, loaded once and shared with the Stats tab (same cache).
+let LEAGUE_JOB = null;
+function loadLeagueData() {
+  if (LEADERS_CACHE.stats && Date.now() - LEADERS_CACHE.at < 15 * 60000) return Promise.resolve();
+  if (!LEAGUE_JOB) {
+    const get = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    LEAGUE_JOB = Promise.all([get("/api/season-stats"), get("/api/standings")]).then(([s, t]) => {
+      if (s && s.players) { LEADERS_CACHE.stats = s; LEADERS_CACHE.at = Date.now(); }
+      if (t && t.teams) LEADERS_CACHE.teams = t;
+    }).finally(() => { LEAGUE_JOB = null; });
+  }
+  return LEAGUE_JOB;
+}
+function useLeagueData() {
+  const [, tick] = useState(0);
+  useEffect(() => { let alive = true; loadLeagueData().then(() => { if (alive) tick((n) => n + 1); }); return () => { alive = false; }; }, []);
+  return LEADERS_CACHE;
+}
+// A roster player's live season line (name + team first, so shared names stay apart)
+const seasonLineFor = (stats, p, abbr) => {
+  if (!stats || !stats.byName) return null;
+  const k = hrbNrm(p.name);
+  const id = stats.byName[k + "|" + abbr] ?? stats.byName[k];
+  return id != null ? stats.players[id] || null : null;
+};
+const isPitcherP = (p) => catOf(p) === "__P__" || ["pitching", "bullpen"].includes(String(p.role || "").trim().toLowerCase());
+const lastNameSort = (a, b) => { const l = (n) => String(n).split(" ").slice(-1)[0]; return l(a.name).localeCompare(l(b.name)) || String(a.name).localeCompare(String(b.name)); };
+const fmt3 = (v) => (v == null ? "—" : Number(v).toFixed(3).replace(/^0/, ""));
+const fmt2 = (v) => (v == null ? "—" : Number(v).toFixed(2));
+const rankCls = (r) => (r == null ? "text-slate-400" : r <= 10 ? "text-green-600 dark:text-green-400" : r <= 20 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400");
+
+// Who starts when: MLB's announced probables for the next week → { normalizedName: "Today vs BOS" }
+function useNextStarts(abbr, on) {
+  const [starts, setStarts] = useState({});
+  useEffect(() => {
+    const tid = MLB_TEAM_ID[abbr];
+    if (!on || !tid) return;
+    let alive = true;
+    (async () => {
+      try {
+        const day = (n) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() + n * 86400000));
+        const d = await (await mlbFetch(`v1/schedule?sportId=1&teamId=${tid}&startDate=${day(0)}&endDate=${day(7)}&hydrate=probablePitcher,team`)).json();
+        const out = {};
+        for (const dt of d.dates || []) for (const g of dt.games || []) {
+          const home = g.teams.home.team.id === tid;
+          const me = g.teams[home ? "home" : "away"], opp = g.teams[home ? "away" : "home"];
+          const pp = me.probablePitcher;
+          if (!pp || (g.status && g.status.abstractGameState === "Final")) continue;
+          const k = hrbNrm(pp.fullName);
+          if (out[k]) continue;
+          const oppAbbr = toAbbr(opp.team.name) || opp.team.abbreviation || "";
+          const when = dt.date === day(0) ? "Today" : new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "UTC" }).format(new Date(dt.date + "T12:00:00Z"));
+          out[k] = { today: dt.date === day(0), text: `${when} ${home ? "vs" : "@"} ${oppAbbr}` };
+        }
+        if (alive) setStarts(out);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [abbr, on]);
+  return starts;
+}
+
+// Header tile, football style: tinted border, team-colour label, big number, coloured rank line.
+function RankTile({ label, value, sub, subCls, tc, valueCls }) {
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 px-1.5 py-3.5 text-center shadow-sm" style={{ borderColor: tc ? tc + "55" : undefined }}>
+      <div className={"text-[9px] font-bold tracking-widest uppercase " + (tc ? "text-[color:var(--tc)] dark:text-slate-300" : "text-slate-400")} style={tc ? { "--tc": tc } : undefined}>{label}</div>
+      <div className={"text-[26px] leading-tight font-black tabular-nums mt-0.5 " + (valueCls || "text-slate-900 dark:text-white")}>{value}</div>
+      {sub && <div className={"text-[10px] font-extrabold mt-0.5 " + (subCls || "text-slate-400")}>{sub}</div>}
+    </div>
+  );
+}
+
+// One roster row, laid out like the football app: [chip] headshot · #no Name / tag (note) · three stat tiles
+function RosterRow({ p, abbr, chip, tiles, badge, onSelect }) {
+  useInjuries();
+  const tc = teamColor(abbr);
+  const live = injFor(p.name, abbr);
+  const note = live ? String(live.type || live.location || "").trim() : String(p.injuryNotes || "").trim();
+  const tag = statusTag(p, abbr);
+  return (
+    <button onClick={() => onSelect(p)} className="w-full flex items-center gap-3 px-3 py-3 text-left active:bg-slate-50 dark:active:bg-slate-800">
+      <span className="shrink-0 w-11 text-center rounded-md py-1 text-[11px] font-extrabold text-white tabular-nums" style={{ backgroundColor: bannerColor(abbr) }}>{chip}</span>
+      <Avatar p={p} />
+      <span className="flex-1 min-w-0">
+        <span className="block text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate">
+          {cleanNo(p.no) && <span className="text-[13px] font-bold text-slate-400">#{cleanNo(p.no)} </span>}{p.name}
+        </span>
+        <span className="flex items-end justify-between gap-2 mt-1">
+          <span className="min-w-0">
+            {badge}
+            {tag && <span className="block"><LiveStatus p={p} /></span>}
+            {tag && tag.kind !== "min" && note && <span className="block text-[11px] font-semibold text-rose-500 truncate lowercase mt-0.5">({note})</span>}
+          </span>
+          <span className="flex gap-1.5 shrink-0">
+            {tiles.map(([lbl, v]) => (
+              <span key={lbl} className="w-[50px] rounded-lg border text-center py-1" style={{ backgroundColor: tc + "12", borderColor: tc + "4D" }}>
+                <span className="block text-[7px] font-bold uppercase tracking-wider text-[color:var(--tc)] dark:text-slate-300" style={{ "--tc": tc }}>{lbl}</span>
+                <span className="block text-[14px] leading-tight font-extrabold tabular-nums text-slate-900 dark:text-white">{v ?? "—"}</span>
+              </span>
+            ))}
+          </span>
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function Section({ title, note, color, children }) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mt-6 mb-2 px-1">
+        <span className={"text-[11px] font-bold tracking-widest uppercase " + (color ? "" : "text-slate-400")} style={color ? { color } : undefined}>{title}</span>
+        {note && <span className="text-[9px] font-semibold text-slate-400">{note}</span>}
+      </div>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">{children}</div>
+    </div>
+  );
+}
+
+// Roster pill body: landing (Batters / Pitchers, A–Z) or one of the three sub-views.
+function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
+  useInjuries();
+  const { stats } = useLeagueData();
+  const starts = useNextStarts(abbr, view === "pitching");
+  const line = (p) => seasonLineFor(stats, p, abbr);
+  const at = (p) => latestStats(p) || {};                       // Airtable fallback when MLB has no line yet
+  const batTiles = (p) => { const s = line(p), h = s && s.hit, a = at(p); return [["AVG", h ? fmt3(h.avg) : a.avg != null ? fmt3(a.avg) : null], ["HR", h ? h.hr : a.hr != null ? Math.round(a.hr) : null], ["RBI", h ? h.rbi : a.rbi != null ? Math.round(a.rbi) : null]]; };
+  const pitTiles = (p, mode) => {
+    const s = line(p), x = s && s.pit, a = at(p);
+    const era = x ? fmt2(x.era) : a.era != null ? fmt2(a.era) : null;
+    if (mode === "sp") return [["W-L", x ? x.w + "-" + x.l : a.w != null ? Math.round(a.w) + "-" + Math.round(a.l ?? 0) : null], ["ERA", era], ["K", x ? x.so : null]];
+    if (mode === "rp") return [["IP", x ? x.ip : null], ["ERA", era], [x && x.sv > 0 ? "SV" : "HLD", x ? (x.sv > 0 ? x.sv : x.hld) : null]];
+    return [["ERA", era], ["WHIP", x ? fmt2(x.whip) : a.whip != null ? fmt2(a.whip) : null], ["K", x ? x.so : null]];
+  };
+  const big = roster.filter((p) => !isMinors(p, abbr));
+  const minors = roster.filter((p) => isMinors(p, abbr)).sort(lastNameSort);
+  const batters = big.filter((p) => !isPitcherP(p)), pitchers = big.filter(isPitcherP);
+  const empty = (msg) => <div className="text-center text-xs text-slate-400 py-8 px-6">{msg}</div>;
+
+  if (view === "field") return <FieldView roster={roster} abbr={abbr} teamName={teamName} onSelectPlayer={onSelectPlayer} />;
+
+  if (view === "order") {
+    const isSlot = (p) => /^\d+$/.test(String(p.sortLabel || "").trim()) && p.sort >= 1 && p.sort <= 9;
+    const order = batters.filter(isSlot).sort((a, b) => a.sort - b.sort);
+    const bench = batters.filter((p) => !isSlot(p)).sort((a, b) => statusRank(a) - statusRank(b) || lastNameSort(a, b));
+    return (
+      <>
+        <Section title="Batting Order" note={order.length ? "latest posted lineup" : null}>
+          {order.length ? order.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.sort + " " + (p.gamePos || p.pos || "")} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
+            : empty("No lineup posted yet. It fills in on its own once MLB publishes one.")}
+        </Section>
+        {bench.length > 0 && <Section title={"Bench (" + bench.length + ")"}>{bench.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
+      </>
+    );
+  }
+
+  if (view === "pitching") {
+    const slot = (p) => (p.sort != null && /^\d+(\.\d+)?$/.test(String(p.sortLabel ?? p.sort).trim()) ? Number(p.sort) : null);
+    const rotation = pitchers.filter((p) => slot(p) >= 1 && slot(p) <= 5).sort((a, b) => slot(a) - slot(b));
+    const closers = pitchers.filter((p) => slot(p) === 6);
+    const outs = (p) => { const s = line(p); return s && s.pit ? s.pit.outs : -1; };
+    const pen = pitchers.filter((p) => !(slot(p) >= 1 && slot(p) <= 6)).sort((a, b) => outs(b) - outs(a) || lastNameSort(a, b));
+    const startBadge = (p) => { const n = starts[hrbNrm(p.name)]; return n ? <span className={"inline-block rounded px-1.5 py-px text-[9px] font-extrabold uppercase tracking-wide " + (n.today ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300")}>{n.today ? "Starts " : "Next: "}{n.text}</span> : null; };
+    return (
+      <>
+        <Section title="Starting Rotation" note="Sort Priority 1–5">
+          {rotation.length ? rotation.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={"SP" + slot(p)} tiles={pitTiles(p, "sp")} badge={startBadge(p)} onSelect={onSelectPlayer} />)
+            : empty("No rotation set. Give your five starters Sort Priority 1–5 in Airtable.")}
+        </Section>
+        <Section title={"Bullpen (" + (closers.length + pen.length) + ")"} note="closer first · then most innings">
+          {closers.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip="CL" tiles={pitTiles(p, "rp")} onSelect={onSelectPlayer} />)}
+          {pen.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={pitcherHand(p) || "RP"} tiles={pitTiles(p, "rp")} badge={startBadge(p)} onSelect={onSelectPlayer} />)}
+          {closers.length + pen.length === 0 && empty("No relievers on the roster.")}
+        </Section>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Section title={"Batters (" + batters.length + ")"}>{batters.slice().sort(lastNameSort).map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}{batters.length === 0 && empty("No batters linked yet.")}</Section>
+      <Section title={"Pitchers (" + pitchers.length + ")"}>{pitchers.slice().sort(lastNameSort).map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "P"} tiles={pitTiles(p)} onSelect={onSelectPlayer} />)}{pitchers.length === 0 && empty("No pitchers linked yet.")}</Section>
+      {minors.length > 0 && <Section title={"Minor Leagues (" + minors.length + ")"} color="#ea580c">{minors.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={isPitcherP(p) ? pitTiles(p) : batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
+    </>
+  );
+}
+
+// Stats pill body: Hitting · Power · Pitching — three ranked team tiles, then bar-chart leaderboards.
+function TeamStatsPanel({ abbr, view, players, onSelectPlayer }) {
+  const { stats, teams } = useLeagueData();
+  const tc = bannerColor(abbr);
+  if (!stats) return <BallLoader label="Loading team stats" full={false} />;
+  const yr = stats.season;
+  const all = Object.values(stats.players || {}).filter((P) => P.team === abbr);
+  const tg = (stats.leaders && stats.leaders.qualifiers && stats.leaders.qualifiers.teamGames) || 0;
+  const minPa = Math.max(20, Math.round(tg * 1.5)), minOuts = Math.max(30, tg);           // enough of a sample for a rate stat
+  const T = teams && (teams.teams || []).find((t) => t.abbr === abbr);
+  const stx = (T && T.stx) || {};
+  const tie = (k) => stx[k + "Rank"] != null && (teams.teams || []).filter((t) => t.stx && t.stx[k + "Rank"] === stx[k + "Rank"]).length > 1;
+  const tile = (label, k, fmt) => <RankTile key={k} label={label} value={stx[k] != null ? fmt(stx[k]) : "—"} sub={stx[k + "Rank"] != null ? ordinal(stx[k + "Rank"]) + (tie(k) ? " (tie)" : "") : null} subCls={rankCls(stx[k + "Rank"])} />;
+  const mine = {}; for (const p of players || []) (mine[hrbNrm(p.name)] = mine[hrbNrm(p.name)] || []).push(p);
+  const findP = (P) => { const c = mine[hrbNrm(P.name)] || []; return c.find((p) => teamOfPlayer(p) === abbr) || c[0]; };
+
+  // One leaderboard card. rows: [{P, v, text}]; bar = share of the leader (or inverse when lower is better)
+  const board = ({ title, side, keyName, fmt, low = false, min = null, share = false, top = 6, unit = "" }) => {
+    let rows = all.filter((P) => P[side] && P[side][keyName] != null && (min == null || (side === "hit" ? P.hit.pa >= min : P.pit.outs >= min)))
+      .map((P) => ({ P, v: P[side][keyName] })).filter((r) => low || min != null || r.v > 0)
+      .sort((a, b) => (low ? a.v - b.v : b.v - a.v)).slice(0, top);
+    if (!rows.length) return null;
+    const total = share ? all.reduce((n, P) => n + ((P[side] && P[side][keyName]) || 0), 0) : 0;
+    const lead = rows[0].v || 1;
+    return (
+      <div key={side + keyName}>
+        <div className="text-[11px] font-bold tracking-widest uppercase text-slate-400 mt-6 mb-2 px-1">{yr} {title}</div>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 divide-y divide-slate-100 dark:divide-slate-800">
+          {rows.map(({ P, v }) => {
+            const p = findP(P);
+            const w = share && total ? (v / total) * 100 : low ? (lead / (v || lead)) * 100 : (v / lead) * 100;
+            const label = share && total ? Math.round((v / total) * 100) + "% · " + (keyName === "outs" ? P.pit.ip + " IP" : v + unit) : fmt ? fmt(v) + unit : v + unit;
+            return (
+              <button key={P.id} onClick={p ? () => onSelectPlayer(p) : undefined} className="w-full text-left py-2.5 block">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 truncate text-[13px] font-bold text-slate-800 dark:text-slate-100">{P.name} <span className="text-[11px] font-medium text-slate-400">{mlbPosGroup(P)}</span> <InjBadge name={P.name} team={abbr} /></span>
+                  <span className="shrink-0 text-[13px] font-extrabold tabular-nums text-slate-800 dark:text-slate-100">{label}</span>
+                </span>
+                <span className="block mt-1.5 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"><span className="block h-full rounded-full" style={{ width: Math.max(3, Math.min(100, w)) + "%", backgroundColor: tc }} /></span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+  const pct1 = (v) => (v * 100).toFixed(1) + "%";
+  return (
+    <div>
+      <div className="grid grid-cols-3 gap-2 mt-4">
+        {view === "hitting" && [tile("Runs / Game", "rpg", fmt2), tile("Batting Avg", "avg", fmt3), tile("OPS", "ops", fmt3)]}
+        {view === "power" && [tile("Home Runs", "hr", String), tile("Slugging", "slg", fmt3), tile("Strikeouts", "soBat", String)]}
+        {view === "pitching" && [tile("ERA", "era", fmt2), tile("WHIP", "whip", fmt2), tile("HR / 9", "hr9", fmt2)]}
+      </div>
+      {view === "hitting" && [
+        board({ title: "Hits", side: "hit", keyName: "h" }),
+        board({ title: "Runs Batted In", side: "hit", keyName: "rbi" }),
+        board({ title: "Batting Average · min " + minPa + " PA", side: "hit", keyName: "avg", fmt: fmt3, min: minPa }),
+        board({ title: "On-Base + Slugging · min " + minPa + " PA", side: "hit", keyName: "ops", fmt: fmt3, min: minPa }),
+        board({ title: "Stolen Bases", side: "hit", keyName: "sb", top: 5 }),
+      ]}
+      {view === "power" && [
+        board({ title: "Home Runs · Share of Team", side: "hit", keyName: "hr", share: true, unit: " HR", top: 8 }),
+        board({ title: "HR Rate · HR per PA · min " + minPa + " PA", side: "hit", keyName: "hrPa", fmt: pct1, min: minPa }),
+        board({ title: "Isolated Power · min " + minPa + " PA", side: "hit", keyName: "iso", fmt: fmt3, min: minPa }),
+        board({ title: "Total Bases", side: "hit", keyName: "tb" }),
+      ]}
+      {view === "pitching" && [
+        board({ title: "Strikeouts", side: "pit", keyName: "so" }),
+        board({ title: "ERA · lowest first · min " + Math.round(minOuts / 3) + " IP", side: "pit", keyName: "era", fmt: fmt2, low: true, min: minOuts }),
+        board({ title: "Innings · Share of Staff", side: "pit", keyName: "outs", share: true, top: 8 }),
+        board({ title: "Saves", side: "pit", keyName: "sv", top: 4 }),
+        board({ title: "HR / 9 Allowed · most homer-prone first · min " + Math.round(minOuts / 3) + " IP", side: "pit", keyName: "hr9", fmt: fmt2, min: minOuts }),
+      ]}
+      <div className="text-[9px] text-slate-400 mt-3 px-1">
+        {view === "power" ? "HR share = who carries the power. HR per PA is the cleanest single read on a hitter's home-run threat; ISO (slugging minus average) is raw extra-base pop."
+          : view === "pitching" ? "Innings share shows who the staff leans on. HR/9 flags the arms opposing hitters can take deep."
+          : "Rate stats need a real sample, so part-timers don't top the list."} Tile ranks are out of 30 teams.
+      </div>
+    </div>
+  );
+}
+
 function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
   useEffect(() => { window.scrollTo(0, 0); }, []);
   useInjuries();                                   // roster groups re-sort when the live report lands
   const abbr = team.abbr || toAbbr(team.name);
   const [seg, setSeg] = useState("roster");
-  const [roleFilter, setRoleFilter] = useState(null);
+  const [rosterView, setRosterView] = useState(null);      // null = full roster · order · pitching · field
+  const [statView, setStatView] = useState("hitting");     // hitting · power · pitching
   const [chartMode, setChartMode] = useState("form");
   const [capSeason, setCapSeason] = useState(null);
   const roster = players.filter((p) => {
@@ -2087,12 +2365,12 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
         <button onClick={onBack} className="text-sm font-semibold opacity-80 mb-4">‹ Teams</button>
         <div className="flex items-center gap-4">
           {team.logo ? (
-            <img src={team.logo} alt="" className="w-16 h-16 rounded-full object-contain bg-white shrink-0" />
+            <img src={team.logo} alt="" className="w-[72px] h-[72px] rounded-full object-contain bg-white p-1.5 shrink-0 ring-4 ring-black/70 shadow-lg" />
           ) : (
             <span className="text-3xl">⚾</span>
           )}
           <div className="min-w-0">
-            <div className="text-2xl font-extrabold leading-tight truncate">{team.name}</div>
+            <div className="text-2xl font-extrabold leading-tight">{team.name} <span className="text-base font-bold opacity-70 whitespace-nowrap">({(team.wins ?? 0) + "-" + (team.losses ?? 0)})</span></div>
             <div className="text-sm opacity-80 font-medium mt-0.5 truncate">
               {(() => {
                 if (!team.division) return [team.conference].filter(Boolean).join(" · ") || "—";
@@ -2108,45 +2386,42 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
       </div>
 
       <div className="px-4 -mt-3">
-        <div className="grid grid-cols-3 gap-2">
-          <Tile topColor={teamColor(abbr)} value={(team.wins ?? 0) + "-" + (team.losses ?? 0)} label="Record"
-            sub={team.rs != null && team.ra != null ? (
-              <span className={team.rs - team.ra >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}>
-                {(team.rs - team.ra >= 0 ? "+" : "") + (team.rs - team.ra)}
-              </span>
-            ) : null} />
-          <Tile
-            topColor={teamColor(abbr)}
-            value={team.rs != null ? team.rs : "—"}
-            label="Runs Scored"
-            sub={(() => {
-              const r = rankOf(teams, team, "ppg", "desc");
-              return (
-                <span>
-                  {team.ppg != null && <span className="text-slate-500 dark:text-slate-400">{team.ppg.toFixed(1)}</span>}
-                  {r && <span className={"ml-1 " + r.cls}>{r.label}</span>}
-                </span>
-              );
-            })()}
-          />
-          <Tile
-            topColor={teamColor(abbr)}
-            value={team.ra != null ? team.ra : "—"}
-            label="Runs Allowed"
-            sub={(() => {
-              const r = rankOf(teams, team, "oppPpg", "asc");
-              return (
-                <span>
-                  {team.oppPpg != null && <span className="text-slate-500 dark:text-slate-400">{team.oppPpg.toFixed(1)}</span>}
-                  {r && <span className={"ml-1 " + r.cls}>{r.label}</span>}
-                </span>
-              );
-            })()}
-          />
-        </div>
+        {(() => {
+          // Football-style header tiles. Ranks use per-game numbers so teams with games in hand compare fairly.
+          const gp = (t) => (t.wins ?? 0) + (t.losses ?? 0);
+          const val = { rs: (t) => (t.ppg != null ? t.ppg : t.rs != null && gp(t) ? t.rs / gp(t) : null), ra: (t) => (t.oppPpg != null ? t.oppPpg : t.ra != null && gp(t) ? t.ra / gp(t) : null),
+            diff: (t) => (t.rs != null && t.ra != null && gp(t) ? (t.rs - t.ra) / gp(t) : null) };
+          const rk = (k, low) => {
+            const mineV = val[k](team); if (mineV == null) return null;
+            const vs = (teams || []).map(val[k]).filter((v) => v != null); if (vs.length < 2) return null;
+            const r = vs.filter((v) => (low ? v < mineV : v > mineV)).length + 1, tied = vs.filter((v) => v === mineV).length > 1;
+            return { text: ordinal(r) + (tied ? " (tie)" : ""), cls: rankCls(r) };
+          };
+          const diff = team.rs != null && team.ra != null ? team.rs - team.ra : null;
+          const rS = rk("rs"), rA = rk("ra", true), rD = rk("diff");
+          // Pythagorean record: what the run differential says the record "should" be (exponent 1.83)
+          const g = gp(team), pyW = diff != null && g && team.rs + team.ra > 0 ? Math.round(g * Math.pow(team.rs, 1.83) / (Math.pow(team.rs, 1.83) + Math.pow(team.ra, 1.83))) : null;
+          const luck = pyW != null ? (team.wins ?? 0) - pyW : null;
+          const tc = bannerColor(abbr);
+          return (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                <RankTile tc={tc} label="Runs Scored" value={team.rs != null ? team.rs : "—"} sub={rS && rS.text} subCls={rS && rS.cls} />
+                <RankTile tc={tc} label="Runs Allowed" value={team.ra != null ? team.ra : "—"} sub={rA && rA.text} subCls={rA && rA.cls} />
+                <RankTile tc={tc} label="Run Diff" value={diff != null ? (diff > 0 ? "+" : "") + diff : "—"} valueCls={diff == null ? "" : diff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"} sub={rD && rD.text} subCls={rD && rD.cls} />
+              </div>
+              {pyW != null && g >= 10 && (
+                <div className="text-[10px] font-semibold text-slate-400 text-center mt-2">
+                  Run-diff record <span className="font-extrabold text-slate-600 dark:text-slate-300">{pyW}-{g - pyW}</span>
+                  {luck !== 0 && <span className={luck > 0 ? " text-amber-600 dark:text-amber-400" : " text-emerald-600 dark:text-emerald-400"}> · {Math.abs(luck)} win{Math.abs(luck) === 1 ? "" : "s"} {luck > 0 ? "ahead of" : "behind"} it</span>}
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         <div className="flex gap-2 mt-4">
-          {[["roster", "Roster"], ["field", "Field"], ["contracts", "Contracts"]].map(([k, lbl]) => (
+          {[["roster", "Roster"], ["contracts", "Contracts"], ["stats", "Stats"]].map(([k, lbl]) => (
             <button key={k} onClick={() => setSeg(k)}
               className={"flex-1 py-2 rounded-full text-xs font-bold transition-colors " + (seg === k
                 ? "text-white"
@@ -2157,115 +2432,35 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
           ))}
         </div>
 
+        {/* Roster sub-pills work like the football app's Offense / Defense: tap to open, tap again for the full roster */}
         {seg === "roster" && (
-          <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar">
-            {ROLE_ORDER.map((r) => (
-              <button key={r} onClick={() => setRoleFilter(roleFilter === r ? null : r)}
-                className={"px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-colors " + (roleFilter === r
+          <div className="flex gap-2 mt-3">
+            {[["order", "Batting Order"], ["pitching", "Pitching Rotation"], ["field", "Fielding"]].map(([k, lbl]) => (
+              <button key={k} onClick={() => setRosterView(rosterView === k ? null : k)}
+                className={"flex-1 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-colors " + (rosterView === k
                   ? "text-white"
                   : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800")}
-                style={roleFilter === r ? { backgroundColor: teamColor(abbr) } : undefined}>
-                {UNIT_LABELS[r] || r}
+                style={rosterView === k ? { backgroundColor: bannerColor(abbr) } : undefined}>
+                {lbl}
               </button>
             ))}
           </div>
         )}
-        {seg === "roster" && (roleFilter ? orderedRoles.filter((role) => role === roleFilter) : [...CAT_ORDER, ...(roster.some((p) => isMinors(p, abbr)) ? ["__MIN__"] : [])]).map((role) => (
-          <div key={role}>
-            <div className="text-[11px] font-extrabold tracking-widest uppercase mt-6 mb-2 pl-2 border-l-[3px]" style={role === "__MIN__" ? { color: "#ea580c", borderColor: "#ea580c" } : { color: teamColor(abbr), borderColor: teamColor(abbr) }}>
-              {role === "__MIN__" ? "Minor Leagues (" + roster.filter((p) => isMinors(p, abbr)).length + ")" : CAT_LABELS[role] || UNIT_LABELS[role] || role}
-            </div>
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
-              {(role === "__MIN__" ? roster.filter((p) => isMinors(p, abbr)) : CAT_LABELS[role] ? roster.filter((p) => catOf(p) === role && !isMinors(p, abbr)) : groups[role])
-                .sort((a, b) => {
-                  if (CAT_LABELS[role] || role === "__MIN__") {
-                    const last = (n) => String(n).split(" ").slice(-1)[0];
-                    return last(a.name).localeCompare(last(b.name)) || String(a.name).localeCompare(String(b.name));
-                  }
-                  if (role === "Bench") {
-                    const r = statusRank(a) - statusRank(b);
-                    if (r !== 0) return r;
-                  }
-                  if (a.sort != null && b.sort != null) return a.sort - b.sort;
-                  if (a.sort != null) return -1;
-                  if (b.sort != null) return 1;
-                  return currentSalary(b) - currentSalary(a);
-                })
-                .map((p) => (
-                  <button key={p.id} onClick={() => onSelectPlayer(p)} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-slate-50 dark:active:bg-slate-800">
-                    {(() => {
-                      const showNum = roleFilter === "Batting" && role === "Batting";
-                      const num = showNum && /^\d+$/.test(String(p.sortLabel || "").trim()) ? String(p.sortLabel).trim() : null;
-                      const hand = (role === "Pitching" || role === "Bullpen") ? pitcherHand(p) : null;
-                      return (
-                        <span className="shrink-0 flex items-center">
-                          <span className="w-4 text-right text-[11px] font-extrabold tabular-nums text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbr) }}>{num || ""}</span>
-                          <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{hand || (role === "Batting" && p.gamePos) || p.pos || "—"}</span>
-                        </span>
-                      );
-                    })()}
-                    <Avatar p={p} />
-                    <span className="flex-1 min-w-0">
-                      <span className="flex items-center gap-2">
-                        <span className={(role === "Batting" ? "" : "flex-1 ") + "min-w-0 text-sm font-bold text-slate-900 dark:text-slate-100 truncate"}>
-                          {cleanNo(p.no) && (
-                            <span className="text-[11px] font-bold text-slate-400">#{cleanNo(p.no)} </span>
-                          )}
-                          {p.name}
-                        </span>
-                        {role === "Batting" && !hasLineup && <LiveStatus p={p} />}
-                        {role === "Batting" && <span className="flex-1" />}
-                        {p.rating2k != null && <Rating2kBadge r={p.rating2k} />}
-                      </span>
-                      <span className="flex items-center gap-1.5 mt-1">
-                        {role !== "Batting" && <LiveStatus p={p} />}
-                        {role !== "Batting" && role !== "Bench" && <span className="flex-1" />}
-                        {(() => {
-                          const st = latestStats(p);
-                          if (st && (st.avg != null || st.hr != null || st.era != null || st.w != null || st.l != null || st.whip != null || st.sv != null)) {
-                            return (
-                              <span className="flex gap-2 shrink-0">
-                                {((role === "Pitching" || role === "Bullpen" || ["Pitching", "Bullpen"].includes(unitOf(p)) || catOf(p) === "__P__")
-                                  ? [["W", st.w != null ? String(Math.round(st.w)) : null], ["L", st.l != null ? String(Math.round(st.l)) : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["WHIP", st.whip != null ? Number(st.whip).toFixed(2) : null]]
-                                  : [["AVG", st.avg != null ? Number(st.avg).toFixed(3).replace(/^0/, "") : null], ["HR", st.hr != null ? String(Math.round(st.hr)) : null], ["RBI", st.rbi != null ? String(Math.round(st.rbi)) : null], ["OPS", st.ops != null ? Number(st.ops).toFixed(3).replace(/^0/, "") : null]]
-                                ).map(([lbl, v]) => (
-                                  <span key={lbl} className="w-7 text-center">
-                                    <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
-                                    <span className="block text-[11px] font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v ?? "—"}</span>
-                                  </span>
-                                ))}
-                              </span>
-                            );
-                          }
-                          return currentSalary(p) > 0 ? (
-                            <span className="text-xs font-extrabold text-slate-600 dark:text-slate-300 shrink-0">{fmtM(currentSalary(p))}</span>
-                          ) : null;
-                        })()}
-                      </span>
-                      {p.injuryNotes && (
-                        <span className="block text-[11px] font-semibold text-red-600 dark:text-red-500 truncate mt-0.5">{p.injuryNotes}</span>
-                      )}
-                    </span>
-                    {(() => {
-                      if (role !== "Batting" && role !== "Bench") return null;
-                      const throwsLetter = (() => { const t = String(p.bt || "").split("/").pop().trim().toUpperCase(); return ["L", "R", "S"].includes(t) ? t : null; })();
-                      const h = batterHand(p) || throwsLetter;
-                      const stH = latestStats(p);
-                      const streak = stH && stH.streak != null ? Math.round(stH.streak) : 0;
-                      if (!h) return null;
-                      return (
-                        <span className="shrink-0 flex items-center">
-                          <span className="w-10 text-center"><LiveStreak p={p} /></span>
-                          <span className="w-4 text-center text-[11px] font-extrabold uppercase text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbr) }}>{h || ""}</span>
-                        </span>
-                      );
-                    })()}
-                  </button>
-                ))}
-            </div>
+        {seg === "roster" && roster.length > 0 && <TeamRoster roster={roster} abbr={abbr} teamName={team.name} view={rosterView} onSelectPlayer={onSelectPlayer} />}
+        {seg === "stats" && (
+          <div className="flex gap-2 mt-3">
+            {[["hitting", "Hitting"], ["power", "Power"], ["pitching", "Pitching"]].map(([k, lbl]) => (
+              <button key={k} onClick={() => setStatView(k)}
+                className={"flex-1 py-1.5 rounded-full text-[11px] font-bold transition-colors " + (statView === k
+                  ? "text-white"
+                  : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800")}
+                style={statView === k ? { backgroundColor: bannerColor(abbr) } : undefined}>
+                {lbl}
+              </button>
+            ))}
           </div>
-        ))}
-        {seg === "field" && <FieldView roster={roster} abbr={toAbbr(team.name)} teamName={team.name} onSelectPlayer={onSelectPlayer} />}
+        )}
+        {seg === "stats" && <TeamStatsPanel abbr={abbr} view={statView} players={players} onSelectPlayer={onSelectPlayer} />}
         {seg === "contracts" && (
           <>
             <div className="flex items-baseline justify-between mt-6 mb-2 px-1">
@@ -3088,7 +3283,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v110";
+const HRB_VERSION = "v111";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -3771,7 +3966,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                             {sd.pitcher
                               ? <>
                                   <span className="block text-[10px] font-bold text-white/85 truncate leading-tight mt-0.5">{sd.pitcher.name}{sd.pitcher.rec ? " (" + sd.pitcher.rec + ")" : ""}</span>
-                                  <span className="block text-[10px] font-extrabold tabular-nums leading-tight text-white">{era ? era + " ERA" : "— ERA"}{sd.pitcher.hand ? <span className="font-semibold text-white/65"> · {sd.pitcher.hand}HP</span> : null}</span>
+                                  <span className="block text-[10px] font-extrabold tabular-nums leading-tight text-white">{era ? era + " ERA" : "— ERA"}</span>
                                 </>
                               : <span className="block text-[10px] font-semibold text-white/65 leading-tight mt-0.5">Pitcher TBD</span>}
                           </span>
