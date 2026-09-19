@@ -2788,7 +2788,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v107";
+const HRB_VERSION = "v108";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2900,7 +2900,8 @@ async function hrbBullpenHr9(teamIds, season) {
 function HRBoardTab({ players, onSelectPlayer }) {
   const [data, setData] = useState(null);
   const [selGame, setSelGame] = useState(null);
-  const [view, setView] = useState("matchups"); // matchups | targets | history
+  const [view, setView] = useState("matchups"); // matchups | bets | history
+  const [bet, setBet] = useState("top");          // bets: top (ranked HR targets) | games (HR% by game)
   const [history, setHistory] = useState(null);
   const [openPks, setOpenPks] = useState({});   // matchup accordion state
   const [streaks, setStreaks] = useState({});   // hitter id -> current hit streak
@@ -3358,7 +3359,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
     );
   }
   // ── Broadcast game card (one per game) ──
-  const renderGameCard = ({ g, sides, wx }) => {
+  const renderGameCard = ({ g, sides, wx }, mode = "open") => {
             const state = g.status && g.status.abstractGameState;
             const aScore = g.teams.away.score, hScore = g.teams.home.score;
             const scoreStr = aScore != null && hScore != null ? aScore + "-" + hScore : "";
@@ -3369,7 +3370,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
               : state === "Live" ? "LIVE " + scoreStr + (inn ? " · " + inn : "")
               : new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
             const rank = g.venue && g.venue.name ? parkRankFor(g.venue.name) : null;
-            const isOpen = !!openPks[g.gamePk];
+            const isOpen = mode === "bets" && !!openPks[g.gamePk];
             const streakBadge = (s) => {
               const m = /^([WL])(\d+)$/.exec(s.streak || "");
               if (!m || Number(m[2]) < 5) return null;
@@ -3381,6 +3382,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
               <div key={g.gamePk}
                 className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                 <button onClick={() => {
+                    if (mode === "open") { setSelGame(g); window.scrollTo(0, 0); return; }
                     const opening = !openPks[g.gamePk];
                     setOpenPks((o) => ({ ...o, [g.gamePk]: !o[g.gamePk] }));
                     if (opening) {
@@ -3466,9 +3468,9 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         );
                       })}
                     </span>
-                    <span className="flex justify-center">
+                    {mode === "bets" && <span className="flex justify-center">
                       <span className={"text-slate-300 dark:text-slate-600 text-[9px] transition-transform inline-block " + (isOpen ? "rotate-90" : "")}>▶</span>
-                    </span>
+                    </span>}
                   </span>
                 </button>
                 {isOpen && <div>
@@ -3589,17 +3591,46 @@ function HRBoardTab({ players, onSelectPlayer }) {
             );
   };
 
+  // Live → Upcoming → Final, same grouping on Matchups and on Bets › By game.
+  const renderGameList = (mode) => {
+            // Broadcast grouping: live games first under a pulsing LIVE
+            // header, then upcoming, then finals - same shape as the
+            // football app's day groups.
+            const pri = (g) => { const st = g.status && g.status.abstractGameState; return st === "Live" ? 0 : st === "Final" ? 2 : 1; };
+            const sorted = [...data].sort((a, b) => pri(a.g) - pri(b.g) || new Date(a.g.gameDate) - new Date(b.g.gameDate));
+            let lastBucket = null;
+            return sorted.map((row) => {
+              const bucket = pri(row.g);
+              const showHead = bucket !== lastBucket;
+              lastBucket = bucket;
+              return (
+                <React.Fragment key={"grp" + row.g.gamePk}>
+                  {showHead && (
+                    <div className={"flex items-center gap-1.5 text-[10px] font-extrabold tracking-widest uppercase px-1 " + (bucket === 0 ? "text-rose-500" : "text-slate-400") + (lastBucket != null ? " pt-1" : "")}>
+                      {bucket === 0 && <span className="relative flex w-2 h-2">
+                        <span className="absolute inline-flex w-full h-full rounded-full bg-rose-500 opacity-75 animate-ping" />
+                        <span className="relative inline-flex w-2 h-2 rounded-full bg-rose-500" />
+                      </span>}
+                      {bucket === 0 ? "Live" : bucket === 1 ? "Upcoming" : "Final"}
+                    </div>
+                  )}
+                  {renderGameCard(row, mode)}
+                </React.Fragment>
+              );
+            });
+  };
+
   return (
     <div>
       <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
-        <div className="text-2xl font-extrabold tracking-tight">Matchups ({todayLabel}) <span role="button" onClick={() => window.__hrbRefetch && window.__hrbRefetch()}
+        <div className="text-2xl font-extrabold tracking-tight">{view === "bets" ? "Bets" : view === "history" ? "History" : "Matchups"} ({todayLabel}) <span role="button" onClick={() => window.__hrbRefetch && window.__hrbRefetch()}
               className="text-[10px] font-bold text-white/50 align-middle">
               {HRB_VERSION}{typeof window !== "undefined" && window.__hrbApiVer ? " · api " + window.__hrbApiVer : ""}{typeof window !== "undefined" && window.__hrbDataAt ? " · data " + window.__hrbDataAt + " ↻" : ""}
             </span></div>
       </div>
       <div className="px-4 pb-28">
         <div className="flex gap-2 mt-3">
-          {[["matchups", "Matchups"], ["targets", "HR Targets"], ["history", "History"]].map(([id, label]) => (
+          {[["matchups", "Matchups"], ["bets", "Bets"], ["history", "History"]].map(([id, label]) => (
             <button key={id} onClick={() => setView(id)}
               className={"flex-1 py-2 rounded-full text-[11px] font-extrabold " + (view === id
                 ? "bg-blue-600 text-white"
@@ -3608,7 +3639,26 @@ function HRBoardTab({ players, onSelectPlayer }) {
             </button>
           ))}
         </div>
-        {view === "targets" && top.length > 0 && (
+        {view === "bets" && (
+          <div className="flex gap-2 mt-3">
+            {[["top", "HR Targets"], ["games", "HR% by Game"]].map(([k, lbl]) => (
+              <button key={k} onClick={() => setBet(k)}
+                className={"flex-1 py-1.5 rounded-full text-[11px] font-extrabold " + (bet === k ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800")}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        )}
+        {view === "bets" && data == null && <BallLoader label="Loading today's board" full={false} />}
+        {view === "bets" && data && data.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
+        {view === "bets" && bet === "top" && data && data.length > 0 && top.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No HR targets yet — lineups and probables aren't posted.</div>}
+        {view === "bets" && bet === "games" && data && data.length > 0 && (
+          <>
+            <div className="text-[10px] text-slate-400 mt-3 mb-2 px-1">Tap a game for each side's HR% list.</div>
+            <div className="space-y-3">{renderGameList("bets")}</div>
+          </>
+        )}
+        {view === "bets" && bet === "top" && top.length > 0 && (
           <>
             <div className="text-[11px] font-bold tracking-widest uppercase mt-4 mb-2 px-1 text-slate-500 dark:text-slate-400">🎯 HR Targets</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
@@ -3691,33 +3741,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
         <div className="space-y-3">
           {data == null && <BallLoader label="Loading today's games" full={false} />}
           {data && data.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
-          {data && (() => {
-            // Broadcast grouping: live games first under a pulsing LIVE
-            // header, then upcoming, then finals - same shape as the
-            // football app's day groups.
-            const pri = (g) => { const st = g.status && g.status.abstractGameState; return st === "Live" ? 0 : st === "Final" ? 2 : 1; };
-            const sorted = [...data].sort((a, b) => pri(a.g) - pri(b.g) || new Date(a.g.gameDate) - new Date(b.g.gameDate));
-            let lastBucket = null;
-            return sorted.map((row) => {
-              const bucket = pri(row.g);
-              const showHead = bucket !== lastBucket;
-              lastBucket = bucket;
-              return (
-                <React.Fragment key={"grp" + row.g.gamePk}>
-                  {showHead && (
-                    <div className={"flex items-center gap-1.5 text-[10px] font-extrabold tracking-widest uppercase px-1 " + (bucket === 0 ? "text-rose-500" : "text-slate-400") + (lastBucket != null ? " pt-1" : "")}>
-                      {bucket === 0 && <span className="relative flex w-2 h-2">
-                        <span className="absolute inline-flex w-full h-full rounded-full bg-rose-500 opacity-75 animate-ping" />
-                        <span className="relative inline-flex w-2 h-2 rounded-full bg-rose-500" />
-                      </span>}
-                      {bucket === 0 ? "Live" : bucket === 1 ? "Upcoming" : "Final"}
-                    </div>
-                  )}
-                  {renderGameCard(row)}
-                </React.Fragment>
-              );
-            });
-          })()}
+          {data && renderGameList("open")}
         </div>
         </>)}
         {view === "history" && (
