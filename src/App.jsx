@@ -71,6 +71,12 @@ function toAbbr(team) {
   return NAME_TO_ABBR[t.toLowerCase()] || "";
 }
 const teamColor = (abbr) => TEAM_COLORS[String(abbr).toUpperCase()] || "#334155";
+const hexRgb = (hex) => { const h = String(hex || "#334155").replace("#", ""); const f = h.length === 3 ? h.split("").map((c) => c + c).join("") : h; return [0, 2, 4].map((i) => parseInt(f.slice(i, i + 2), 16) || 0); };
+const lumOf = (hex) => { const [r, g, b] = hexRgb(hex); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; };
+// shade(c, -12) = 12% darker, shade(c, 12) = 12% lighter
+const shade = (hex, pct) => { const t = pct < 0 ? 0 : 255, k = Math.abs(pct) / 100; return "#" + hexRgb(hex).map((v) => Math.round(v + (t - v) * k).toString(16).padStart(2, "0")).join(""); };
+// Matchup banner colour: a pale cap (Pirates gold, Marlins blue) is deepened so the white score holds up
+const bannerColor = (abbr) => { const c = teamColor(abbr), l = lumOf(c); return l > 0.55 ? shade(c, -(l * 100 - 42)) : c; };
 // Current-team color first; falls back to the contract team if no current team.
 function playerHeaderColor(p) {
   if (HEADER_COLOR !== "team") return HEADER_COLOR;
@@ -427,11 +433,9 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
               <span className="text-sm opacity-80 font-medium truncate">
                 {[cleanNo(p.no) ? "#" + cleanNo(p.no) : "", p.pos].filter(Boolean).join(" · ")}
               </span>
-              <StatusBadge status={p.status} />
+              <LiveStatus p={p} lg />
             </div>
-            {p.injuryNotes && (
-              <div className="text-xs font-bold mt-1 truncate" style={{ color: "#f87171" }}>{p.injuryNotes}</div>
-            )}
+            <InjuryLine p={p} />
           </div>
         </div>
       </div>
@@ -643,7 +647,7 @@ function PlayersTab({ players, onSelect }) {
               <span className="w-7 text-center text-[11px] font-extrabold uppercase shrink-0" style={{ color: teamColor(teamOfPlayer(p)) }}>{p.pos || "—"}</span>
               <Avatar p={p} />
               <span className="flex-1 min-w-0">
-                <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{p.name}</span>
+                <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{p.name} <InjBadge name={p.name} team={teamOfPlayer(p)} /></span>
                 <span className="block text-[11px] text-slate-400 font-medium truncate">
                   {[p.height, p.weight, p.age ? p.age + " yrs" : ""]
                     .filter(Boolean)
@@ -1392,7 +1396,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
                 <span className="flex-1 min-w-0">
                   <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
                     {pd.jerseyNumber && <span className="text-[11px] font-bold text-slate-400">#{pd.jerseyNumber} </span>}
-                    {nm}
+                    {nm} <InjBadge name={nm} team={abbrOf(side)} />
                   </span>
                   <span className="flex gap-2 mt-1">
                     {[["AVG", bat.avg ? String(bat.avg).replace(/^0/, "") : "—"], ["HR", bat.hr != null ? bat.hr : "—"], ["RBI", bat.rbi != null ? bat.rbi : "—"], ["OPS", bat.ops ? String(bat.ops).replace(/^0/, "") : "—"], ["BRL%", mine && mine.barrel != null ? Number(mine.barrel).toFixed(1) + "%" : "—"]].map(([lbl, v]) => (
@@ -1546,6 +1550,86 @@ function StatusBadge({ status }) {
   );
 }
 
+
+// ═══════════════ LIVE INJURIES ═══════════════════════════════════
+// /api/injuries (ESPN's MLB injury report) loaded once at app start and
+// refreshed every 10 minutes. Kept in one shared store so any row anywhere
+// can show a tag with <InjBadge name team /> — no prop plumbing.
+// The live report WINS over the Status typed into Airtable: if Airtable still
+// says IL-10 but the player is off the report, he shows as healthy.
+const INJ = { map: null, subs: new Set() };
+const injNrm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[\u0131\u0130]/g, "i").replace(/\u00f8/g, "o").replace(/\u0142/g, "l")
+  .replace(/\./g, "").replace(/\s+(jr|sr|ii|iii|iv)$/i, "").replace(/\s+/g, " ").trim().toLowerCase();
+function loadInjuries() {
+  fetch("/api/injuries").then((r) => (r.ok ? r.json() : null)).then((d) => {
+    if (d && d.injuries && Object.keys(d.injuries).length) { INJ.map = d.injuries; INJ.subs.forEach((f) => f()); }
+  }).catch(() => {});
+}
+function useInjuries() {
+  const [, tick] = useState(0);
+  useEffect(() => { const f = () => tick((n) => n + 1); INJ.subs.add(f); return () => { INJ.subs.delete(f); }; }, []);
+  return INJ.map;
+}
+// name + team is exact. Name alone is only trusted when we don't know the team
+// or the teams agree — never tag the OTHER Max Muncy.
+function injFor(name, team) {
+  if (!INJ.map || !name) return null;
+  const k = injNrm(name), t = String(team || "").toUpperCase();
+  if (t && INJ.map[k + "|" + t]) return INJ.map[k + "|" + t];
+  const r = INJ.map[k];
+  return r && (!t || !r.team || r.team === t) ? r : null;
+}
+const INJ_STYLE = {
+  il: "bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300",
+  dtd: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+  off: "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
+};
+const injLabel = (r) => {
+  const c = String(r.code || "");
+  const il = /^IL(\d+)$/.exec(c);
+  if (il) return ["IL-" + il[1], INJ_STYLE.il];
+  if (c === "DTD") return ["DTD", INJ_STYLE.dtd];
+  if (c === "OUT") return ["OUT", INJ_STYLE.il];
+  if (c === "SUSP") return ["SUSP", INJ_STYLE.off];
+  if (c === "BRV") return ["BEREAVEMENT", INJ_STYLE.off];
+  if (c === "PAT") return ["PATERNITY", INJ_STYLE.off];
+  if (c === "RES") return ["RESTRICTED", INJ_STYLE.off];
+  return c ? ["INJ", INJ_STYLE.dtd] : null;
+};
+// "Left hamstring strain · Est. return Oct 1"
+const injText = (r) => {
+  const ok = (v) => (v && !/not specified|^n\/?a$/i.test(v) ? v : "");
+  const what = [ok(r.side), ok(r.type) || ok(r.location), ok(r.detail)].filter(Boolean).join(" ").trim();
+  let ret = "";
+  if (r.returnDate) { const d = new Date(r.returnDate); if (!isNaN(d)) ret = "Est. return " + new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(d); }
+  return [what ? what.charAt(0).toUpperCase() + what.slice(1).toLowerCase() : "", ret].filter(Boolean).join(" · ");
+};
+function InjBadge({ name, team, lg = false }) {
+  useInjuries();
+  const r = injFor(name, team);
+  const l = r && injLabel(r);
+  if (!l) return null;
+  return <span className={"inline-block align-middle font-extrabold rounded shrink-0 " + (lg ? "text-[11px] px-2 py-0.5 " : "text-[9px] px-1.5 py-px ") + l[1]}>{l[0]}</span>;
+}
+// Status shown for an Airtable player: live report first; otherwise his Airtable
+// status — except a stale injury status the live report no longer backs up.
+function LiveStatus({ p, lg = false }) {
+  const map = useInjuries();
+  const team = teamOfPlayer(p);
+  if (injFor(p.name, team)) return <InjBadge name={p.name} team={team} lg={lg} />;
+  if (map && /(^|[^a-z])(il|ir)([^a-z]|$)|injur|\d\s*-?\s*day|^out$|question|doubt|day.to.day|dtd/i.test(String(p.status || ""))) return null;
+  return <StatusBadge status={p.status} />;
+}
+// Player-page line under the name: what the injury is and when he's due back.
+function InjuryLine({ p }) {
+  useInjuries();
+  const r = injFor(p.name, teamOfPlayer(p));
+  const text = r ? injText(r) : "";
+  if (text) return <div className="inline-block mt-1.5 text-[11px] font-bold text-white bg-rose-600 rounded-full px-2.5 py-0.5 max-w-full truncate">{text}</div>;
+  if (!r && !INJ.map && p.injuryNotes) return <div className="text-xs font-bold mt-1 truncate" style={{ color: "#f87171" }}>{p.injuryNotes}</div>;
+  return null;
+}
 
 // Committed salary for a player in a given season (active deals only)
 function salaryInSeason(p, season) {
@@ -2043,12 +2127,12 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                           )}
                           {p.name}
                         </span>
-                        {role === "Batting" && !hasLineup && <StatusBadge status={p.status} />}
+                        {role === "Batting" && !hasLineup && <LiveStatus p={p} />}
                         {role === "Batting" && <span className="flex-1" />}
                         {p.rating2k != null && <Rating2kBadge r={p.rating2k} />}
                       </span>
                       <span className="flex items-center gap-1.5 mt-1">
-                        {role !== "Batting" && <StatusBadge status={p.status} />}
+                        {role !== "Batting" && <LiveStatus p={p} />}
                         {role !== "Batting" && role !== "Bench" && <span className="flex-1" />}
                         {(() => {
                           const st = latestStats(p);
@@ -2350,78 +2434,206 @@ function fmtCat(cat, v) {
   return String(Math.round(v * 10) / 10);
 }
 
+// ═══════════════ LEADERS (Stats tab) ═════════════════════════════
+// Same page as the football app's Leaders: category pills → stat pills →
+// (position pills) → ranked rows with team-colour edge, shared-rank ties,
+// headshot, team chip, big number and a small context line.
+// Data: /api/season-stats (every player's season line) + /api/standings
+// (team stats). Rate stats (AVG, OPS, ERA…) list QUALIFIED players only:
+// 3.1 PA per team game for hitters, 1 IP per team game for pitchers.
+const MLB_LEADER_CATS = [
+  { id: "hitting", label: "Hitting", side: "hit", positions: ["C", "1B", "2B", "3B", "SS", "OF", "DH"],
+    stats: [["hr", "HR"], ["rbi", "RBI"], ["avg", "AVG"], ["ops", "OPS"], ["h", "Hits"], ["r", "Runs"], ["sb", "SB"]] },
+  { id: "power", label: "Power", side: "hit", positions: ["C", "1B", "2B", "3B", "SS", "OF", "DH"],
+    stats: [["hrPa", "HR/PA"], ["iso", "ISO"], ["slg", "SLG"], ["tb", "Total Bases"], ["d", "2B"]] },
+  { id: "pitching", label: "Pitching", side: "pit", positions: ["SP", "RP"],
+    stats: [["era", "ERA"], ["whip", "WHIP"], ["so", "K"], ["w", "Wins"], ["sv", "Saves"], ["k9", "K/9"], ["outs", "IP"]] },
+  { id: "hrallowed", label: "HR Allowed", side: "pit", positions: ["SP", "RP"],
+    stats: [["hr9", "HR/9"], ["hr", "HR"]] },
+  { id: "teams", label: "Teams",
+    stats: [["hr", "HR"], ["rpg", "Runs/G"], ["ops", "OPS"], ["avg", "AVG"], ["sb", "SB"], ["era", "ERA"], ["whip", "WHIP"], ["hr9", "HR/9 Allowed"]] },
+];
+const MLB_RATE = new Set(["avg", "obp", "slg", "ops", "iso", "hrPa", "era", "whip", "k9", "hr9"]);   // need a qualified sample
+const MLB_LOW_FIRST = { pitching: new Set(["era", "whip"]), teams: new Set(["era", "whip", "hr9"]) }; // lower is better
+const mlbFmtStat = (key, v) => {
+  if (v == null) return "—";
+  if (["avg", "obp", "slg", "ops", "iso"].includes(key)) return Number(v).toFixed(3).replace(/^0/, "");
+  if (key === "hrPa") return (Number(v) * 100).toFixed(1) + "%";
+  if (["era", "whip", "k9", "hr9", "rpg"].includes(key)) return Number(v).toFixed(2);
+  if (key === "outs") return Math.floor(v / 3) + "." + (v % 3);
+  return String(v);
+};
+const mlbPosGroup = (P) => {
+  const pos = String(P.pos || "").toUpperCase();
+  if (["LF", "CF", "RF", "OF"].includes(pos)) return "OF";
+  if (P.pit && (pos === "P" || pos === "SP" || pos === "RP" || pos === "TWP")) return P.pit.gs * 2 >= P.pit.g ? "SP" : "RP";
+  return pos;
+};
+const MLB_HEAD = (id) => "https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + id + "/headshot/silo/current";
+const LEADERS_CACHE = { stats: null, teams: null, at: 0 };   // survives tab switches — the page opens instantly the second time
+
 function StatsTab({ players, onSelect }) {
-  const seasons = Array.from(
-    new Set(players.flatMap((p) => (p.stats || []).map((s) => s.season)).filter(Boolean))
-  ).sort((a, b) => String(b).localeCompare(String(a)));
-  const [selSeason, setSelSeason] = useState(null);
-  const season = selSeason && seasons.includes(selSeason) ? selSeason : (seasons.includes(CURRENT_SEASON) ? CURRENT_SEASON : seasons[0]);
-  const [cat, setCat] = useState("pts");
+  const [catId, setCatId] = useState("hitting");
+  const [statKey, setStatKey] = useState(null);
+  const [posPick, setPosPick] = useState("ALL");
+  const [seasonStats, setSeasonStats] = useState(LEADERS_CACHE.stats);
+  const [teamStats, setTeamStats] = useState(LEADERS_CACHE.teams);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    if (LEADERS_CACHE.stats && Date.now() - LEADERS_CACHE.at < 15 * 60000) return;
+    const get = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    Promise.all([get("/api/season-stats"), get("/api/standings")]).then(([s, t]) => {
+      if (!alive) return;
+      if (s && s.players) { LEADERS_CACHE.stats = s; LEADERS_CACHE.at = Date.now(); setSeasonStats(s); } else setFailed(true);
+      if (t && t.teams) { LEADERS_CACHE.teams = t; setTeamStats(t); }
+    });
+    return () => { alive = false; };
+  }, []);
 
-  const rows = players
-    .map((p) => {
-      const st = (p.stats || []).find((s) => s.season === season);
-      return st && st[cat] != null ? { p, st } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => (ASC_CATS.includes(cat) ? a.st[cat] - b.st[cat] : b.st[cat] - a.st[cat]));
+  const cat = MLB_LEADER_CATS.find((c) => c.id === catId);
+  const key = statKey && cat.stats.some(([k]) => k === statKey) ? statKey : cat.stats[0][0];
+  const lowFirst = !!(MLB_LOW_FIRST[cat.id] && MLB_LOW_FIRST[cat.id].has(key));
+  const isRate = MLB_RATE.has(key);
+  const q = (seasonStats && seasonStats.leaders && seasonStats.leaders.qualifiers) || { pa: 0, ip: 0, teamGames: 0 };
 
-  const catLabel = STAT_CATS.find((c) => c.key === cat)?.label || "";
+  const rows = useMemo(() => {
+    if (!seasonStats || cat.id === "teams") return [];
+    const side = cat.side;
+    const sorted = Object.values(seasonStats.players || {})
+      .filter((P) => P[side] && P[side][key] != null)
+      .filter((P) => !isRate || (side === "hit" ? P.hit.pa >= q.pa : P.pit.outs >= q.ip * 3))
+      .filter((P) => lowFirst || isRate || P[side][key] > 0)
+      .filter((P) => posPick === "ALL" || mlbPosGroup(P) === posPick)
+      .map((P) => ({ P, v: P[side][key] }))
+      .sort((a, b) => (lowFirst ? a.v - b.v : b.v - a.v));
+    // ranks are shared: same value, same number, flagged as a tie
+    let lastV = null, lastR = 0;
+    const counts = {};
+    sorted.forEach((row, i) => { if (row.v !== lastV) { lastR = i + 1; lastV = row.v; } row.rank = lastR; counts[row.v] = (counts[row.v] || 0) + 1; });
+    for (const row of sorted) row.tie = counts[row.v] > 1;
+    return sorted.slice(0, 50);
+  }, [seasonStats, catId, key, posPick]);
+
+  const teamRows = useMemo(() => {
+    if (cat.id !== "teams" || !teamStats) return [];
+    return (teamStats.teams || []).filter((t) => t.stx && t.stx[key] != null)
+      .map((t) => ({ abbr: t.abbr, name: t.name, v: t.stx[key], gp: t.games }))
+      .sort((a, b) => (lowFirst ? a.v - b.v : b.v - a.v));
+  }, [teamStats, catId, key]);
+
+  // Airtable record for a leaderboard row (so a tap opens his player page); team breaks a shared name
+  const mine = useMemo(() => { const m = {}; for (const p of players || []) (m[hrbNrm(p.name)] = m[hrbNrm(p.name)] || []).push(p); return m; }, [players]);
+  const findP = (P) => { const c = mine[hrbNrm(P.name)] || []; return c.length > 1 ? c.find((p) => teamOfPlayer(p) === P.team) || c[0] : c[0]; };
+
+  const yr = seasonStats ? seasonStats.season : "";
+  const thru = seasonStats && seasonStats.updatedAt ? new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" }).format(new Date(seasonStats.updatedAt)) : "";
+  const statLabel = (cat.stats.find(([k]) => k === key) || [key, key])[1];
+  const perGame = cat.id !== "teams" && !isRate && key !== "outs";
+  const subLine = (P, v) => {
+    const s = P[cat.side];
+    if (perGame) { const pg = s.g ? v / s.g : null; return pg == null ? null : (pg >= 10 ? pg.toFixed(1) : pg.toFixed(2)) + "/g"; }
+    return cat.side === "hit" ? s.pa + " PA" : s.ip + " IP";
+  };
+  const headRight = statLabel + (cat.id === "teams" ? (lowFirst ? " · lowest first" : "") : perGame ? " · per game" : lowFirst ? " · lowest first" : cat.id === "hrallowed" ? " · most first" : " · qualified");
 
   return (
     <div>
-      <div className="bg-blue-600 pb-4 px-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)" }}>
-        <h1 className="text-3xl font-extrabold text-white mb-3">Stats</h1>
-        {seasons.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
-            {seasons.map((s) => (
-              <button key={s} onClick={() => setSelSeason(s)}
-                className={"shrink-0 px-3 py-1 rounded-full text-xs font-bold " + (s === season ? "bg-white text-blue-700" : "bg-blue-500/60 text-blue-100 active:bg-blue-500")}>
-                {s}
-              </button>
+      <div className="bg-blue-600 pb-3 px-4 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)" }}>
+        <div className="flex items-baseline gap-2"><h1 className="text-xl font-extrabold">Leaders</h1><span className="text-[11px] font-semibold text-blue-200">{yr}{thru ? ` · thru ${thru}` : ""}{seasonStats && seasonStats.isCurrent === false ? " · last season" : ""}</span></div>
+        <div className="flex gap-1.5 mt-3">
+          {MLB_LEADER_CATS.map((c) => (
+            <button key={c.id} onClick={() => { setCatId(c.id); setStatKey(null); setPosPick("ALL"); window.scrollTo(0, 0); }}
+              className={"flex-1 py-1.5 rounded-full text-[10px] font-extrabold whitespace-nowrap " + (catId === c.id ? "bg-white text-blue-700" : "bg-blue-500/60 text-blue-100")}>{c.label}</button>
+          ))}
+        </div>
+        <div className="flex gap-1.5 mt-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          {cat.stats.map(([k, lbl]) => (
+            <button key={k} onClick={() => { setStatKey(k); window.scrollTo(0, 0); }}
+              className={"shrink-0 px-3 py-1 rounded-full text-[10px] font-bold " + (key === k ? "bg-white/90 text-blue-700" : "bg-blue-700/50 text-blue-100")}>{lbl}</button>
+          ))}
+        </div>
+        {cat.positions && (
+          <div className="flex gap-1.5 mt-1.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+            {["ALL", ...cat.positions].map((k) => (
+              <button key={k} onClick={() => { setPosPick(k); window.scrollTo(0, 0); }}
+                className={"shrink-0 px-3 py-1 rounded-full text-[10px] font-bold " + (posPick === k ? "bg-white/90 text-blue-700" : "bg-blue-700/50 text-blue-100")}>{k === "ALL" ? "All" : k}</button>
             ))}
           </div>
         )}
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
-          {STAT_CATS.map((c) => (
-            <button key={c.key} onClick={() => setCat(c.key)}
-              className={"shrink-0 px-4 py-1.5 rounded-full text-sm font-bold " + (c.key === cat ? "bg-white text-blue-700" : "bg-blue-500/60 text-blue-100 active:bg-blue-500")}>
-              {c.label}
-            </button>
-          ))}
-        </div>
       </div>
-      <div className="px-4 pb-28 mt-4">
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
-          {rows.map(({ p, st }, i) => (
-            <button key={p.id} onClick={() => onSelect(p)} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-slate-50 dark:active:bg-slate-800">
-              <span className="w-6 text-center text-sm font-extrabold shrink-0 text-slate-400">{i + 1}</span>
-              <Avatar p={p} />
-              <span className="flex-1 min-w-0">
-                <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{p.name}</span>
-                <span className="block text-[11px] text-slate-400 font-medium truncate">
-                  {[teamOfPlayer(p), p.pos].filter(Boolean).join(" · ") || "—"}
-                </span>
-              </span>
-              <span className="text-right shrink-0 w-8">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase">G</span>
-                <span className="block text-sm font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
-                  {st.gp != null ? Math.round(st.gp) : "—"}
-                </span>
-              </span>
-              <span className="text-right shrink-0">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase">{catLabel}</span>
-                <span className="block text-sm font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
-                  {fmtCat(cat, st[cat])}
-                </span>
-              </span>
-            </button>
-          ))}
-          {rows.length === 0 && (
-            <div className="text-center text-sm text-slate-400 py-12 px-6">
-              No {catLabel} entries for {season || "any season"} yet. Fill the Stats table in Airtable and they appear here.
+      <div className="px-4 pt-3 pb-28">
+        {!seasonStats && !failed && <BallLoader label="Loading leaders" full={false} />}
+        {!seasonStats && failed && <div className="text-center text-xs text-slate-400 py-10">Couldn't load season stats. Tap Stats again to retry.</div>}
+        {seasonStats && catId === "teams" && (
+          teamRows.length === 0 ? <div className="text-center text-xs text-slate-400 py-10">No {yr} team stats yet.</div> : (
+            <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60">
+                <span className="text-[9px] font-semibold tracking-widest uppercase text-slate-400">Team</span>
+                <span className="text-[9px] font-semibold tracking-widest uppercase text-slate-400">{headRight}</span>
+              </div>
+              {teamRows.map((r, i) => {
+                const best = teamRows[0].v || 1;
+                const w = lowFirst ? (best / (r.v || 1)) * 100 : (r.v / best) * 100;
+                return (
+                  <div key={r.abbr} className="px-3 py-2 flex items-center gap-2.5">
+                    <div className={"w-6 text-center text-[13px] font-black tabular-nums " + (i < 3 ? "text-blue-600" : "text-slate-400")}>{i + 1}</div>
+                    {TEAM_LOGOS[r.abbr] && <img src={TEAM_LOGOS[r.abbr]} alt="" className="w-8 h-8 rounded-full object-contain p-0.5 bg-white shrink-0" />}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] font-extrabold text-slate-900 dark:text-white truncate">{r.name || r.abbr}</div>
+                      <div className="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: Math.max(3, Math.min(100, w)) + "%", backgroundColor: teamColor(r.abbr) }} />
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-lg font-black tabular-nums text-slate-900 dark:text-white leading-none">{mlbFmtStat(key, r.v)}</div>
+                      <div className="text-[9px] font-semibold tabular-nums text-slate-400 mt-0.5">{r.gp} GP</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          )}
+          )
+        )}
+        {seasonStats && catId !== "teams" && rows.length === 0 && <div className="text-center text-xs text-slate-400 py-10">No {yr} stats yet for this filter.</div>}
+        {rows.length > 0 && (
+          <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60">
+              <span className="text-[9px] font-semibold tracking-widest uppercase text-slate-400">Player</span>
+              <span className="text-[9px] font-semibold tracking-widest uppercase text-slate-400">{headRight}</span>
+            </div>
+            {rows.map(({ P, v, rank, tie }) => {
+              const p = findP(P);
+              const sub = subLine(P, v);
+              return (
+                <button key={P.id} onClick={p ? () => onSelect(p) : undefined}
+                  className="w-full text-left pr-3 py-2 flex items-center gap-2.5 active:bg-slate-50 dark:active:bg-slate-800/60">
+                  <div className="self-stretch w-1 rounded-r" style={{ backgroundColor: teamColor(P.team) }} />
+                  <div className={"w-8 text-center shrink-0 " + (rank <= 3 ? "text-blue-600" : "text-slate-400")}>
+                    <div className="text-[13px] font-black tabular-nums leading-none">{rank}</div>
+                    {tie && <div className="text-[7px] font-bold lowercase tracking-wide opacity-70">tie</div>}
+                  </div>
+                  <img src={MLB_HEAD(P.id)} alt="" loading="lazy" className="w-10 h-10 rounded-full object-cover object-top bg-white shrink-0 ring-2 ring-white dark:ring-slate-800 shadow" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-extrabold text-slate-900 dark:text-white truncate">{P.name} <InjBadge name={P.name} team={P.team} /></div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {TEAM_LOGOS[P.team] && <img src={TEAM_LOGOS[P.team]} alt="" className="w-3.5 h-3.5 rounded-full object-contain bg-white" />}
+                      <span className="text-[10px] font-semibold text-slate-400">{[P.team, mlbPosGroup(P)].filter(Boolean).join(" · ")}</span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-xl font-black tabular-nums text-slate-900 dark:text-white leading-none">{mlbFmtStat(key, v)}</div>
+                    {sub && <div className="text-[9px] font-semibold tabular-nums text-slate-400 mt-0.5">{sub}</div>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="text-[9px] text-slate-400 mt-2 px-1">
+          {catId === "teams" ? "Team totals from MLB. HR/9 Allowed = how homer-prone a staff is — the higher it ranks here, the friendlier the matchup for hitters."
+            : isRate ? `Qualified only: ${cat.side === "hit" ? q.pa + " PA (3.1 per team game)" : q.ip + " IP (1 per team game)"}.` + (cat.id === "hrallowed" ? " Most homer-prone arms first — the pitchers your HR targets want to face." : "")
+            : "Season totals · top 50."}
         </div>
       </div>
     </div>
@@ -2751,10 +2963,12 @@ function BallLoader({ label = "Loading", full = true }) {
       <span className="mt-5 text-[11px] font-extrabold tracking-[0.2em] uppercase text-slate-400">{label}</span>
     </div>
   );
-  // full = true centers it in the viewport (cold start); false = inline block.
+  // The ball ALWAYS sits dead-centre of the screen so it never jumps between
+  // loads. full = cold start (covers the page); otherwise it floats over the
+  // page, see-through and untouchable, so the header and tab bar stay usable.
   return full
     ? <div className="fixed inset-0 z-10 flex items-center justify-center bg-slate-50 dark:bg-slate-950">{ball}</div>
-    : <div className="flex justify-center py-16">{ball}</div>;
+    : <div className="fixed inset-0 z-[5] flex items-center justify-center pointer-events-none">{ball}</div>;
 }
 
 // ═══ Skeleton loading cards (football-app polish) ═══
@@ -2788,7 +3002,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v108";
+const HRB_VERSION = "v109";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -2897,11 +3111,13 @@ async function hrbBullpenHr9(teamIds, season) {
   return out;
 }
 
-function HRBoardTab({ players, onSelectPlayer }) {
+function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
   const [data, setData] = useState(null);
   const [selGame, setSelGame] = useState(null);
   const [view, setView] = useState("matchups"); // matchups | bets | history
   const [bet, setBet] = useState("top");          // bets: top (ranked HR targets) | games (HR% by game)
+  // Bottom "Matchups" button pressed → close any open game and go back to the main list.
+  useEffect(() => { if (resetSignal) { setSelGame(null); setView("matchups"); window.scrollTo(0, 0); } }, [resetSignal]);
   const [history, setHistory] = useState(null);
   const [openPks, setOpenPks] = useState({});   // matchup accordion state
   const [streaks, setStreaks] = useState({});   // hitter id -> current hit streak
@@ -3407,8 +3623,10 @@ function HRBoardTab({ players, onSelectPlayer }) {
                   }}
                   className="relative w-full text-left px-4 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
 <span className="block">
-                    {/* ── Broadcast row: logo · score · center status · score · logo ── */}
-                    <span className="flex items-center gap-1">
+                    {/* ── Broadcast row: logo · score · center status · score · logo ──
+                        Football-style banner: away colour on the left, home on the right. */}
+                    <span className="relative flex items-center gap-1 -mx-4 -mt-2.5 px-4 py-2.5"
+                      style={{ backgroundImage: `linear-gradient(100deg, ${bannerColor(sides.away.abbr)} 0%, ${bannerColor(sides.away.abbr)} 38%, ${shade(bannerColor(sides.away.abbr), -12)} 47%, ${shade(bannerColor(sides.home.abbr), -12)} 53%, ${bannerColor(sides.home.abbr)} 62%, ${bannerColor(sides.home.abbr)} 100%)` }}>
                       {["away", "home"].map((kk, idx) => {
                         const sd = sides[kk];
                         const sc = kk === "away" ? aScore : hScore;
@@ -3419,13 +3637,13 @@ function HRBoardTab({ players, onSelectPlayer }) {
                         const logo = (
                           <span key="lg" className="relative shrink-0">
                             {TEAM_LOGOS[sd.abbr]
-                              ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-10 h-10 rounded-full object-contain bg-white " + (lost ? "opacity-40 grayscale" : "")} />
+                              ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-10 h-10 rounded-full object-contain bg-white p-0.5 shadow " + (lost ? "opacity-50" : "")} />
                               : <span className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px] font-extrabold" style={{ color: teamColor(sd.abbr) }}>{sd.abbr}</span>}
-                            {batting && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900 animate-pulse" />}
+                            {batting && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />}
                           </span>
                         );
                         const score = sc != null && state !== "Preview" ? (
-                          <span key="sc" className={"text-[26px] leading-none font-extrabold tabular-nums " + (lost ? "text-slate-300 dark:text-slate-600" : "text-slate-900 dark:text-white")}>{sc}</span>
+                          <span key="sc" className={"text-[28px] leading-none font-black tabular-nums drop-shadow " + (lost ? "text-white/55" : "text-white")}>{sc}</span>
                         ) : <span key="sc" />;
                         return (
                           <span key={kk} className={"flex-1 min-w-0 flex items-center gap-2 " + (idx === 0 ? "" : "flex-row-reverse")}>
@@ -3437,33 +3655,38 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       {/* center status pill */}
                       <span className="absolute left-1/2 -translate-x-1/2 shrink-0 text-center pointer-events-none">
                         {state === "Live" ? (
-                          <span className="block rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-1">
-                            <span className="block text-[13px] font-extrabold text-slate-900 dark:text-white tabular-nums leading-tight">
+                          <span className="block rounded-lg bg-black/45 backdrop-blur-sm px-2.5 py-1">
+                            <span className="block text-[13px] font-extrabold text-white tabular-nums leading-tight">
                               {g.linescore && g.linescore.currentInning != null ? g.linescore.currentInning : ""}
                               <span className="ml-0.5">{g.linescore && String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "▲" : "▼"}</span>
                             </span>
-                            <span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">
+                            <span className="block text-[8px] font-extrabold uppercase tracking-wider text-white/75">
                               {g.linescore && g.linescore.outs != null ? g.linescore.outs + " OUT" + (g.linescore.outs === 1 ? "" : "S") : "LIVE"}
                             </span>
                           </span>
                         ) : state === "Final" ? (
-                          <span className="block rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-300">Final</span>
+                          <span className="block rounded-lg bg-black/40 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-white/90">Final</span>
                         ) : (
-                          <span className="block rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[10px] font-extrabold text-slate-700 dark:text-slate-200 tabular-nums">{timeLabel}</span>
+                          <span className="block text-[13px] font-extrabold text-white tabular-nums drop-shadow">{timeLabel}</span>
                         )}
                       </span>
                     </span>
                     {/* ── abbr · record · probable, under each logo ── */}
-                    <span className="flex items-start gap-1 mt-0.5">
+                    <span className="flex items-start gap-3 mt-2">
                       {["away", "home"].map((kk, idx) => {
                         const sd = sides[kk];
+                        const era = sd.pitcher && sd.pitcher.era != null && sd.pitcher.era !== "" && !/^-/.test(String(sd.pitcher.era)) ? String(sd.pitcher.era) : null;
                         return (
                           <span key={kk} className={"flex-1 min-w-0 " + (idx === 0 ? "text-left" : "text-right")}>
-                            <span className="block text-[12px] font-extrabold leading-tight" style={{ color: teamColor(sd.abbr) }}>
-                              {sd.abbr}{streakBadge(sd)}
+                            <span className="block text-[13px] font-extrabold leading-tight text-black dark:text-white">
+                              {sd.abbr} <span className="text-[10px] font-bold text-slate-400 tabular-nums">{sd.rec}</span>{streakBadge(sd)}
                             </span>
-                            <span className="block text-[10px] font-bold text-slate-400 tabular-nums leading-tight">{sd.rec}</span>
-                            {sd.pitcher && <span className="block text-[9px] font-bold text-slate-400 truncate leading-tight">{sd.pitcher.name}{sd.pitcher.rec ? " (" + sd.pitcher.rec + ")" : ""}</span>}
+                            {sd.pitcher
+                              ? <>
+                                  <span className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 truncate leading-tight mt-0.5">{sd.pitcher.name}{sd.pitcher.rec ? " (" + sd.pitcher.rec + ")" : ""}</span>
+                                  <span className="block text-[10px] font-extrabold tabular-nums leading-tight text-slate-900 dark:text-white">{era ? era + " ERA" : "— ERA"}{sd.pitcher.hand ? <span className="font-bold text-slate-400"> · {sd.pitcher.hand}HP</span> : null}</span>
+                                </>
+                              : <span className="block text-[10px] font-bold text-slate-400 leading-tight mt-0.5">Pitcher TBD</span>}
                           </span>
                         );
                       })}
@@ -3564,7 +3787,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                             <div key={h.id} className="flex items-center gap-2">
                               <span className="w-4 text-center text-[10px] font-extrabold text-slate-300 dark:text-slate-600 tabular-nums shrink-0">{i + 1}</span>
                               <span className="w-4 text-center text-[10px] font-extrabold text-slate-500 dark:text-slate-200 shrink-0">{h.bats || ""}</span>
-                              <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{h.name}</span>
+                              <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{h.name} <InjBadge name={h.name} team={s.abbr} /></span>
                               <span className={"w-11 text-center text-[10px] font-extrabold rounded px-1 py-0.5 tabular-nums shrink-0 " + hrbHitClass(hb)}>
                                 {hb != null ? Number(hb).toFixed(1) + "%" : "—"}
                               </span>
@@ -3672,7 +3895,7 @@ function HRBoardTab({ players, onSelectPlayer }) {
                       style={{ backgroundColor: teamColor(t.side.abbr) + "26" }} loading="lazy" />
                     {TEAM_LOGOS[t.side.abbr] && <img src={TEAM_LOGOS[t.side.abbr]} alt={t.side.abbr} className="w-4 h-4 rounded-full object-contain bg-white shrink-0" />}
                     <span className="text-xs font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap shrink-0">
-                      {t.h.bats ? t.h.bats + " " : ""}{t.h.name}
+                      {t.h.bats ? t.h.bats + " " : ""}{t.h.name} <InjBadge name={t.h.name} team={t.side.abbr} />
                     </span>
                     {!t.confirmed && <span className="text-[8px] font-extrabold text-amber-500 uppercase shrink-0">proj</span>}
                     <span className="ml-auto min-w-0 flex items-center justify-end gap-1">
@@ -3947,6 +4170,17 @@ const TABS = [
 
 export default function App() {
   const [tab, setTab] = useState("hrboard");
+  const [navTap, setNavTap] = useState(0);   // bumps on every tab-bar press so the tab can return to its main page
+  useEffect(() => {                          // live injury report: now, every 10 min, and when the app is reopened
+    loadInjuries();
+    const id = setInterval(loadInjuries, 10 * 60000);
+    const onVis = () => { if (document.visibilityState === "visible") loadInjuries(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+  }, []);
+  const backY = useRef(0);                   // where the list was scrolled when a player page opened
+  const openPlayer = (pl) => { backY.current = window.scrollY || 0; setSel(pl); window.scrollTo(0, 0); };
+  const closePlayer = () => { const y = backY.current; setSel(null); requestAnimationFrame(() => window.scrollTo(0, y)); };
   const [sel, setSel] = useState(null);
   const [players, setPlayers] = useState(null);
   const [fatal, setFatal] = useState(null);
@@ -3979,19 +4213,22 @@ export default function App() {
     window.__hrbRefetch = () => load(true);
   }, []);
 
-  if (sel) {
-    return (
-      <PlayerDetail
-        p={sel}
-        onBack={() => setSel(null)}
-        backLabel={tab === "contracts" ? "Contracts" : tab === "teams" ? (selTeam ? selTeam.name : "Teams") : "Players"}
-        mode="full"
-      />
-    );
-  }
-
+  // The tab bar is ALWAYS on screen — player pages used to replace the whole app
+  // (no way out but the back link). The tab underneath stays alive while a
+  // player page is open, so backing out returns you to the same game / list.
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950">
+      {sel && (
+        <div className="pb-24">
+          <PlayerDetail
+            p={sel}
+            onBack={closePlayer}
+            backLabel={tab === "hrboard" ? "Matchups" : tab === "stats" ? "Leaders" : tab === "teams" ? (selTeam ? selTeam.name : "Teams") : "Players"}
+            mode="full"
+          />
+        </div>
+      )}
+      <div style={sel ? { display: "none" } : undefined}>
       {error && (
         <div className="m-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-2xl px-4 py-3">
           Couldn't load data: {error}
@@ -4000,14 +4237,14 @@ export default function App() {
       {!players && !error && <BallLoader />}
 
       {players && tab === "teams" && !selTeam && (
-        <TeamsTab teams={teams} players={players} onSelect={setSelTeam} onSelectPlayer={setSel} />
+        <TeamsTab teams={teams} players={players} onSelect={setSelTeam} onSelectPlayer={openPlayer} />
       )}
       {players && tab === "teams" && selTeam && (
         <TeamDetail
           team={selTeam} teams={teams}
           players={players}
           onBack={() => setSelTeam(null)}
-          onSelectPlayer={setSel}
+          onSelectPlayer={openPlayer}
         />
       )}
       {fatal && (
@@ -4016,15 +4253,16 @@ export default function App() {
           <button className="block mt-1 underline" onClick={() => setFatal(null)}>dismiss</button>
         </div>
       )}
-      {players && tab === "hrboard" && <HRBoardTab players={players} onSelectPlayer={setSel} />}
-      {players && tab === "players" && <PlayersTab players={players} onSelect={setSel} />}
-      {players && tab === "stats" && <StatsTab players={players} onSelect={setSel} />}
+      {players && tab === "hrboard" && <HRBoardTab players={players} onSelectPlayer={openPlayer} resetSignal={navTap} />}
+      {players && tab === "players" && <PlayersTab players={players} onSelect={openPlayer} />}
+      {players && tab === "stats" && <StatsTab players={players} onSelect={openPlayer} key={"st" + navTap} />}
+      </div>
 
       <div className="fixed bottom-0 inset-x-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex pb-[env(safe-area-inset-bottom)] z-20">
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => { setTab(t.id); setSel(null); setSelTeam(null); }}
+            onClick={() => { setTab(t.id); setSel(null); setSelTeam(null); setNavTap((n) => n + 1); window.scrollTo(0, 0); }}
             className={"flex-1 py-2.5 text-center " + (tab === t.id ? "text-blue-600" : "text-slate-400")}
           >
             <div className="text-lg leading-none">{t.icon}</div>
