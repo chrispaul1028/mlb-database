@@ -362,55 +362,140 @@ function BioRow({ k, v }) {
 }
 
 // ═══════════════ PLAYER DETAIL ═══════════════════════════════════
-function TrendsChart({ p }) {
-  const [gl, setGl] = useState(null);
+// ═══════════════ PLAYER PAGE: live bio + season block + trend chart ═════
+// Same shape as the football player card: "2026 SEASON · GP" tile grid, then
+// pills that switch a line chart. Hitters and pitchers get their own tiles,
+// their own pills and their own game log — never the same chart for both.
+const fmtDateLong = (iso) => { if (!iso) return ""; const d = new Date(String(iso).slice(0, 10) + "T12:00:00Z"); return isNaN(d) ? "" : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(d); };
+const fmtHeight = (h) => { const m = /(\d)\D+(\d{1,2})/.exec(String(h || "")); return m ? `${m[1]}'${m[2]}"` : String(h || "").trim(); };
+const fmtWeight = (w) => { const m = /(\d{2,3})/.exec(String(w || "")); return m ? m[1] + " lbs" : ""; };
+
+// MLB's own record for this player (birth date, debut, height/weight) + his live season line.
+function useMlbPerson(p) {
+  const { stats } = useLeagueData();
+  const [person, setPerson] = useState(null);
+  const line = seasonLineFor(stats, p, teamOfPlayer(p));
+  const lineId = line ? line.id : null;
   useEffect(() => {
+    if (!stats) return;                      // wait for the league file: its id is exact, a name search can hit the wrong man
     let alive = true;
     (async () => {
       try {
-        const s = await (await mlbFetch(`v1/people/search?names=${encodeURIComponent(p.name)}`)).json();
-        const person = (s.people || [])[0];
-        if (!person) { if (alive) setGl([]); return; }
-        const g = await (await mlbFetch(`v1/people/${person.id}/stats?stats=gameLog&group=hitting`)).json();
-        const splits = (g.stats && g.stats[0] && g.stats[0].splits) || [];
-        if (alive) setGl(splits.filter((x) => x.stat && x.stat.atBats != null).slice(-30));
+        let id = lineId || MLB_ID_CACHE[String(p.name || "").toLowerCase()];
+        if (!id) { const s = await (await mlbFetch(`v1/people/search?names=${encodeURIComponent(p.name)}`)).json(); id = ((s.people || [])[0] || {}).id; }
+        if (!id) return;
+        const d = await (await mlbFetch(`v1/people/${id}`)).json();
+        if (alive) setPerson((d.people || [])[0] || { id });
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [p.id, lineId, !!stats]);
+  return { person, line, stats };
+}
+
+// [key, pill label, gameLog stat field] — rate pills (AVG / ERA) are computed over a rolling window
+const BAT_PILLS = [["h", "Hits", "hits"], ["hr", "HR", "homeRuns"], ["rbi", "RBI", "rbi"], ["r", "Runs", "runs"], ["tb", "Total Bases", "totalBases"], ["so", "K", "strikeOuts"], ["avg", "AVG", null]];
+const PIT_PILLS = [["so", "K", "strikeOuts"], ["ip", "IP", "inningsPitched"], ["er", "Earned Runs", "earnedRuns"], ["h", "Hits", "hits"], ["bb", "Walks", "baseOnBalls"], ["np", "Pitches", "numberOfPitches"], ["era", "ERA", null]];
+const ipNum = (ip) => { const f = parseFloat(ip || "0"); return Math.floor(f) + Math.round((f % 1) * 10) / 3; };
+
+function SeasonPanel({ p, person, line, season }) {
+  const pitcher = isPitcherP(p) ? !!(line && line.pit) || !(line && line.hit) : !(line && line.hit) && !!(line && line.pit);
+  const S = line ? (pitcher ? line.pit : line.hit) : null;
+  const pills = pitcher ? PIT_PILLS : BAT_PILLS;
+  const [pick, setPick] = useState(pills[0][0]);
+  const [gl, setGl] = useState(null);
+  const id = person && person.id;
+  useEffect(() => {
+    if (!id) return;
+    let alive = true;
+    (async () => {
+      try {
+        const g = await (await mlbFetch(`v1/people/${id}/stats?stats=gameLog&group=${pitcher ? "pitching" : "hitting"}`)).json();
+        const sp = (g.stats && g.stats[0] && g.stats[0].splits) || [];
+        if (alive) setGl(sp.filter((x) => x.stat && (pitcher ? x.stat.inningsPitched != null : (x.stat.plateAppearances ?? x.stat.atBats ?? 0) > 0)).slice(-30));
       } catch { if (alive) setGl([]); }
     })();
     return () => { alive = false; };
-  }, [p.id]);
-  if (gl == null || gl.length < 3) return null;
-  const sum = (f) => gl.reduce((a, x) => a + (x.stat[f] || 0), 0);
-  const hrTot = sum("homeRuns"), hits = sum("hits"), abs = sum("atBats");
-  const max = Math.max(3, ...gl.map((x) => x.stat.hits || 0));
+  }, [id, pitcher]);
+  if (!S) return null;
+
+  const tc = playerHeaderColor(p);
+  const per = (v, g) => (g ? (v / g >= 10 ? (v / g).toFixed(1) : (v / g).toFixed(2)).replace(/\.?0+$/, "") + "/g" : null);
+  const tiles = pitcher
+    ? [["ERA", fmt2(S.era)], ["W-L", S.w + "-" + S.l], ["K", S.so, per(S.so, S.g)], ["WHIP", fmt2(S.whip)],
+       ["IP", S.ip, S.g ? (S.outs / 3 / S.g).toFixed(1) + "/g" : null], [S.sv > 0 || !S.hld ? "Saves" : "Holds", S.sv > 0 || !S.hld ? S.sv : S.hld], ["Walks", S.bb, S.bb9 != null ? fmt2(S.bb9) + "/9" : null], ["HR Allowed", S.hr, S.hr9 != null ? fmt2(S.hr9) + "/9" : null]]
+    : [["AVG", fmt3(S.avg)], ["HR", S.hr, per(S.hr, S.g)], ["RBI", S.rbi, per(S.rbi, S.g)], ["OPS", fmt3(S.ops)],
+       ["Hits", S.h, per(S.h, S.g)], ["Runs", S.r, per(S.r, S.g)], ["SB", S.sb, per(S.sb, S.g)], ["HR / PA", S.hrPa != null ? (S.hrPa * 100).toFixed(1) + "%" : "—"]];
+
+  // ── chart series: dots = each game, line = rolling average (the trend) ──
+  const cur = pills.find((x) => x[0] === pick) || pills[0];
+  const win = pitcher ? 3 : 7;
+  const games = gl || [];
+  const raw = games.map((x) => (cur[2] === "inningsPitched" ? ipNum(x.stat.inningsPitched) : cur[2] ? Number(x.stat[cur[2]] || 0) : null));
+  const roll = games.map((_, i) => {
+    const w = games.slice(Math.max(0, i - (cur[0] === "avg" ? 10 : cur[0] === "era" ? 5 : win) + 1), i + 1);
+    if (cur[0] === "avg") { const ab = w.reduce((n, x) => n + (x.stat.atBats || 0), 0), h = w.reduce((n, x) => n + (x.stat.hits || 0), 0); return ab ? h / ab : null; }
+    if (cur[0] === "era") { const ip = w.reduce((n, x) => n + ipNum(x.stat.inningsPitched), 0), er = w.reduce((n, x) => n + (x.stat.earnedRuns || 0), 0); return ip ? (er * 9) / ip : null; }
+    return w.reduce((n, x) => n + (cur[2] === "inningsPitched" ? ipNum(x.stat.inningsPitched) : Number(x.stat[cur[2]] || 0)), 0) / w.length;
+  });
+  const rate = cur[2] == null;
+  const vals = [...roll.filter((v) => v != null), ...(rate ? [] : raw)];
+  const top = Math.max(rate ? (cur[0] === "avg" ? 0.4 : 6) : 2, ...vals) * 1.08;
+  const W = 320, H = 150, L = 30, R = 8, T = 14, B = 20;
+  const X = (i) => L + (games.length > 1 ? (i / (games.length - 1)) * (W - L - R) : (W - L - R) / 2);
+  const Y = (v) => T + (1 - v / top) * (H - T - B);
+  const pts = roll.map((v, i) => (v == null ? null : [X(i), Y(v)])).filter(Boolean);
+  const fmtV = (v) => (cur[0] === "avg" ? fmt3(v) : cur[0] === "era" ? fmt2(v) : Number.isInteger(v) ? String(v) : v.toFixed(1));
+  const ticks = [0, top / 2 / 1.08, top / 1.08];
+  const lastV = roll.length ? roll[roll.length - 1] : null;
+  const winLbl = cur[0] === "avg" ? "10-game average" : cur[0] === "era" ? "ERA over his last 5 outings" : win + (pitcher ? "-outing" : "-game") + " average";
+
   return (
-    <div className="px-4 mt-6">
-      <div className="text-[11px] font-bold tracking-widest uppercase mb-2 px-1 text-slate-500 dark:text-slate-400">Trends · Last {gl.length} Games</div>
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3">
-        <div className="flex items-end gap-[2px] h-16">
-          {gl.map((x, i2) => {
-            const h = x.stat.hits || 0;
-            const hr = (x.stat.homeRuns || 0) > 0;
-            return (
-              <span key={i2}
-                className={"flex-1 rounded-t " + (hr ? "bg-orange-500" : h > 0 ? "bg-emerald-400 dark:bg-emerald-500" : "bg-slate-200 dark:bg-slate-700")}
-                style={{ height: Math.max(8, (h / max) * 100) + "%" }} />
-            );
-          })}
-        </div>
-        <div className="flex justify-between mt-1 text-[8px] font-bold text-slate-400">
-          <span>{gl[0].date}</span><span>{gl[gl.length - 1].date}</span>
-        </div>
-        <div className="grid grid-cols-3 gap-2 mt-3 text-center">
-          {[["HR", hrTot], ["Hits", hits], ["AVG", abs ? (hits / abs).toFixed(3).replace(/^0/, "") : "—"]].map(([lbl, v]) => (
-            <span key={lbl}>
-              <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
-              <span className="block text-sm font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v}</span>
-            </span>
+    <>
+      <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">{season} Season · {S.g} GP</div>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div className="grid grid-cols-4">
+          {tiles.map(([lbl, v, sub], i) => (
+            <div key={lbl} className={"text-center py-3.5 border-slate-100 dark:border-slate-800 " + (i % 4 !== 3 ? "border-r " : "") + "border-b"}>
+              <div className="text-[8px] font-bold tracking-widest uppercase text-[color:var(--tc)] dark:text-slate-300" style={{ "--tc": tc }}>{lbl}</div>
+              <div className="text-[19px] leading-tight font-black tabular-nums text-slate-900 dark:text-white mt-0.5">{v ?? "—"}</div>
+              <div className="text-[9px] font-semibold tabular-nums text-slate-400 h-3">{sub || ""}</div>
+            </div>
           ))}
         </div>
-        <div className="text-[9px] text-slate-400 mt-2">Bar height = hits per game · orange = homered · gray = hitless</div>
+        <div className="flex gap-1.5 px-3 pt-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          {pills.map(([k, lbl]) => (
+            <button key={k} onClick={() => setPick(k)}
+              className={"shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold " + (cur[0] === k ? "text-white" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400")}
+              style={cur[0] === k ? { backgroundColor: tc } : undefined}>{lbl}</button>
+          ))}
+        </div>
+        <div className="px-2 pt-2 pb-3">
+          {gl == null ? <div className="text-center text-[11px] text-slate-400 py-12">Loading game log…</div>
+            : games.length < 2 ? <div className="text-center text-[11px] text-slate-400 py-12">Not enough games yet for a trend.</div> : (
+            <svg viewBox={`0 0 ${W} ${H}`} className="w-full text-[color:var(--tc)] dark:text-sky-300" style={{ "--tc": tc }}>
+              {ticks.map((t, i) => (
+                <g key={i}>
+                  <line x1={L} x2={W - R} y1={Y(t)} y2={Y(t)} className="stroke-slate-200 dark:stroke-slate-700" strokeWidth="1" strokeDasharray={i === 0 ? undefined : "3 3"} />
+                  <text x={L - 5} y={Y(t) + 3} textAnchor="end" className="fill-slate-400" fontSize="8" fontWeight="600">{fmtV(cur[0] === "avg" || cur[0] === "era" ? t : Math.round(t * 10) / 10)}</text>
+                </g>
+              ))}
+              {!rate && raw.map((v, i) => <circle key={i} cx={X(i)} cy={Y(v)} r="2" fill="currentColor" fillOpacity={cur[0] === "hr" && v > 0 ? 0.95 : 0.28} />)}
+              {pts.length > 1 && <polyline points={pts.map((q) => q.join(",")).join(" ")} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />}
+              {pts.length > 0 && lastV != null && (
+                <g>
+                  <circle cx={pts[pts.length - 1][0]} cy={pts[pts.length - 1][1]} r="3.4" fill="currentColor" stroke="#fff" strokeWidth="1.2" />
+                  <text x={Math.min(W - R - 2, pts[pts.length - 1][0])} y={Math.max(9, pts[pts.length - 1][1] - 7)} textAnchor="end" className="fill-slate-800 dark:fill-white" fontSize="9.5" fontWeight="800">{fmtV(lastV)}</text>
+                </g>
+              )}
+              <text x={L} y={H - 5} className="fill-slate-400" fontSize="8" fontWeight="600">{String(games[0].date || "").slice(5).replace("-", "/")}</text>
+              <text x={W - R} y={H - 5} textAnchor="end" className="fill-slate-400" fontSize="8" fontWeight="600">{String(games[games.length - 1].date || "").slice(5).replace("-", "/")}</text>
+            </svg>
+          )}
+          {gl != null && games.length >= 2 && <div className="text-[9px] text-slate-400 text-center mt-1">{cur[1]} · last {games.length} {pitcher ? "outings" : "games"} · {rate ? "line = " + winLbl : "dots = each " + (pitcher ? "outing" : "game") + " · line = " + winLbl}</div>}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -419,6 +504,11 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
   const act = activeOf(p);
   const past = p.contracts.filter((c) => c !== act);
   const no = cleanNo(p.no);
+  const { person, line, stats: leagueStats } = useMlbPerson(p);      // MLB's record + live season line
+  const M = person || {};
+  const debutYear = M.mlbDebutDate ? Number(String(M.mlbDebutDate).slice(0, 4)) : null;
+  const expText = (() => { if (!debutYear) return experienceOf(p); const n = parseInt(String(CURRENT_SEASON).slice(0, 4), 10) - debutYear + 1; return n <= 1 ? "Rookie" : n + " seasons"; })();
+  const hw = [fmtHeight(M.height || p.height), fmtWeight(M.weight || p.weight)].filter(Boolean).join(", ");
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 pb-24">
       <div className="px-5 pb-6 text-white" style={{ backgroundColor: playerHeaderColor(p), paddingTop: "calc(env(safe-area-inset-top) + 1.25rem)" }}>
@@ -471,14 +561,15 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
           })()}
         </div>)}
 
-        {mode === "full" && (p.height || p.weight || p.age || p.draft || p.birthplace || p.draftYear) && (
+        {mode === "full" && (hw || p.age || M.birthDate || M.mlbDebutDate || p.birthplace) && (
           <>
             <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Bio</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800">
-              <BioRow k="Height / Weight" v={[p.height, p.weight].filter(Boolean).join(" · ")} />
-              <BioRow k="Age" v={p.age} />
-              <BioRow k="Draft" v={[p.draftYear, p.draft].filter(Boolean).join(": ")} />
-              <BioRow k="Experience" v={experienceOf(p)} />
+              <BioRow k="Height / Weight" v={hw} />
+              <BioRow k="Date of Birth" v={fmtDateLong(M.birthDate)} />
+              <BioRow k="Age" v={M.currentAge || p.age} />
+              <BioRow k="MLB Debut" v={fmtDateLong(M.mlbDebutDate)} />
+              <BioRow k="Experience" v={expText} />
               <BioRow
                 k={["Pitching", "Bullpen"].includes(unitOf(p)) ? "Throws" : ["Batting", "Bench"].includes(unitOf(p)) ? "Bats" : "Bats / Throws"}
                 v={(() => {
@@ -488,10 +579,12 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
                 })()}
               />
               <BioRow k="College" v={p.college} />
-              <BioRow k="Birthplace" v={p.birthplace} />
+              <BioRow k="Birthplace" v={p.birthplace || [M.birthCity, M.birthStateProvince || M.birthCountry].filter(Boolean).join(", ")} />
             </div>
           </>
         )}
+
+        {mode === "full" && line && <SeasonPanel p={p} person={person} line={line} season={leagueStats ? leagueStats.season : ""} />}
 
         {mode === "full" && p.stats && p.stats.length > 0 && (
           <>
@@ -565,7 +658,6 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
           </>
         )}
       </div>
-      {mode === "full" && <TrendsChart p={p} />}
     </div>
   );
 }
@@ -912,6 +1004,13 @@ const PARK_HR_RANK = {
   "Progressive Field": 23, "loanDepot park": 24, "Petco Park": 25, "Oracle Park": 26,
   "T-Mobile Park": 27, "George M. Steinbrenner Field": 28, "Tropicana Field": 27, "Comerica Park": 29,
   "Globe Life Field": 30,
+};
+const TEAM_PARK = {
+  ARI: "Chase Field", ATL: "Truist Park", BAL: "Oriole Park at Camden Yards", BOS: "Fenway Park", CHC: "Wrigley Field", CWS: "Rate Field",
+  CIN: "Great American Ball Park", CLE: "Progressive Field", COL: "Coors Field", DET: "Comerica Park", HOU: "Daikin Park", KC: "Kauffman Stadium",
+  LAA: "Angel Stadium", LAD: "Dodger Stadium", MIA: "loanDepot park", MIL: "American Family Field", MIN: "Target Field", NYM: "Citi Field",
+  NYY: "Yankee Stadium", ATH: "Sutter Health Park", PHI: "Citizens Bank Park", PIT: "PNC Park", SD: "Petco Park", SF: "Oracle Park",
+  SEA: "T-Mobile Park", STL: "Busch Stadium", TB: "Tropicana Field", TEX: "Globe Life Field", TOR: "Rogers Centre", WSH: "Nationals Park",
 };
 const PARK_RANK_NORM = (() => {
   const m = {};
@@ -1533,9 +1632,10 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
 }
 
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, lg = false }) {
   if (!status) return null;
   const s = String(status).toLowerCase().trim();
+  if (lg && (s.includes("active") || s.includes("available")) && !s.includes("inactive")) return <span className="shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wide bg-emerald-500 text-white shadow-sm">{String(status)}</span>;
   const raw = String(status);
   const dayMatch = raw.match(/(\d+)\s*-?\s*day/i) || raw.match(/^il-?(\d+)$/i);
   const isMin = /minor|option/.test(s);
@@ -1662,8 +1762,8 @@ function LiveStatus({ p, lg = false }) {
   if (injFor(p.name, team)) return <InjBadge name={p.name} team={team} lg={lg} />;
   const t = statusTag(p, team);
   if (t && (t.kind === "min" || t.label === "INJ")) return <span className={"inline-block align-middle font-extrabold rounded shrink-0 " + (lg ? "text-[11px] px-2 py-0.5 " : "text-[9px] px-1.5 py-px ") + INJ_STYLE[t.kind]}>{t.label}</span>;
-  if (!t && STALE_INJ.test(String(p.status || ""))) return null;   // Airtable says hurt, live report says healthy → healthy
-  return <StatusBadge status={p.status} />;
+  if (!t && STALE_INJ.test(String(p.status || ""))) return lg && INJ.map ? <StatusBadge status="Active" lg /> : null;   // Airtable says hurt, live report says healthy → healthy
+  return <StatusBadge status={p.status} lg={lg} />;
 }
 // Player-page line under the name: what the injury is and when he's due back.
 function InjuryLine({ p }) {
@@ -1764,8 +1864,8 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
   // Fielders stand where they really play — BEHIND the bags, not on them: the
   // middle infielders deep on the back of the dirt, the corners up the line
   // toward the outfield grass. That keeps every photo, name and number chip
-  // clear of the bases. The catcher is set just off the plate (right and
-  // below) so home plate and both batter's boxes stay visible.
+  // clear of the bases. The catcher squats centred directly below the plate,
+  // low enough that home plate and both batter's boxes stay visible.
   // No pitcher here: the staff lives under Roster › Pitching Rotation.
   const FIELD_H = 128;
   const SPOTS = [
@@ -1776,7 +1876,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
     { lbl: "SS", x: 34, y: 53, aliases: ["SS"] },
     { lbl: "3B", x: 15, y: 68, aliases: ["3B"] },
     { lbl: "1B", x: 85, y: 68, aliases: ["1B"] },
-    { lbl: "C",  x: 58, y: 115.5, aliases: ["C"] },
+    { lbl: "C",  x: 50, y: 116, aliases: ["C"] },
   ];
   // ── Assign ONE player per spot, computed once (no side effects) ──
   const used = new Set();
@@ -1931,6 +2031,21 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
           <polygon points="48.6,104.6 51.4,104.6 51.4,106.2 50,107.5 48.6,106.2" fill="#fff" />
           <rect x="-10" y="-10" width="120" height="150" fill="url(#vig)" />
         </svg>
+        {/* home ballpark + its HR rank: top 10 green, middle amber, bottom 10 red */}
+        {(() => {
+          const park = TEAM_PARK[abbr], rank = park ? parkRankFor(park) : null;
+          if (!rank) return null;
+          const tone = rank <= 10 ? "bg-emerald-500" : rank <= 20 ? "bg-amber-400 text-slate-900" : "bg-rose-600";
+          return (
+            <span className="absolute bottom-2 right-2 z-10 rounded-xl bg-slate-900/80 backdrop-blur-sm shadow px-2 py-1.5 text-right">
+              <span className="block text-[8px] font-bold text-white/90 max-w-[96px] truncate leading-tight">{park}</span>
+              <span className="flex items-center justify-end gap-1.5 mt-1">
+                <span className="text-[7px] font-bold uppercase tracking-widest text-white/60">HR Rank</span>
+                <span className={"rounded-md px-1.5 py-0.5 text-[12px] leading-none font-black tabular-nums text-white " + tone}>{ordinal(rank)}</span>
+              </span>
+            </span>
+          );
+        })()}
         {/* lineup badge */}
         <span className={"absolute top-2 right-2 z-10 px-2.5 py-1 rounded-full text-[9px] font-extrabold tracking-wider uppercase shadow " + (isConf ? "bg-emerald-500 text-white" : lineup && lineup.noGame ? "bg-slate-700 text-white/80" : "bg-amber-400 text-slate-900")}>
           {isConf ? "Lineup Confirmed" : lineup && lineup.noGame ? "No Game Today" : "Projected Lineup"}
@@ -3277,7 +3392,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v112";
+const HRB_VERSION = "v113";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
