@@ -1758,22 +1758,25 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
   const byName = {};
   for (const pl of roster) byName[hrbNrm(pl.name)] = pl;
 
-  // Geometry (viewBox 0-100 x, 0-124 y). The diamond sits low so the catcher is
-  // at the bottom edge and the outfield gets the room: the fence is 95 units
-  // from home (was 80) while the infield keeps its size.
+  // Geometry (viewBox 0-100 x, 0-128 y). The diamond sits low so the catcher is
+  // at the bottom edge and the outfield gets the room (fence 95 units from home).
   // Home 50,106 · 1B 74,82 · 2B 50,58 · 3B 26,82 · mound 50,82.
-  // Infielders are offset OFF the bags so the bases stay visible.
-  const FIELD_H = 124;
+  // Fielders stand where they really play — BEHIND the bags, not on them: the
+  // middle infielders deep on the back of the dirt, the corners up the line
+  // toward the outfield grass. That keeps every photo, name and number chip
+  // clear of the bases. The catcher is set just off the plate (right and
+  // below) so home plate and both batter's boxes stay visible.
+  // No pitcher here: the staff lives under Roster › Pitching Rotation.
+  const FIELD_H = 128;
   const SPOTS = [
     { lbl: "CF", x: 50, y: 27, aliases: ["CF", "OF"] },
-    { lbl: "LF", x: 17, y: 42, aliases: ["LF", "OF"] },
-    { lbl: "RF", x: 83, y: 42, aliases: ["RF", "OF"] },
-    { lbl: "2B", x: 61, y: 61, aliases: ["2B"] },
-    { lbl: "SS", x: 39, y: 61, aliases: ["SS"] },
-    { lbl: "3B", x: 22, y: 75, aliases: ["3B"] },
-    { lbl: "1B", x: 78, y: 75, aliases: ["1B"] },
-    { lbl: "P",  x: 50, y: 82, aliases: ["P", "SP", "RHP", "LHP"] },
-    { lbl: "C",  x: 50, y: 112.5, aliases: ["C"] },
+    { lbl: "LF", x: 14, y: 36, aliases: ["LF", "OF"] },
+    { lbl: "RF", x: 86, y: 36, aliases: ["RF", "OF"] },
+    { lbl: "2B", x: 66, y: 53, aliases: ["2B"] },
+    { lbl: "SS", x: 34, y: 53, aliases: ["SS"] },
+    { lbl: "3B", x: 15, y: 68, aliases: ["3B"] },
+    { lbl: "1B", x: 85, y: 68, aliases: ["1B"] },
+    { lbl: "C",  x: 58, y: 115.5, aliases: ["C"] },
   ];
   // ── Assign ONE player per spot, computed once (no side effects) ──
   const used = new Set();
@@ -1810,8 +1813,8 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
     if (/^(LF|CF|RF|OF)$/.test(pos)) return "Outfielders";
     return "Infielders";
   };
-  const benchAll = bigLeague.filter((pl) => !onField.has(hrbNrm(pl.name)));
-  const benchGroups = ["Infielders", "Outfielders", "Bullpen"].map((gname) => ({
+  const benchAll = bigLeague.filter((pl) => !onField.has(hrbNrm(pl.name)) && grpOf(pl) !== "Bullpen");   // no pitchers in this view
+  const benchGroups = ["Infielders", "Outfielders"].map((gname) => ({
     name: gname,
     list: benchAll.filter((pl) => grpOf(pl) === gname).sort((a, b) => statusRank(a) - statusRank(b) || (b.rating2k ?? -1) - (a.rating2k ?? -1)),
   })).filter((g) => g.list.length);
@@ -1990,7 +1993,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
           </span>
         ))}
       </div>
-      <div className="text-[9px] text-slate-400 mt-2 px-1">Chip = Outs Above Average: gold +8 elite · green +3 · red −3 or worse · red tag = injured list · amber = day-to-day · minor leaguers are at the bottom of the Roster tab · green badge = today's confirmed lineup, refreshes automatically · tap for profile</div>
+      <div className="text-[9px] text-slate-400 mt-2 px-1">Chip = Outs Above Average: gold +8 elite · green +3 · red −3 or worse · red tag = injured list · amber = day-to-day · pitchers are under Pitching Rotation · minor leaguers at the bottom of the roster · green badge = today's confirmed lineup, refreshes automatically · tap for profile</div>
     </div>
   );
 }
@@ -2209,7 +2212,7 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
     return (
       <>
         <Section title="Batting Order" note={order.length ? "latest posted lineup" : null}>
-          {order.length ? order.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.sort + " " + (p.gamePos || p.pos || "")} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
+          {order.length ? order.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={String(p.sort)} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
             : empty("No lineup posted yet. It fills in on its own once MLB publishes one.")}
         </Section>
         {bench.length > 0 && <Section title={"Bench (" + bench.length + ")"}>{bench.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
@@ -2241,8 +2244,8 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
 
   return (
     <>
-      <Section title={"Batters (" + batters.length + ")"}>{batters.slice().sort(lastNameSort).map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}{batters.length === 0 && empty("No batters linked yet.")}</Section>
-      <Section title={"Pitchers (" + pitchers.length + ")"}>{pitchers.slice().sort(lastNameSort).map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "P"} tiles={pitTiles(p)} onSelect={onSelectPlayer} />)}{pitchers.length === 0 && empty("No pitchers linked yet.")}</Section>
+      <Section title="Batting">{batters.slice().sort(lastNameSort).map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}{batters.length === 0 && empty("No batters linked yet.")}</Section>
+      <Section title="Pitching">{pitchers.slice().sort(lastNameSort).map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "P"} tiles={pitTiles(p)} onSelect={onSelectPlayer} />)}{pitchers.length === 0 && empty("No pitchers linked yet.")}</Section>
       {minors.length > 0 && <Section title={"Minor Leagues (" + minors.length + ")"} color="#ea580c">{minors.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={isPitcherP(p) ? pitTiles(p) : batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
     </>
   );
@@ -2283,7 +2286,7 @@ function TeamStatsPanel({ abbr, view, players, onSelectPlayer }) {
             return (
               <button key={P.id} onClick={p ? () => onSelectPlayer(p) : undefined} className="w-full text-left py-2.5 block">
                 <span className="flex items-baseline justify-between gap-2">
-                  <span className="min-w-0 truncate text-[13px] font-bold text-slate-800 dark:text-slate-100">{P.name} <span className="text-[11px] font-medium text-slate-400">{mlbPosGroup(P)}</span> <InjBadge name={P.name} team={abbr} /></span>
+                  <span className="min-w-0 truncate text-[13px] font-bold text-slate-800 dark:text-slate-100">{P.name} <span className="text-[11px] font-medium text-slate-400">{mlbPosGroup(P)}</span></span>
                   <span className="shrink-0 text-[13px] font-extrabold tabular-nums text-slate-800 dark:text-slate-100">{label}</span>
                 </span>
                 <span className="block mt-1.5 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"><span className="block h-full rounded-full" style={{ width: Math.max(3, Math.min(100, w)) + "%", backgroundColor: tc }} /></span>
@@ -2399,9 +2402,6 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
           };
           const diff = team.rs != null && team.ra != null ? team.rs - team.ra : null;
           const rS = rk("rs"), rA = rk("ra", true), rD = rk("diff");
-          // Pythagorean record: what the run differential says the record "should" be (exponent 1.83)
-          const g = gp(team), pyW = diff != null && g && team.rs + team.ra > 0 ? Math.round(g * Math.pow(team.rs, 1.83) / (Math.pow(team.rs, 1.83) + Math.pow(team.ra, 1.83))) : null;
-          const luck = pyW != null ? (team.wins ?? 0) - pyW : null;
           const tc = bannerColor(abbr);
           return (
             <>
@@ -2410,12 +2410,6 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
                 <RankTile tc={tc} label="Runs Allowed" value={team.ra != null ? team.ra : "—"} sub={rA && rA.text} subCls={rA && rA.cls} />
                 <RankTile tc={tc} label="Run Diff" value={diff != null ? (diff > 0 ? "+" : "") + diff : "—"} valueCls={diff == null ? "" : diff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"} sub={rD && rD.text} subCls={rD && rD.cls} />
               </div>
-              {pyW != null && g >= 10 && (
-                <div className="text-[10px] font-semibold text-slate-400 text-center mt-2">
-                  Run-diff record <span className="font-extrabold text-slate-600 dark:text-slate-300">{pyW}-{g - pyW}</span>
-                  {luck !== 0 && <span className={luck > 0 ? " text-amber-600 dark:text-amber-400" : " text-emerald-600 dark:text-emerald-400"}> · {Math.abs(luck)} win{Math.abs(luck) === 1 ? "" : "s"} {luck > 0 ? "ahead of" : "behind"} it</span>}
-                </div>
-              )}
             </>
           );
         })()}
@@ -3283,7 +3277,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v111";
+const HRB_VERSION = "v112";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
