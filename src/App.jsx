@@ -1538,8 +1538,10 @@ function StatusBadge({ status }) {
   const s = String(status).toLowerCase().trim();
   const raw = String(status);
   const dayMatch = raw.match(/(\d+)\s*-?\s*day/i) || raw.match(/^il-?(\d+)$/i);
-  const label = dayMatch && /(il|injur)/i.test(raw) ? "IL" + dayMatch[1] : raw;
+  const isMin = /minor|option/.test(s);
+  const label = isMin ? "MIN" : dayMatch && /(il|injur)/i.test(raw) ? "IL" + dayMatch[1] : raw;
   let cls = "bg-slate-100 text-slate-500 dark:text-slate-400";
+  if (isMin) return <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300">MIN</span>;
   if (s === "ir" || s.includes("injured reserve") || s.includes("out") || s.includes("il") || s.includes("injur") || s.includes("day")) cls = "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300";
   else if (s.includes("active") || s.includes("available")) cls = "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300";
   else if (s.includes("minor") || s.includes("question") || s.includes("doubt")) cls = "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300";
@@ -1584,12 +1586,14 @@ const INJ_STYLE = {
   il: "bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300",
   dtd: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
   off: "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
+  min: "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300",
 };
 const injLabel = (r) => {
   const c = String(r.code || "");
   const il = /^IL(\d+)$/.exec(c);
   if (il) return ["IL-" + il[1], INJ_STYLE.il];
   if (c === "DTD") return ["DTD", INJ_STYLE.dtd];
+  if (c === "MIN") return ["MIN", INJ_STYLE.min];
   if (c === "OUT") return ["OUT", INJ_STYLE.il];
   if (c === "SUSP") return ["SUSP", INJ_STYLE.off];
   if (c === "BRV") return ["BEREAVEMENT", INJ_STYLE.off];
@@ -1605,6 +1609,44 @@ const injText = (r) => {
   if (r.returnDate) { const d = new Date(r.returnDate); if (!isNaN(d)) ret = "Est. return " + new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(d); }
   return [what ? what.charAt(0).toUpperCase() + what.slice(1).toLowerCase() : "", ret].filter(Boolean).join(" · ");
 };
+// ONE answer to "what tag does this player wear?", used by the field view, the
+// bench and the roster so they can never disagree:
+//   live report (ESPN + MLB's official roster status) → Airtable Status →
+//   Airtable Injury Notes (your manual override: type a note and he's flagged
+//   even when neither feed lists him).
+// kind: il (red) · dtd (amber) · min (orange, minor leagues) · off (grey)
+const STALE_INJ = /(^|[^a-z])(il|ir)([^a-z]|$)|injur|disabled|\d\s*-?\s*day|^out$|question|doubt|day.to.day|dtd/i;
+function statusTag(p, team) {
+  if (!p) return null;
+  const t = team || (p._virtual ? "" : teamOfPlayer(p));
+  const live = injFor(p.name, t);
+  if (live) {
+    const c = String(live.code || "");
+    if (/^IL\d+$/.test(c)) return { label: c, kind: "il" };
+    if (c === "DTD") return { label: "DTD", kind: "dtd" };
+    if (c === "MIN") return { label: "MIN", kind: "min" };
+    if (c === "OUT") return { label: "OUT", kind: "il" };
+    if (c) return { label: c === "INJ" ? "INJ" : c.slice(0, 4), kind: c === "INJ" ? "dtd" : "off" };
+  }
+  const raw = String(p.status || "").trim(), low = raw.toLowerCase();
+  if (/minor|option/.test(low)) return { label: "MIN", kind: "min" };
+  const note = String(p.injuryNotes || "").trim();
+  if (raw && low !== "active" && !/available/.test(low)) {
+    const stale = INJ.map && STALE_INJ.test(raw) && !note;      // live report loaded and doesn't back it up
+    if (!stale) {
+      const d = /(\d+)/.exec(raw);
+      if (/il|injur|disabled/.test(low)) return { label: d ? "IL" + d[1] : "IL", kind: "il" };
+      if (/day.to.day|dtd|question/.test(low)) return { label: "DTD", kind: "dtd" };
+      if (/out|nri|restricted|suspend/.test(low)) return { label: "OUT", kind: "il" };
+      if (!STALE_INJ.test(raw)) return { label: raw.slice(0, 6).toUpperCase(), kind: "off" };
+    }
+  }
+  return note ? { label: "INJ", kind: "dtd" } : null;
+}
+const isMinors = (p, team) => { const t = statusTag(p, team); return !!t && t.kind === "min"; };
+const TAG_SOLID = { il: "bg-rose-600", dtd: "bg-amber-500", min: "bg-orange-500", off: "bg-slate-500" };
+const TAG_RING = { il: "border-rose-500", dtd: "border-amber-400", min: "border-orange-400", off: "border-slate-400" };
+
 function InjBadge({ name, team, lg = false }) {
   useInjuries();
   const r = injFor(name, team);
@@ -1615,10 +1657,12 @@ function InjBadge({ name, team, lg = false }) {
 // Status shown for an Airtable player: live report first; otherwise his Airtable
 // status — except a stale injury status the live report no longer backs up.
 function LiveStatus({ p, lg = false }) {
-  const map = useInjuries();
+  useInjuries();
   const team = teamOfPlayer(p);
   if (injFor(p.name, team)) return <InjBadge name={p.name} team={team} lg={lg} />;
-  if (map && /(^|[^a-z])(il|ir)([^a-z]|$)|injur|\d\s*-?\s*day|^out$|question|doubt|day.to.day|dtd/i.test(String(p.status || ""))) return null;
+  const t = statusTag(p, team);
+  if (t && (t.kind === "min" || t.label === "INJ")) return <span className={"inline-block align-middle font-extrabold rounded shrink-0 " + (lg ? "text-[11px] px-2 py-0.5 " : "text-[9px] px-1.5 py-px ") + INJ_STYLE[t.kind]}>{t.label}</span>;
+  if (!t && STALE_INJ.test(String(p.status || ""))) return null;   // Airtable says hurt, live report says healthy → healthy
   return <StatusBadge status={p.status} />;
 }
 // Player-page line under the name: what the injury is and when he's due back.
@@ -1627,7 +1671,7 @@ function InjuryLine({ p }) {
   const r = injFor(p.name, teamOfPlayer(p));
   const text = r ? injText(r) : "";
   if (text) return <div className="inline-block mt-1.5 text-[11px] font-bold text-white bg-rose-600 rounded-full px-2.5 py-0.5 max-w-full truncate">{text}</div>;
-  if (!r && !INJ.map && p.injuryNotes) return <div className="text-xs font-bold mt-1 truncate" style={{ color: "#f87171" }}>{p.injuryNotes}</div>;
+  if (!r && p.injuryNotes) return <div className="text-xs font-bold mt-1 truncate" style={{ color: "#f87171" }}>{p.injuryNotes}</div>;
   return null;
 }
 
@@ -1706,18 +1750,11 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
     return () => { alive = false; if (timer) clearTimeout(timer); };
   }, [teamName]);
 
-  const injTag = (pl) => {
-    const raw = String((pl && pl.status) || "").trim();
-    if (!raw) return null;
-    const low = raw.toLowerCase();
-    if (low === "active") return null;
-    const d = /(\d+)/.exec(raw);
-    if (/il|injur|disabled/.test(low)) return d ? "IL" + d[1] : "IL";
-    if (/out|nri|restricted|suspend/.test(low)) return "OUT";
-    if (/day.to.day|dtd|question/.test(low)) return "DTD";
-    if (/minor|option/.test(low)) return "MIN";
-    return raw.slice(0, 6).toUpperCase();
-  };
+  useInjuries();                                   // re-draw when the live report lands / refreshes
+  const tagOf = (pl) => statusTag(pl, abbr);       // { label, kind } or null — live report first
+  const injTag = (pl) => { const t = tagOf(pl); return t ? t.label : null; };
+  // Minor leaguers never appear here — not on the field, not on the bench (they live at the bottom of the Roster tab).
+  const bigLeague = roster.filter((pl) => !isMinors(pl, abbr));
   const byName = {};
   for (const pl of roster) byName[hrbNrm(pl.name)] = pl;
 
@@ -1745,8 +1782,8 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
       if (nm) hit = byName[hrbNrm(nm)] || { name: nm, pos: sp.lbl, id: "mlb:" + nm, _virtual: true };
     }
     if (!hit) {
-      const cands = roster
-        .filter((pl) => sp.aliases.includes(String(pl.pos || "").toUpperCase()) && !used.has(pl.id) && !injTag(pl))
+      const cands = bigLeague                        // projected lineup: skip the IL; a day-to-day player can still start (amber tag)
+        .filter((pl) => sp.aliases.includes(String(pl.pos || "").toUpperCase()) && !used.has(pl.id) && (!tagOf(pl) || tagOf(pl).kind === "dtd"))
         .sort((a, b) => (b.rating2k ?? -1) - (a.rating2k ?? -1));
       hit = cands[0] || null;
     }
@@ -1771,7 +1808,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
     if (/^(LF|CF|RF|OF)$/.test(pos)) return "Outfielders";
     return "Infielders";
   };
-  const benchAll = roster.filter((pl) => !onField.has(hrbNrm(pl.name)));
+  const benchAll = bigLeague.filter((pl) => !onField.has(hrbNrm(pl.name)));
   const benchGroups = ["Infielders", "Outfielders", "Bullpen"].map((gname) => ({
     name: gname,
     list: benchAll.filter((pl) => grpOf(pl) === gname).sort((a, b) => statusRank(a) - statusRank(b) || (b.rating2k ?? -1) - (a.rating2k ?? -1)),
@@ -1780,11 +1817,11 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
   const PlayerBubble = ({ pl, size = "w-12 h-12" }) => (
     <button onClick={pl._virtual ? undefined : () => onSelectPlayer(pl)} className="text-center w-full">
       <span className="relative block">
-        <span className={"block " + size + " mx-auto rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 border-2 " + (injTag(pl) ? "border-rose-500" : "border-transparent")}>
+        <span className={"block " + size + " mx-auto rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 border-2 " + (tagOf(pl) ? TAG_RING[tagOf(pl).kind] : "border-transparent")}>
           {pl._virtual ? <span className="w-full h-full flex items-center justify-center text-[9px] font-extrabold text-slate-500">{pl.pos}</span> : <Avatar p={pl} />}
         </span>
         {injTag(pl) && (
-          <span className="absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-0.5 rounded-full text-[7px] font-extrabold text-white bg-rose-600 shadow animate-pulse">{injTag(pl)}</span>
+          <span className={"absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-0.5 rounded-full text-[7px] font-extrabold text-white shadow " + TAG_SOLID[tagOf(pl).kind] + (tagOf(pl).kind === "il" ? " animate-pulse" : "")}>{injTag(pl)}</span>
         )}
       </span>
       <span className="block mt-1 text-[9px] font-bold text-slate-700 dark:text-slate-200 truncate">{String(pl.name).split(" ").slice(-1)[0]}</span>
@@ -1799,46 +1836,92 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
         <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 116" preserveAspectRatio="none">
           <defs>
             <clipPath id="fairClip"><path d="M50,92 L110,32 A80,80 0 0 0 -10,32 Z" /></clipPath>
+            <clipPath id="fvDirtClip"><path d="M50,92 L80.76,61.24 A28,28 0 1 0 19.24,61.24 Z" /></clipPath>
+            <clipPath id="fvInGrassClip"><polygon points="50,87.5 68.5,68 50,48.5 31.5,68" /></clipPath>
             <radialGradient id="grassGlow" cx="50%" cy="72%" r="78%">
-              <stop offset="0%" stopColor="#4aa95c" /><stop offset="55%" stopColor="#2f8544" /><stop offset="100%" stopColor="#17542c" />
+              <stop offset="0%" stopColor="#57a85c" /><stop offset="50%" stopColor="#38853f" /><stop offset="100%" stopColor="#1c5a2b" />
             </radialGradient>
-            <radialGradient id="dirtGrad" cx="45%" cy="45%" r="75%">
-              <stop offset="0%" stopColor="#d59b65" /><stop offset="60%" stopColor="#bd8049" /><stop offset="100%" stopColor="#9d6537" />
+            <radialGradient id="fvInGrass" cx="50%" cy="45%" r="70%">
+              <stop offset="0%" stopColor="#56ab5d" /><stop offset="100%" stopColor="#3a8e45" />
+            </radialGradient>
+            {/* mowing pattern: two sets of stripes crossing on the foul-line angles = the classic ballpark checkerboard */}
+            <pattern id="fvMowA" width="11" height="11" patternUnits="userSpaceOnUse" patternTransform="rotate(45 50 92)">
+              <rect width="5.5" height="11" fill="#ffffff" fillOpacity="0.08" />
+            </pattern>
+            <pattern id="fvMowB" width="11" height="11" patternUnits="userSpaceOnUse" patternTransform="rotate(-45 50 92)">
+              <rect width="5.5" height="11" fill="#04260f" fillOpacity="0.13" />
+            </pattern>
+            <pattern id="fvMowIn" width="4.6" height="4.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45 50 68)">
+              <rect width="2.3" height="4.6" fill="#ffffff" fillOpacity="0.09" />
+            </pattern>
+            {/* fine speckle so the turf and the clay read as texture, not flat paint */}
+            <filter id="fvGrain" x="0" y="0" width="100%" height="100%">
+              <feTurbulence type="fractalNoise" baseFrequency="1.15" numOctaves="2" seed="4" />
+              <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0.08  0 0 0 0 0  0 0 0 -1.6 1.15" />
+            </filter>
+            <filter id="fvClay" x="0" y="0" width="100%" height="100%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.55 1.5" numOctaves="3" seed="9" />
+              <feColorMatrix type="matrix" values="0 0 0 0 0.30  0 0 0 0 0.16  0 0 0 0 0.05  0 0 0 -1.9 1.3" />
+            </filter>
+            <radialGradient id="dirtGrad" cx="50%" cy="40%" r="75%">
+              <stop offset="0%" stopColor="#dca770" /><stop offset="55%" stopColor="#c48a52" /><stop offset="100%" stopColor="#99632f" />
+            </radialGradient>
+            <radialGradient id="fvMound" cx="42%" cy="36%" r="70%">
+              <stop offset="0%" stopColor="#e6b582" /><stop offset="100%" stopColor="#b57a44" />
             </radialGradient>
             <radialGradient id="vig" cx="50%" cy="62%" r="72%">
               <stop offset="55%" stopColor="#000" stopOpacity="0" /><stop offset="100%" stopColor="#000" stopOpacity=".38" />
             </radialGradient>
           </defs>
+          {/* ── turf: colour, mowing checkerboard, grain ── */}
           <rect x="-10" y="-10" width="120" height="140" fill="url(#grassGlow)" />
-          <g clipPath="url(#fairClip)">
-            {[20, 36, 52, 68].map((r) => <circle key={r} cx="50" cy="92" r={r} fill="none" stroke="#ffffff" strokeOpacity="0.045" strokeWidth="8" />)}
-          </g>
+          <rect x="-10" y="-10" width="120" height="140" fill="url(#fvMowA)" />
+          <rect x="-10" y="-10" width="120" height="140" fill="url(#fvMowB)" />
+          <rect x="-10" y="-10" width="120" height="140" filter="url(#fvGrain)" opacity="0.24" />
           {/* stands */}
           <circle cx="50" cy="92" r="130" fill="none" stroke="#0b1220" strokeWidth="100" />
           <circle cx="50" cy="92" r="87" fill="none" stroke="#1e293b" strokeWidth="14" />
           {/* warning track, padded wall in team colour, yellow home-run line on top */}
           <g clipPath="url(#fairClip)">
             <circle cx="50" cy="92" r="79.5" fill="none" stroke="#b98a5a" strokeWidth="7" />
+            <circle cx="50" cy="92" r="76.1" fill="none" stroke="#123d1e" strokeOpacity=".45" strokeWidth="0.4" />
             <circle cx="50" cy="92" r="83.5" fill="none" stroke={tc} strokeWidth="5" />
             <circle cx="50" cy="92" r="83.5" fill="none" stroke="#000" strokeOpacity=".25" strokeWidth="5" strokeDasharray="0.6 3.2" />
             <circle cx="50" cy="92" r="86.2" fill="none" stroke="#facc15" strokeWidth="1.1" />
             <circle cx="50" cy="92" r="81" fill="none" stroke="#fff" strokeOpacity=".3" strokeWidth="0.5" />
           </g>
-          <line x1="50" y1="92" x2="110" y2="32" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.75" />
-          <line x1="50" y1="92" x2="-10" y2="32" stroke="#fff" strokeWidth="0.5" strokeOpacity="0.75" />
+          {/* ── infield clay: grass lip, clay, raked texture, drag arcs, shaded edge ── */}
+          <path d="M50,92 L80.76,61.24 A28,28 0 1 0 19.24,61.24 Z" fill="none" stroke="#0f3a1b" strokeOpacity=".6" strokeWidth="1" strokeLinejoin="round" />
           <path d="M50,92 L80.76,61.24 A28,28 0 1 0 19.24,61.24 Z" fill="url(#dirtGrad)" />
-          <path d="M50,92 L80.76,61.24 A28,28 0 1 0 19.24,61.24 Z" fill="none" stroke="#000" strokeOpacity=".07" strokeWidth="0.6" />
-          <polygon points="50,87.5 68.5,68 50,48.5 31.5,68" fill="#3d9a4c" />
-          <polygon points="50,87.5 68.5,68 50,48.5 31.5,68" fill="none" stroke="#fff" strokeOpacity=".12" strokeWidth="0.5" />
-          {[[74, 68], [50, 44], [26, 68]].map(([bx, by], i) => <circle key={i} cx={bx} cy={by} r="4.4" fill="#c98f57" />)}
-          <circle cx="50" cy="92" r="9.5" fill="#c98f57" />
-          <circle cx="50" cy="68" r="4" fill="#cf9760" stroke="#a8703f" strokeWidth="0.4" />
-          <ellipse cx="50" cy="67.4" rx="1.1" ry="0.45" fill="#fff" fillOpacity="0.92" />
-          <rect x="44.4" y="88.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.35" strokeOpacity="0.6" />
-          <rect x="52.4" y="88.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.35" strokeOpacity="0.6" />
-          {/* bases - drawn LAST so they sit on top of the dirt, and fielders are offset off them */}
+          <g clipPath="url(#fvDirtClip)">
+            <rect x="15" y="28" width="70" height="68" filter="url(#fvClay)" opacity="0.42" />
+            {[28.2, 25.4, 22.6, 19.8].map((r, i) => <circle key={r} cx="50" cy="61.24" r={r} fill="none" stroke={i % 2 ? "#5b3716" : "#fff3df"} strokeOpacity={i % 2 ? 0.1 : 0.09} strokeWidth="1.3" />)}
+            <path d="M50,92 L80.76,61.24 A28,28 0 1 0 19.24,61.24 Z" fill="none" stroke="#4a2a10" strokeOpacity=".38" strokeWidth="2.4" strokeLinejoin="round" />
+          </g>
+          {/* foul lines in chalk, laid over the clay */}
+          <line x1="50" y1="92" x2="110" y2="32" stroke="#fff" strokeWidth="0.55" strokeOpacity="0.85" />
+          <line x1="50" y1="92" x2="-10" y2="32" stroke="#fff" strokeWidth="0.55" strokeOpacity="0.85" />
+          {/* ── infield grass: its own lip, finer mowing stripes, grain ── */}
+          <polygon points="50,87.5 68.5,68 50,48.5 31.5,68" fill="url(#fvInGrass)" />
+          <g clipPath="url(#fvInGrassClip)">
+            <rect x="30" y="47" width="40" height="42" fill="url(#fvMowIn)" />
+            <rect x="30" y="47" width="40" height="42" filter="url(#fvGrain)" opacity="0.22" />
+          </g>
+          <polygon points="50,87.5 68.5,68 50,48.5 31.5,68" fill="none" stroke="#0f3a1b" strokeOpacity=".55" strokeWidth="0.7" strokeLinejoin="round" />
+          {/* base cut-outs, home-plate circle, mound (with a little height) */}
+          {[[74, 68], [50, 44], [26, 68]].map(([bx, by], i) => <circle key={i} cx={bx} cy={by} r="4.4" fill="#cb9259" stroke="#6b421c" strokeOpacity=".3" strokeWidth="0.4" />)}
+          <circle cx="50" cy="92" r="9.5" fill="#cb9259" stroke="#6b421c" strokeOpacity=".3" strokeWidth="0.5" />
+          <ellipse cx="50.5" cy="69" rx="4.5" ry="4.2" fill="#000" fillOpacity="0.2" />
+          <circle cx="50" cy="68" r="4" fill="url(#fvMound)" stroke="#8a5a30" strokeWidth="0.45" />
+          <ellipse cx="50" cy="67.4" rx="1.1" ry="0.45" fill="#fff" fillOpacity="0.95" />
+          <rect x="44.4" y="88.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.4" strokeOpacity="0.75" />
+          <rect x="52.4" y="88.2" width="3.2" height="6.2" fill="none" stroke="#fff" strokeWidth="0.4" strokeOpacity="0.75" />
+          {/* bases - drawn LAST so they sit on top of the dirt (with a small shadow), and fielders are offset off them */}
           {[[74, 68], [50, 44], [26, 68]].map(([bx, by], i) => (
-            <rect key={i} x={bx - 1.7} y={by - 1.7} width="3.4" height="3.4" fill="#fff" stroke="#000" strokeOpacity=".2" strokeWidth="0.3" transform={"rotate(45 " + bx + " " + by + ")"} />
+            <g key={i}>
+              <rect x={bx - 1.4} y={by - 1.2} width="3.4" height="3.4" fill="#000" fillOpacity=".28" transform={"rotate(45 " + bx + " " + by + ")"} />
+              <rect x={bx - 1.7} y={by - 1.7} width="3.4" height="3.4" fill="#fff" stroke="#000" strokeOpacity=".2" strokeWidth="0.3" transform={"rotate(45 " + bx + " " + by + ")"} />
+            </g>
           ))}
           <polygon points="48.6,90.6 51.4,90.6 51.4,92.2 50,93.5 48.6,92.2" fill="#fff" />
           <rect x="-10" y="-10" width="120" height="140" fill="url(#vig)" />
@@ -1855,14 +1938,14 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
               style={{ left: sp.x + "%", top: (sp.y / 1.16) + "%" }}>
               <span className="relative">
                 {p ? (
-                  <span className={"block w-11 h-11 rounded-full overflow-hidden shadow-md bg-white border-2 " + (injTag(p) ? "border-rose-500" : "border-white/80")}>
+                  <span className={"block w-11 h-11 rounded-full overflow-hidden shadow-md bg-white border-2 " + (tagOf(p) ? TAG_RING[tagOf(p).kind] : "border-white/80")}>
                     {p._virtual ? <span className="w-full h-full flex items-center justify-center text-[10px] font-extrabold text-slate-600">{sp.lbl}</span> : <Avatar p={p} />}
                   </span>
                 ) : (
                   <span className="w-11 h-11 rounded-full flex items-center justify-center text-[10px] font-extrabold bg-white/25 text-white/80 border-2 border-dashed border-white/50 shadow-md">{sp.lbl}</span>
                 )}
                 {p && cleanNo(p.no) && (
-                  <span className="absolute top-1/2 -translate-y-1/2 -left-2.5 px-1 rounded text-[8px] font-extrabold bg-white/85 text-slate-700 tabular-nums shadow">#{cleanNo(p.no)}</span>
+                  <span className="absolute top-[18%] -translate-y-1/2 -left-4 px-1 rounded text-[8px] font-extrabold bg-white/85 text-slate-700 tabular-nums shadow">#{cleanNo(p.no)}</span>
                 )}
                 {p && !p._virtual && (
                   <span className={"absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 rounded-full text-[8px] font-extrabold tabular-nums shadow " + oaaChip(p.oaa)}>
@@ -1870,7 +1953,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
                   </span>
                 )}
                 {p && injTag(p) && (
-                  <span className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded-full text-[7px] font-extrabold text-white bg-rose-600 shadow ring-2 ring-white/80 animate-pulse">{injTag(p)}</span>
+                  <span className={"absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded-full text-[7px] font-extrabold text-white shadow ring-2 ring-white/80 " + TAG_SOLID[tagOf(p).kind] + (tagOf(p).kind === "il" ? " animate-pulse" : "")}>{injTag(p)}</span>
                 )}
               </span>
               <span className="mt-2 text-[8px] font-bold text-white/95 max-w-[64px] truncate drop-shadow">{p ? String(p.name).split(" ").slice(-1)[0] : ""}</span>
@@ -1905,7 +1988,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
           </span>
         ))}
       </div>
-      <div className="text-[9px] text-slate-400 mt-2 px-1">Chip = Outs Above Average: gold +8 elite · green +3 · red −3 or worse · red ring/tag = injured · green badge = today's confirmed lineup, refreshes automatically · tap for profile</div>
+      <div className="text-[9px] text-slate-400 mt-2 px-1">Chip = Outs Above Average: gold +8 elite · green +3 · red −3 or worse · red tag = injured list · amber = day-to-day · minor leaguers are at the bottom of the Roster tab · green badge = today's confirmed lineup, refreshes automatically · tap for profile</div>
     </div>
   );
 }
@@ -1973,6 +2056,7 @@ function TeamFormChart({ teamName }) {
 
 function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
   useEffect(() => { window.scrollTo(0, 0); }, []);
+  useInjuries();                                   // roster groups re-sort when the live report lands
   const abbr = team.abbr || toAbbr(team.name);
   const [seg, setSeg] = useState("roster");
   const [roleFilter, setRoleFilter] = useState(null);
@@ -2086,13 +2170,15 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
             ))}
           </div>
         )}
-        {seg === "roster" && (roleFilter ? orderedRoles.filter((role) => role === roleFilter) : CAT_ORDER).map((role) => (
+        {seg === "roster" && (roleFilter ? orderedRoles.filter((role) => role === roleFilter) : [...CAT_ORDER, ...(roster.some((p) => isMinors(p, abbr)) ? ["__MIN__"] : [])]).map((role) => (
           <div key={role}>
-            <div className="text-[11px] font-extrabold tracking-widest uppercase mt-6 mb-2 pl-2 border-l-[3px]" style={{ color: teamColor(abbr), borderColor: teamColor(abbr) }}>{CAT_LABELS[role] || UNIT_LABELS[role] || role}</div>
+            <div className="text-[11px] font-extrabold tracking-widest uppercase mt-6 mb-2 pl-2 border-l-[3px]" style={role === "__MIN__" ? { color: "#ea580c", borderColor: "#ea580c" } : { color: teamColor(abbr), borderColor: teamColor(abbr) }}>
+              {role === "__MIN__" ? "Minor Leagues (" + roster.filter((p) => isMinors(p, abbr)).length + ")" : CAT_LABELS[role] || UNIT_LABELS[role] || role}
+            </div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
-              {(CAT_LABELS[role] ? roster.filter((p) => catOf(p) === role) : groups[role])
+              {(role === "__MIN__" ? roster.filter((p) => isMinors(p, abbr)) : CAT_LABELS[role] ? roster.filter((p) => catOf(p) === role && !isMinors(p, abbr)) : groups[role])
                 .sort((a, b) => {
-                  if (CAT_LABELS[role]) {
+                  if (CAT_LABELS[role] || role === "__MIN__") {
                     const last = (n) => String(n).split(" ").slice(-1)[0];
                     return last(a.name).localeCompare(last(b.name)) || String(a.name).localeCompare(String(b.name));
                   }
@@ -3002,7 +3088,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v109";
+const HRB_VERSION = "v110";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -3591,14 +3677,15 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
               const m = /^([WL])(\d+)$/.exec(s.streak || "");
               if (!m || Number(m[2]) < 5) return null;
               return m[1] === "W"
-                ? <span className="ml-1 text-[9px] font-extrabold text-orange-500">W{m[2]}🔥</span>
-                : <span className="ml-1 text-[9px] font-extrabold text-sky-400">L{m[2]}❄️</span>;
+                ? <span className="ml-1 text-[9px] font-extrabold text-white">W{m[2]}🔥</span>
+                : <span className="ml-1 text-[9px] font-extrabold text-white/80">L{m[2]}❄️</span>;
             };
             return (
               <div key={g.gamePk}
-                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                className="bg-white dark:bg-slate-900 rounded-2xl border border-black/20 dark:border-white/10 shadow-sm overflow-hidden">
                 <button onClick={() => {
                     if (mode === "open") { setSelGame(g); window.scrollTo(0, 0); return; }
+                    // (bets mode falls through to the accordion below)
                     const opening = !openPks[g.gamePk];
                     setOpenPks((o) => ({ ...o, [g.gamePk]: !o[g.gamePk] }));
                     if (opening) {
@@ -3621,12 +3708,12 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                       })).then((pairs) => setStreaks((s2) => ({ ...s2, ...Object.fromEntries(pairs) })));
                     }
                   }}
-                  className="relative w-full text-left px-4 py-2.5 active:bg-slate-50 dark:active:bg-slate-800">
+                  style={{ backgroundImage: `linear-gradient(100deg, ${bannerColor(sides.away.abbr)} 0%, ${bannerColor(sides.away.abbr)} 38%, ${shade(bannerColor(sides.away.abbr), -12)} 47%, ${shade(bannerColor(sides.home.abbr), -12)} 53%, ${bannerColor(sides.home.abbr)} 62%, ${bannerColor(sides.home.abbr)} 100%)` }}
+                  className="relative w-full text-left px-4 py-2.5 active:opacity-90">
 <span className="block">
                     {/* ── Broadcast row: logo · score · center status · score · logo ──
                         Football-style banner: away colour on the left, home on the right. */}
-                    <span className="relative flex items-center gap-1 -mx-4 -mt-2.5 px-4 py-2.5"
-                      style={{ backgroundImage: `linear-gradient(100deg, ${bannerColor(sides.away.abbr)} 0%, ${bannerColor(sides.away.abbr)} 38%, ${shade(bannerColor(sides.away.abbr), -12)} 47%, ${shade(bannerColor(sides.home.abbr), -12)} 53%, ${bannerColor(sides.home.abbr)} 62%, ${bannerColor(sides.home.abbr)} 100%)` }}>
+                    <span className="relative flex items-center gap-1">
                       {["away", "home"].map((kk, idx) => {
                         const sd = sides[kk];
                         const sc = kk === "away" ? aScore : hScore;
@@ -3672,27 +3759,27 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                       </span>
                     </span>
                     {/* ── abbr · record · probable, under each logo ── */}
-                    <span className="flex items-start gap-3 mt-2">
+                    <span className="flex items-start gap-3 mt-1.5">
                       {["away", "home"].map((kk, idx) => {
                         const sd = sides[kk];
                         const era = sd.pitcher && sd.pitcher.era != null && sd.pitcher.era !== "" && !/^-/.test(String(sd.pitcher.era)) ? String(sd.pitcher.era) : null;
                         return (
                           <span key={kk} className={"flex-1 min-w-0 " + (idx === 0 ? "text-left" : "text-right")}>
-                            <span className="block text-[13px] font-extrabold leading-tight text-black dark:text-white">
-                              {sd.abbr} <span className="text-[10px] font-bold text-slate-400 tabular-nums">{sd.rec}</span>{streakBadge(sd)}
+                            <span className="block text-[13px] font-extrabold leading-tight text-white drop-shadow-sm">
+                              {sd.abbr} <span className="text-[10px] font-semibold text-white/70 tabular-nums">{sd.rec}</span>{streakBadge(sd)}
                             </span>
                             {sd.pitcher
                               ? <>
-                                  <span className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 truncate leading-tight mt-0.5">{sd.pitcher.name}{sd.pitcher.rec ? " (" + sd.pitcher.rec + ")" : ""}</span>
-                                  <span className="block text-[10px] font-extrabold tabular-nums leading-tight text-slate-900 dark:text-white">{era ? era + " ERA" : "— ERA"}{sd.pitcher.hand ? <span className="font-bold text-slate-400"> · {sd.pitcher.hand}HP</span> : null}</span>
+                                  <span className="block text-[10px] font-bold text-white/85 truncate leading-tight mt-0.5">{sd.pitcher.name}{sd.pitcher.rec ? " (" + sd.pitcher.rec + ")" : ""}</span>
+                                  <span className="block text-[10px] font-extrabold tabular-nums leading-tight text-white">{era ? era + " ERA" : "— ERA"}{sd.pitcher.hand ? <span className="font-semibold text-white/65"> · {sd.pitcher.hand}HP</span> : null}</span>
                                 </>
-                              : <span className="block text-[10px] font-bold text-slate-400 leading-tight mt-0.5">Pitcher TBD</span>}
+                              : <span className="block text-[10px] font-semibold text-white/65 leading-tight mt-0.5">Pitcher TBD</span>}
                           </span>
                         );
                       })}
                     </span>
                     {mode === "bets" && <span className="flex justify-center">
-                      <span className={"text-slate-300 dark:text-slate-600 text-[9px] transition-transform inline-block " + (isOpen ? "rotate-90" : "")}>▶</span>
+                      <span className={"text-white/60 text-[9px] transition-transform inline-block " + (isOpen ? "rotate-90" : "")}>▶</span>
                     </span>}
                   </span>
                 </button>
