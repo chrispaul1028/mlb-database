@@ -1,0 +1,14 @@
+{
+  "functions": {
+    "api/game.js": {
+      "maxDuration": 30
+    },
+    "api/season-stats.js": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "api/standings.js": {
+      "maxDuration": 30
+    }
+  }
+}
