@@ -1792,63 +1792,99 @@ function seasonsAhead(n) {
 }
 const LINE_COLORS = ["#2563eb", "#16a34a", "#dc2626", "#9333ea", "#f59e0b", "#0891b2"];
 
-function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
-  // ── Today's lineup from MLB (confirmed) with auto-refresh ──────────
-  // Polls every 3 min until the box score carries a batting order, then
-  // stops. Until then the field is a PROJECTED lineup built from Airtable
-  // positions, skipping anyone on the IL.
-  const [lineup, setLineup] = useState(null); // { confirmed, spots: {POS: name}, pitcher }
-  const [coaches, setCoaches] = useState(null);
+// ── Today's lineup, shared by the Fielding view and the Batting Order list ──
+// CONFIRMED  = MLB has posted today's batting order (read from today's box score).
+// PROJECTED  = nothing posted yet, so we show the lineup from the team's most
+//              recent completed game — all nine hitters, in order.
+// Re-checks every 3 minutes until today's lineup is confirmed, then stops.
+// Returns null while loading, else { confirmed, noGame, order:[{slot,name,pos,id,no}], spots:{POS:name}, pitcher }.
+function useTodayLineup(abbr, on = true) {
+  const [lineup, setLineup] = useState(null);
   useEffect(() => {
+    const tid = MLB_TEAM_ID[abbr];
+    if (!on || !tid) return;
     let alive = true, timer = null;
+    const day = (n) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() + n * 86400000));
+    const readBox = async (g) => {
+      const side = g.teams.away.team.id === tid ? "away" : "home";
+      const box = await (await mlbFetch(`v1/game/${g.gamePk}/boxscore`)).json();
+      const pl = (box.teams && box.teams[side] && box.teams[side].players) || {};
+      const order = [], spots = {};
+      for (const x of Object.values(pl)) {
+        if (x.battingOrder == null || Number(x.battingOrder) % 100 !== 0 || !x.person) continue;      // starters only (x00)
+        const pos = String((x.position && x.position.abbreviation) || "").toUpperCase();
+        order.push({ slot: Number(x.battingOrder) / 100, name: x.person.fullName, pos, id: x.person.id, no: x.jerseyNumber || "" });
+        if (pos) spots[pos] = x.person.fullName;
+      }
+      order.sort((a, b) => a.slot - b.slot);
+      return { order, spots };
+    };
     const load = async () => {
       try {
-        if (!MLB_TEAMID_MAP) {
-          const d = await (await mlbFetch("v1/teams?sportId=1")).json();
-          MLB_TEAMID_MAP = {};
-          for (const t of d.teams || []) MLB_TEAMID_MAP[String(t.name).toLowerCase()] = t.id;
+        const sch = await (await mlbFetch(`v1/schedule?sportId=1&teamId=${tid}&date=${day(0)}&hydrate=probablePitcher`)).json();
+        const games = (sch.dates && sch.dates[0] && sch.dates[0].games) || [];
+        const g = games.find((x) => x.status && x.status.abstractGameState !== "Final") || games[games.length - 1] || null;   // doubleheader: the game still to play
+        let pp = null, today = null;
+        if (g) {
+          const side = g.teams.away.team.id === tid ? "away" : "home";
+          pp = g.teams[side].probablePitcher ? g.teams[side].probablePitcher.fullName : null;
+          today = await readBox(g);
         }
-        const tid = MLB_TEAMID_MAP[String(teamName || "").toLowerCase()];
-        if (!tid) return;
-        if (!coaches) {
-          try {
-            const c = await (await mlbFetch(`v1/teams/${tid}/coaches`)).json();
-            const roles = {};
-            for (const r of c.roster || []) {
-              const job = String((r.job || r.jobId || "")).toLowerCase();
-              const nm = r.person && r.person.fullName;
-              if (!nm) continue;
-              if (job === "manager") roles.manager = nm;
-              else if (job.includes("bench")) roles.bench = nm;
-              else if (job.includes("pitching") && !job.includes("assistant") && !job.includes("bullpen")) roles.pitching = nm;
-              else if (job.includes("hitting") && !job.includes("assistant")) roles.hitting = nm;
-            }
-            if (alive) setCoaches(roles);
-          } catch {}
-        }
-        const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-        const sch = await (await mlbFetch(`v1/schedule?sportId=1&teamId=${tid}&date=${today}&hydrate=probablePitcher`)).json();
-        const g = sch.dates && sch.dates[0] && sch.dates[0].games && sch.dates[0].games[0];
-        if (!g) { if (alive) setLineup({ confirmed: false, spots: {}, pitcher: null, noGame: true }); return; }
-        const side = g.teams.away.team.id === tid ? "away" : "home";
-        const pp = g.teams[side].probablePitcher ? g.teams[side].probablePitcher.fullName : null;
-        const box = await (await mlbFetch(`v1/game/${g.gamePk}/boxscore`)).json();
-        const pl = (box.teams && box.teams[side] && box.teams[side].players) || {};
-        const spots = {};
-        let confirmed = false;
-        for (const x of Object.values(pl)) {
-          if (x.battingOrder == null || Number(x.battingOrder) % 100 !== 0) continue;
-          confirmed = true;
-          const pos = x.position && String(x.position.abbreviation || "").toUpperCase();
-          if (pos && x.person) spots[pos] = x.person.fullName;
-        }
-        if (alive) setLineup({ confirmed, spots, pitcher: pp });
-        if (!confirmed && alive) timer = setTimeout(load, 180000);
+        if (today && today.order.length) { if (alive) setLineup({ confirmed: true, noGame: false, ...today, pitcher: pp }); return; }
+        let last = null;
+        try {
+          const past = await (await mlbFetch(`v1/schedule?sportId=1&teamId=${tid}&startDate=${day(-7)}&endDate=${day(0)}`)).json();
+          const done = (past.dates || []).flatMap((d) => d.games || []).filter((x) => x.status && x.status.abstractGameState === "Final" && !/postpon|cancel/i.test(x.status.detailedState || ""))
+            .sort((a, b) => new Date(b.gameDate) - new Date(a.gameDate));
+          if (done[0]) last = await readBox(done[0]);
+        } catch {}
+        if (alive) setLineup({ confirmed: false, noGame: !g, order: last ? last.order : [], spots: {}, pitcher: pp });
+        if (g && alive) timer = setTimeout(load, 180000);
       } catch { if (alive) timer = setTimeout(load, 180000); }
     };
     load();
     return () => { alive = false; if (timer) clearTimeout(timer); };
-  }, [teamName]);
+  }, [abbr, on]);
+  return lineup;
+}
+
+// "Projected lineup" / "Confirmed lineup" tag — same look as the basketball app's court badge.
+// onField = sits on the grass (translucent dark pill, bright text); otherwise a tinted pill for white cards.
+function LineupBadge({ lineup, onField = false }) {
+  const conf = !!(lineup && lineup.confirmed);
+  const text = conf ? "Confirmed lineup" : "Projected lineup";
+  const cls = onField
+    ? "bg-black/40 backdrop-blur-sm shadow " + (conf ? "text-emerald-300" : "text-amber-300")
+    : conf ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+  return <span className={"inline-block rounded-lg px-2.5 py-1 text-[11px] font-bold tracking-wide " + cls}>{text}{!conf && lineup && lineup.noGame ? " · off day" : ""}</span>;
+}
+
+function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
+  // Today's lineup (confirmed by MLB, else projected) comes from the shared hook above.
+  const lineup = useTodayLineup(abbr);
+  const [coaches, setCoaches] = useState(null);
+  useEffect(() => {
+    const tid = MLB_TEAM_ID[abbr];
+    if (!tid) return;
+    let alive = true;
+    (async () => {
+      try {
+        const c = await (await mlbFetch(`v1/teams/${tid}/coaches`)).json();
+        const roles = {};
+        for (const r of c.roster || []) {
+          const job = String((r.job || r.jobId || "")).toLowerCase();
+          const nm = r.person && r.person.fullName;
+          if (!nm) continue;
+          if (job === "manager") roles.manager = nm;
+          else if (job.includes("bench")) roles.bench = nm;
+          else if (job.includes("pitching") && !job.includes("assistant") && !job.includes("bullpen")) roles.pitching = nm;
+          else if (job.includes("hitting") && !job.includes("assistant")) roles.hitting = nm;
+        }
+        if (alive) setCoaches(roles);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [abbr]);
 
   useInjuries();                                   // re-draw when the live report lands / refreshes
   const tagOf = (pl) => statusTag(pl, abbr);       // { label, kind } or null — live report first
@@ -2046,10 +2082,8 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
             </span>
           );
         })()}
-        {/* lineup badge */}
-        <span className={"absolute top-2 right-2 z-10 px-2.5 py-1 rounded-full text-[9px] font-extrabold tracking-wider uppercase shadow " + (isConf ? "bg-emerald-500 text-white" : lineup && lineup.noGame ? "bg-slate-700 text-white/80" : "bg-amber-400 text-slate-900")}>
-          {isConf ? "Lineup Confirmed" : lineup && lineup.noGame ? "No Game Today" : "Projected Lineup"}
-        </span>
+        {/* lineup badge — bottom-left, in the empty foul ground (the ballpark rank balances it on the right) */}
+        <span className="absolute bottom-2 left-2 z-10"><LineupBadge lineup={lineup} onField /></span>
         {SPOTS.map((sp, i) => {
           const p = assigned[i];
           return (
@@ -2252,15 +2286,15 @@ function RankTile({ label, value, sub, subCls, tc, valueCls }) {
 }
 
 // One roster row, laid out like the football app: [chip] headshot · #no Name / tag (note) · three stat tiles
-function RosterRow({ p, abbr, chip, tiles, badge, onSelect }) {
+function RosterRow({ p, abbr, chip, chipCls, tiles, badge, onSelect }) {
   useInjuries();
   const tc = teamColor(abbr);
   const live = injFor(p.name, abbr);
   const note = live ? String(live.type || live.location || "").trim() : String(p.injuryNotes || "").trim();
   const tag = statusTag(p, abbr);
   return (
-    <button onClick={() => onSelect(p)} className="w-full flex items-center gap-3 px-3 py-3 text-left active:bg-slate-50 dark:active:bg-slate-800">
-      <span className="shrink-0 w-11 text-center rounded-md py-1 text-[11px] font-extrabold text-white tabular-nums" style={{ backgroundColor: bannerColor(abbr) }}>{chip}</span>
+    <button onClick={p._virtual ? undefined : () => onSelect(p)} className={"w-full flex items-center gap-3 px-3 py-3 text-left " + (p._virtual ? "" : "active:bg-slate-50 dark:active:bg-slate-800")}>
+      <span className={"shrink-0 w-11 text-center rounded-md py-1 text-white tabular-nums " + (chipCls || "text-[11px] font-extrabold")} style={{ backgroundColor: bannerColor(abbr) }}>{chip}</span>
       <Avatar p={p} />
       <span className="flex-1 min-w-0">
         <span className="block text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate">
@@ -2291,7 +2325,7 @@ function Section({ title, note, color, children }) {
     <div>
       <div className="flex items-baseline justify-between mt-6 mb-2 px-1">
         <span className={"text-[11px] font-bold tracking-widest uppercase " + (color ? "" : "text-slate-400")} style={color ? { color } : undefined}>{title}</span>
-        {note && <span className="text-[9px] font-semibold text-slate-400">{note}</span>}
+        {note && (typeof note === "string" ? <span className="text-[9px] font-semibold text-slate-400">{note}</span> : note)}
       </div>
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">{children}</div>
     </div>
@@ -2303,6 +2337,7 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
   useInjuries();
   const { stats } = useLeagueData();
   const starts = useNextStarts(abbr, view === "pitching");
+  const todayLineup = useTodayLineup(abbr, view === "order");
   const line = (p) => seasonLineFor(stats, p, abbr);
   const at = (p) => latestStats(p) || {};                       // Airtable fallback when MLB has no line yet
   const batTiles = (p) => { const s = line(p), h = s && s.hit, a = at(p); return [["AVG", h ? fmt3(h.avg) : a.avg != null ? fmt3(a.avg) : null], ["HR", h ? h.hr : a.hr != null ? Math.round(a.hr) : null], ["RBI", h ? h.rbi : a.rbi != null ? Math.round(a.rbi) : null]]; };
@@ -2322,12 +2357,22 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
 
   if (view === "order") {
     const isSlot = (p) => /^\d+$/.test(String(p.sortLabel || "").trim()) && p.sort >= 1 && p.sort <= 9;
-    const order = batters.filter(isSlot).sort((a, b) => a.sort - b.sort);
-    const bench = batters.filter((p) => !isSlot(p)).sort((a, b) => statusRank(a) - statusRank(b) || lastNameSort(a, b));
+    const byNm = {}; for (const p of roster) byNm[hrbNrm(p.name)] = p;
+    // MLB's lineup first: all nine hitters even when one isn't in Airtable (he shows as a plain row you can't tap).
+    const mlbRows = todayLineup && todayLineup.order && todayLineup.order.length
+      ? todayLineup.order.map((o) => {
+          const k = String(o.name || "").toLowerCase();
+          if (o.id && MLB_ID_CACHE[k] == null) MLB_ID_CACHE[k] = o.id;                 // headshot without a name search
+          return { slot: o.slot, p: byNm[hrbNrm(o.name)] || { id: "mlb:" + o.id, name: o.name, pos: o.pos, no: o.no, teamName, stats: [], contracts: [], _virtual: true } };
+        })
+      : null;
+    const rows = mlbRows || batters.filter(isSlot).sort((a, b) => a.sort - b.sort).map((p) => ({ slot: p.sort, p }));   // fallback: Airtable order
+    const inOrder = new Set(rows.map((r) => hrbNrm(r.p.name)));
+    const bench = batters.filter((p) => !inOrder.has(hrbNrm(p.name))).sort((a, b) => statusRank(a) - statusRank(b) || lastNameSort(a, b));
     return (
       <>
-        <Section title="Batting Order" note={order.length ? "latest posted lineup" : null}>
-          {order.length ? order.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={String(p.sort)} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
+        <Section title="Batting Order" note={rows.length ? <LineupBadge lineup={todayLineup} /> : null}>
+          {rows.length ? rows.map(({ slot, p }) => <RosterRow key={p.id} p={p} abbr={abbr} chip={String(slot)} chipCls="text-[10px] font-bold" tiles={batTiles(p)} onSelect={onSelectPlayer} />)
             : empty("No lineup posted yet. It fills in on its own once MLB publishes one.")}
         </Section>
         {bench.length > 0 && <Section title={"Bench (" + bench.length + ")"}>{bench.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
@@ -3392,7 +3437,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v113";
+const HRB_VERSION = "v114";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
