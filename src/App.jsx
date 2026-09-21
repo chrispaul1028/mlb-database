@@ -211,15 +211,22 @@ function LiveStreak({ p }) {
 function Avatar({ p, size }) {
   const px = size === "lg" ? "w-20 h-20 text-2xl" : "w-11 h-11 text-sm";
   const key = String(p.name || "").toLowerCase();
+  const team = p._virtual ? (p.teamAbbr || "") : teamOfPlayer(p);
+  const known = p.mlbId || (LEADERS_CACHE.stats && LEADERS_CACHE.stats.byName && (LEADERS_CACHE.stats.byName[hrbNrm(p.name) + "|" + team] ?? LEADERS_CACHE.stats.byName[hrbNrm(p.name)])) || null;
+  if (known && MLB_ID_CACHE[key] == null) MLB_ID_CACHE[key] = known;
   const [mid, setMid] = useState(MLB_ID_CACHE[key]);
   useEffect(() => {
-    if (p.photo || MLB_ID_CACHE[key] !== undefined) return;
+    if (p.photo || MLB_ID_CACHE[key] != null) { if (MLB_ID_CACHE[key] !== mid) setMid(MLB_ID_CACHE[key]); return; }
+    if (MLB_ID_CACHE[key] === null) return;
     let alive = true;
     MLB_ID_CACHE[key] = null; // claim so parallel rows don't double-fetch
-    mlbFetch(`v1/people/search?names=${encodeURIComponent(p.name)}`)
+    mlbFetch(`v1/people/search?names=${encodeURIComponent(p.name)}&hydrate=currentTeam`)
       .then((r) => r.json())
       .then((d) => {
-        const person = (d.people || [])[0];
+        const people = d.people || [];
+        const tid = MLB_TEAM_ID[team];
+        const person = people.find((x) => x.active && x.currentTeam && x.currentTeam.id === tid)   // right team, still playing
+          || people.find((x) => x.active) || people[0];
         MLB_ID_CACHE[key] = person ? person.id : null;
         if (alive) setMid(MLB_ID_CACHE[key]);
       })
@@ -1795,10 +1802,12 @@ function useTodayLineup(abbr, on = true) {
       const box = await (await mlbFetch(`v1/game/${g.gamePk}/boxscore`)).json();
       const pl = (box.teams && box.teams[side] && box.teams[side].players) || {};
       const order = [], spots = {};
+      for (const x of Object.values(pl)) if (x.person && x.person.id && x.person.fullName) MLB_ID_CACHE[String(x.person.fullName).toLowerCase()] = x.person.id;
       for (const x of Object.values(pl)) {
         if (x.battingOrder == null || Number(x.battingOrder) % 100 !== 0 || !x.person) continue;      // starters only (x00)
         const pos = String((x.position && x.position.abbreviation) || "").toUpperCase();
         order.push({ slot: Number(x.battingOrder) / 100, name: x.person.fullName, pos, id: x.person.id, no: x.jerseyNumber || "" });
+        if (x.person.id) MLB_ID_CACHE[String(x.person.fullName).toLowerCase()] = x.person.id;
         if (pos) spots[pos] = x.person.fullName;
       }
       order.sort((a, b) => a.slot - b.slot);
@@ -1812,7 +1821,9 @@ function useTodayLineup(abbr, on = true) {
         let pp = null, today = null;
         if (g) {
           const side = g.teams.away.team.id === tid ? "away" : "home";
-          pp = g.teams[side].probablePitcher ? g.teams[side].probablePitcher.fullName : null;
+          const ppo = g.teams[side].probablePitcher;
+          pp = ppo ? ppo.fullName : null;
+          if (ppo && ppo.id) MLB_ID_CACHE[String(ppo.fullName).toLowerCase()] = ppo.id;   // exact photo for the starter
           today = await readBox(g);
         }
         if (today && today.order.length) { if (alive) setLineup({ confirmed: true, noGame: false, ...today, pitcher: pp }); return; }
@@ -1907,10 +1918,10 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
   const assigned = SPOTS.map((sp) => {
     let hit = null;
     if (sp.lbl === "P" && lineup && lineup.pitcher) {                  // probable pitcher counts even before the lineup is confirmed
-      hit = byName[hrbNrm(lineup.pitcher)] || { name: lineup.pitcher, pos: "P", id: "mlb:" + lineup.pitcher, _virtual: true };
+      hit = byName[hrbNrm(lineup.pitcher)] || { name: lineup.pitcher, pos: "P", id: "mlb:" + lineup.pitcher, _virtual: true, teamAbbr: abbr };
     } else if (lineup && lineup.confirmed && sp.lbl !== "P") {
       const nm = lineup.spots[sp.lbl];
-      if (nm) hit = byName[hrbNrm(nm)] || { name: nm, pos: sp.lbl, id: "mlb:" + nm, _virtual: true };
+      if (nm) hit = byName[hrbNrm(nm)] || { name: nm, pos: sp.lbl, id: "mlb:" + nm, _virtual: true, teamAbbr: abbr };
     }
     if (!hit && sp.lbl === "P") {                                        // no probable yet: the #1 starter from Airtable's Sort Priority
       const slot = (pl) => (/^\d+$/.test(String(pl.sortLabel ?? "").trim()) ? Number(pl.sort) : null);
@@ -1985,6 +1996,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
               <rect width="2.3" height="4.6" fill="#ffffff" fillOpacity="0.09" />
             </pattern>
             {/* fine speckle so the turf and the clay read as texture, not flat paint */}
+            <filter id="fvSoft" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="0.8" /></filter>
             <filter id="fvGrain" x="0" y="0" width="100%" height="100%">
               <feTurbulence type="fractalNoise" baseFrequency="1.15" numOctaves="2" seed="4" />
               <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0.08  0 0 0 0 0  0 0 0 -1.6 1.15" />
@@ -2015,10 +2027,18 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
           <g clipPath="url(#fairClip)">
             <circle cx="50" cy="106" r="93.5" fill="none" stroke="#b98a5a" strokeWidth="7" />
             <circle cx="50" cy="106" r="90.1" fill="none" stroke="#123d1e" strokeOpacity=".45" strokeWidth="0.4" />
-            <circle cx="50" cy="106" r="97.5" fill="none" stroke={tc} strokeWidth="5" />
-            <circle cx="50" cy="106" r="97.5" fill="none" stroke="#000" strokeOpacity=".25" strokeWidth="5" strokeDasharray="0.6 3.2" />
-            <circle cx="50" cy="106" r="100.2" fill="none" stroke="#facc15" strokeWidth="1.1" />
-            <circle cx="50" cy="106" r="95" fill="none" stroke="#fff" strokeOpacity=".3" strokeWidth="0.5" />
+            {/* wall shadow falling onto the warning track */}
+            <circle cx="50" cy="106" r="94.3" fill="none" stroke="#000" strokeOpacity=".38" strokeWidth="2.6" filter="url(#fvSoft)" />
+            {/* padded wall: base colour, dark foot, bright lip, pad seams */}
+            <circle cx="50" cy="106" r="97.7" fill="none" stroke={tc} strokeWidth="5.4" />
+            <circle cx="50" cy="106" r="95.6" fill="none" stroke="#000" strokeOpacity=".32" strokeWidth="1.2" />
+            <circle cx="50" cy="106" r="99.6" fill="none" stroke="#fff" strokeOpacity=".22" strokeWidth="1.1" />
+            <circle cx="50" cy="106" r="97.7" fill="none" stroke="#000" strokeOpacity=".28" strokeWidth="5.4" strokeDasharray="0.5 4.1" />
+            <circle cx="50" cy="106" r="97.7" fill="none" stroke="#fff" strokeOpacity=".08" strokeWidth="5.4" strokeDasharray="0.5 4.1" strokeDashoffset="-0.6" />
+            {/* home-run line: a yellow rail with a shaded underside and a glint on top */}
+            <circle cx="50" cy="106" r="100.15" fill="none" stroke="#7c4a03" strokeOpacity=".7" strokeWidth="0.7" />
+            <circle cx="50" cy="106" r="100.75" fill="none" stroke="#facc15" strokeWidth="1.3" />
+            <circle cx="50" cy="106" r="101.2" fill="none" stroke="#fff7c2" strokeOpacity=".8" strokeWidth="0.35" />
           </g>
           {/* ── infield clay: grass lip, clay, raked texture, drag arcs, shaded edge ── */}
           <path d="M50,106 L80.76,75.24 A28,28 0 1 0 19.24,75.24 Z" fill="none" stroke="#0f3a1b" strokeOpacity=".6" strokeWidth="1" strokeLinejoin="round" />
@@ -3442,7 +3462,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v116";
+const HRB_VERSION = "v117";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
