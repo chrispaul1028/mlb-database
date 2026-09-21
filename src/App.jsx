@@ -456,7 +456,7 @@ function SeasonPanel({ p, person, line, season }) {
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="grid grid-cols-4 gap-2 p-3">
           {tiles.map(([lbl, v, sub]) => (
-            <div key={lbl} className="rounded-xl border text-center py-2.5 px-0.5" style={{ backgroundColor: tc + "12", borderColor: tc + "4D" }}>
+            <div key={lbl} className="rounded-xl border-2 bg-white dark:bg-slate-900 text-center py-2.5 px-0.5" style={{ borderColor: tc + "55" }}>
               <div className="text-[7px] font-bold tracking-wider uppercase text-[color:var(--tc)] dark:text-slate-300 truncate" style={{ "--tc": tc }}>{lbl}</div>
               <div className="text-[19px] leading-tight font-black tabular-nums text-slate-900 dark:text-white mt-0.5">{v ?? "—"}</div>
               <div className="text-[9px] font-semibold tabular-nums text-slate-400 h-3">{sub || ""}</div>
@@ -1887,7 +1887,9 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
   // toward the outfield grass. That keeps every photo, name and number chip
   // clear of the bases. The catcher squats centred directly below the plate,
   // low enough that home plate and both batter's boxes stay visible.
-  // No pitcher here: the staff lives under Roster › Pitching Rotation.
+  // Only ONE pitcher here — today's starter (MLB's probable when posted,
+  // else Sort Priority 1 from Airtable); the rest of the staff lives under
+  // Roster › Pitching Rotation.
   const FIELD_H = 128;
   const SPOTS = [
     { lbl: "CF", x: 50, y: 27, aliases: ["CF", "OF"] },
@@ -1897,15 +1899,22 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
     { lbl: "SS", x: 34, y: 53, aliases: ["SS"] },
     { lbl: "3B", x: 15, y: 68, aliases: ["3B"] },
     { lbl: "1B", x: 85, y: 68, aliases: ["1B"] },
+    { lbl: "P",  x: 50, y: 70, aliases: ["SP", "P", "RHP", "LHP"] },    // today's starter, between the mound and 2B
     { lbl: "C",  x: 50, y: 116, aliases: ["C"] },
   ];
   // ── Assign ONE player per spot, computed once (no side effects) ──
   const used = new Set();
   const assigned = SPOTS.map((sp) => {
     let hit = null;
-    if (lineup && lineup.confirmed) {
-      const nm = sp.lbl === "P" ? (lineup.spots.P || lineup.pitcher) : lineup.spots[sp.lbl];
+    if (sp.lbl === "P" && lineup && lineup.pitcher) {                  // probable pitcher counts even before the lineup is confirmed
+      hit = byName[hrbNrm(lineup.pitcher)] || { name: lineup.pitcher, pos: "P", id: "mlb:" + lineup.pitcher, _virtual: true };
+    } else if (lineup && lineup.confirmed && sp.lbl !== "P") {
+      const nm = lineup.spots[sp.lbl];
       if (nm) hit = byName[hrbNrm(nm)] || { name: nm, pos: sp.lbl, id: "mlb:" + nm, _virtual: true };
+    }
+    if (!hit && sp.lbl === "P") {                                        // no probable yet: the #1 starter from Airtable's Sort Priority
+      const slot = (pl) => (/^\d+$/.test(String(pl.sortLabel ?? "").trim()) ? Number(pl.sort) : null);
+      hit = bigLeague.filter((pl) => sp.aliases.includes(String(pl.pos || "").toUpperCase()) && slot(pl) >= 1 && slot(pl) <= 5 && !tagOf(pl)).sort((a, b) => slot(a) - slot(b))[0] || null;
     }
     if (!hit) {
       const cands = bigLeague                        // projected lineup: skip the IL; a day-to-day player can still start (amber tag)
@@ -1918,11 +1927,6 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
   });
   const onField = new Set(assigned.filter(Boolean).map((pl) => hrbNrm(pl.name)));
 
-  const oaaChip = (v) => v == null ? "bg-slate-900/70 text-white/70"
-    : v >= 8 ? "bg-amber-400 text-slate-900"
-    : v >= 3 ? "bg-emerald-500 text-white"
-    : v > -3 ? "bg-slate-900/85 text-white"
-    : "bg-rose-600 text-white";
   const tc = teamColor(abbr) || "#1e3a8a";
   const isConf = !!(lineup && lineup.confirmed);
 
@@ -1950,7 +1954,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
           <span className={"absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-0.5 rounded-full text-[7px] font-extrabold text-white shadow " + TAG_SOLID[tagOf(pl).kind] + (tagOf(pl).kind === "il" ? " animate-pulse" : "")}>{injTag(pl)}</span>
         )}
       </span>
-      <span className="block mt-1 text-[9px] font-bold text-slate-700 dark:text-slate-200 truncate">{String(pl.name).split(" ").slice(-1)[0]}</span>
+      <span className="block mt-1 text-[9px] font-bold text-slate-700 dark:text-slate-200 truncate">{lastNameOf(pl.name)}</span>
       <span className="block text-[8px] font-extrabold truncate" style={{ color: tc }}>{pl.pos || ""}</span>
     </button>
   );
@@ -2084,18 +2088,13 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
                   <span className="w-11 h-11 rounded-full flex items-center justify-center text-[10px] font-extrabold bg-white/25 text-white/80 border-2 border-dashed border-white/50 shadow-md">{sp.lbl}</span>
                 )}
                 {p && cleanNo(p.no) && (
-                  <span className="absolute top-[18%] -translate-y-1/2 -left-4 px-1 rounded text-[8px] font-extrabold bg-white/85 text-slate-700 tabular-nums shadow">#{cleanNo(p.no)}</span>
-                )}
-                {p && !p._virtual && (
-                  <span className={"absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 rounded-full text-[8px] font-extrabold tabular-nums shadow " + oaaChip(p.oaa)}>
-                    {p.oaa != null ? (p.oaa > 0 ? "+" : "") + Math.round(p.oaa) : "—"}
-                  </span>
+                  <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 rounded-full text-[8px] font-extrabold tabular-nums shadow bg-slate-900/85 text-white">#{cleanNo(p.no)}</span>
                 )}
                 {p && injTag(p) && (
                   <span className={"absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded-full text-[7px] font-extrabold text-white shadow ring-2 ring-white/80 " + TAG_SOLID[tagOf(p).kind] + (tagOf(p).kind === "il" ? " animate-pulse" : "")}>{injTag(p)}</span>
                 )}
               </span>
-              <span className="mt-2 text-[8px] font-bold text-white/95 max-w-[64px] truncate drop-shadow">{p ? String(p.name).split(" ").slice(-1)[0] : ""}</span>
+              <span className="mt-1.5 text-[8px] font-bold text-white/95 max-w-[64px] truncate drop-shadow">{p ? lastNameOf(p.name) : ""}</span>
             </button>
           );
         })}
@@ -2127,7 +2126,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
           </span>
         ))}
       </div>
-      <div className="text-[9px] text-slate-400 mt-2 px-1">Chip = Outs Above Average: gold +8 elite · green +3 · red −3 or worse · red tag = injured list · amber = day-to-day · pitchers are under Pitching Rotation · minor leaguers at the bottom of the roster · green badge = today's confirmed lineup, refreshes automatically · tap for profile</div>
+      <div className="text-[9px] text-slate-400 mt-2 px-1">Red tag = injured list · amber = day-to-day · the only pitcher shown is today's starter (the staff is under Pitching Rotation) · minor leaguers sit at the bottom of the roster · green badge = today's confirmed lineup, refreshes automatically · tap for profile</div>
     </div>
   );
 }
@@ -2223,7 +2222,9 @@ const seasonLineFor = (stats, p, abbr) => {
   return id != null ? stats.players[id] || null : null;
 };
 const isPitcherP = (p) => catOf(p) === "__P__" || ["pitching", "bullpen"].includes(String(p.role || "").trim().toLowerCase());
-const lastNameSort = (a, b) => { const l = (n) => String(n).split(" ").slice(-1)[0]; return l(a.name).localeCompare(l(b.name)) || String(a.name).localeCompare(String(b.name)); };
+// Surname for labels and sorting: drops Jr. / Sr. / II / III so "Acuna Jr." reads "Acuna"
+const lastNameOf = (n) => { const w = String(n || "").trim().split(/\s+/).filter((x) => !/^(jr|sr|ii|iii|iv|v)\.?$/i.test(x)); return w[w.length - 1] || ""; };
+const lastNameSort = (a, b) => { const l = lastNameOf; return l(a.name).localeCompare(l(b.name)) || String(a.name).localeCompare(String(b.name)); };
 const fmt3 = (v) => (v == null ? "—" : Number(v).toFixed(3).replace(/^0/, ""));
 const fmt2 = (v) => (v == null ? "—" : Number(v).toFixed(2));
 const rankCls = (r) => (r == null ? "text-slate-400" : r <= 10 ? "text-green-600 dark:text-green-400" : r <= 20 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400");
@@ -3441,7 +3442,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v115";
+const HRB_VERSION = "v116";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
