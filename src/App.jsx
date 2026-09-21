@@ -210,9 +210,10 @@ function LiveStreak({ p }) {
 }
 function Avatar({ p, size }) {
   const px = size === "lg" ? "w-20 h-20 text-2xl" : "w-11 h-11 text-sm";
-  const key = String(p.name || "").toLowerCase();
   const team = p._virtual ? (p.teamAbbr || "") : teamOfPlayer(p);
-  const known = p.mlbId || (LEADERS_CACHE.stats && LEADERS_CACHE.stats.byName && (LEADERS_CACHE.stats.byName[hrbNrm(p.name) + "|" + team] ?? LEADERS_CACHE.stats.byName[hrbNrm(p.name)])) || null;
+  const key = String(p.name || "").toLowerCase() + (team ? "|" + team : "");          // name + team: two players sharing a name never share a photo
+  const byName = LEADERS_CACHE.stats && LEADERS_CACHE.stats.byName;
+  const known = p.mlbId || (byName && (team ? byName[hrbNrm(p.name) + "|" + team] : byName[hrbNrm(p.name)])) || null;
   if (known && MLB_ID_CACHE[key] == null) MLB_ID_CACHE[key] = known;
   const [mid, setMid] = useState(MLB_ID_CACHE[key]);
   useEffect(() => {
@@ -455,6 +456,15 @@ function SeasonPanel({ p, person, line, season }) {
   const fmtV = (v) => (cur[0] === "avg" ? fmt3(v) : cur[0] === "era" ? fmt2(v) : Number.isInteger(v) ? String(v) : v.toFixed(1));
   const ticks = [0, top / 2 / 1.08, top / 1.08];
   const lastV = roll.length ? roll[roll.length - 1] : null;
+  // Total over the whole window (the answer to "how many hits in these 30 games?")
+  const total = (() => {
+    if (!games.length) return null;
+    if (cur[0] === "avg") { const ab = games.reduce((n, x) => n + (x.stat.atBats || 0), 0), h = games.reduce((n, x) => n + (x.stat.hits || 0), 0); return ab ? fmt3(h / ab) + " AVG (" + h + "-for-" + ab + ")" : null; }
+    if (cur[0] === "era") { const ip = games.reduce((n, x) => n + ipNum(x.stat.inningsPitched), 0), er = games.reduce((n, x) => n + (x.stat.earnedRuns || 0), 0); return ip ? fmt2((er * 9) / ip) + " ERA (" + er + " ER / " + Math.floor(ip) + "." + Math.round((ip % 1) * 3) + " IP)" : null; }
+    const sum = raw.reduce((n, v) => n + (v || 0), 0);
+    if (cur[2] === "inningsPitched") return Math.floor(sum) + "." + Math.round((sum % 1) * 3) + " IP";
+    return sum + " " + cur[1] + " · " + (sum / games.length).toFixed(2).replace(/\.?0+$/, "") + " per " + (pitcher ? "outing" : "game");
+  })();
   const winLbl = cur[0] === "avg" ? "10-game rolling average" : cur[0] === "era" ? "5-outing rolling ERA" : "per " + (pitcher ? "outing" : "game") + ", " + win + "-" + (pitcher ? "outing" : "game") + " rolling average";
 
   return (
@@ -463,10 +473,10 @@ function SeasonPanel({ p, person, line, season }) {
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="grid grid-cols-4 gap-2 p-3">
           {tiles.map(([lbl, v, sub]) => (
-            <div key={lbl} className="rounded-xl border-2 bg-white dark:bg-slate-900 text-center py-2.5 px-0.5" style={{ borderColor: tc + "55" }}>
-              <div className="text-[7px] font-bold tracking-wider uppercase text-[color:var(--tc)] dark:text-slate-300 truncate" style={{ "--tc": tc }}>{lbl}</div>
-              <div className="text-[19px] leading-tight font-black tabular-nums text-slate-900 dark:text-white mt-0.5">{v ?? "—"}</div>
-              <div className="text-[9px] font-semibold tabular-nums text-slate-400 h-3">{sub || ""}</div>
+            <div key={lbl} className="rounded-xl border-2 bg-white dark:bg-slate-900 text-center overflow-hidden" style={{ borderColor: tc + "66" }}>
+              <div className="text-[7px] font-extrabold tracking-wider uppercase text-black dark:text-white truncate px-0.5 py-1" style={{ backgroundColor: tc }}>{lbl}</div>
+              <div className="text-[19px] leading-tight font-black tabular-nums text-slate-900 dark:text-white mt-1.5">{v ?? "—"}</div>
+              <div className="text-[9px] font-semibold tabular-nums text-slate-400 h-3 mb-1.5">{sub || ""}</div>
             </div>
           ))}
         </div>
@@ -478,6 +488,12 @@ function SeasonPanel({ p, person, line, season }) {
           ))}
         </div>
         <div className="px-2 pt-2 pb-3">
+          {gl != null && games.length >= 2 && total && (
+            <div className="flex items-baseline justify-between px-2 mb-1">
+              <span className="text-[9px] font-bold tracking-widest uppercase text-slate-400">Last {games.length} {pitcher ? "outings" : "games"}</span>
+              <span className="text-[13px] font-black tabular-nums text-slate-900 dark:text-white">{total}</span>
+            </div>
+          )}
           {gl == null ? <div className="text-center text-[11px] text-slate-400 py-12">Loading game log…</div>
             : games.length < 2 ? <div className="text-center text-[11px] text-slate-400 py-12">Not enough games yet for a trend.</div> : (
             <svg viewBox={`0 0 ${W} ${H}`} className="w-full text-[color:var(--tc)] dark:text-sky-300" style={{ "--tc": tc }}>
@@ -1802,12 +1818,11 @@ function useTodayLineup(abbr, on = true) {
       const box = await (await mlbFetch(`v1/game/${g.gamePk}/boxscore`)).json();
       const pl = (box.teams && box.teams[side] && box.teams[side].players) || {};
       const order = [], spots = {};
-      for (const x of Object.values(pl)) if (x.person && x.person.id && x.person.fullName) MLB_ID_CACHE[String(x.person.fullName).toLowerCase()] = x.person.id;
+      for (const x of Object.values(pl)) if (x.person && x.person.id && x.person.fullName) MLB_ID_CACHE[String(x.person.fullName).toLowerCase() + "|" + abbr] = x.person.id;
       for (const x of Object.values(pl)) {
         if (x.battingOrder == null || Number(x.battingOrder) % 100 !== 0 || !x.person) continue;      // starters only (x00)
         const pos = String((x.position && x.position.abbreviation) || "").toUpperCase();
         order.push({ slot: Number(x.battingOrder) / 100, name: x.person.fullName, pos, id: x.person.id, no: x.jerseyNumber || "" });
-        if (x.person.id) MLB_ID_CACHE[String(x.person.fullName).toLowerCase()] = x.person.id;
         if (pos) spots[pos] = x.person.fullName;
       }
       order.sort((a, b) => a.slot - b.slot);
@@ -1823,7 +1838,7 @@ function useTodayLineup(abbr, on = true) {
           const side = g.teams.away.team.id === tid ? "away" : "home";
           const ppo = g.teams[side].probablePitcher;
           pp = ppo ? ppo.fullName : null;
-          if (ppo && ppo.id) MLB_ID_CACHE[String(ppo.fullName).toLowerCase()] = ppo.id;   // exact photo for the starter
+          if (ppo && ppo.id) MLB_ID_CACHE[String(ppo.fullName).toLowerCase() + "|" + abbr] = ppo.id;   // exact photo for the starter
           today = await readBox(g);
         }
         if (today && today.order.length) { if (alive) setLineup({ confirmed: true, noGame: false, ...today, pitcher: pp }); return; }
@@ -1961,11 +1976,14 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
         <span className={"block " + size + " mx-auto rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 border-2 " + (tagOf(pl) ? TAG_RING[tagOf(pl).kind] : "border-transparent")}>
           {pl._virtual ? <span className="w-full h-full flex items-center justify-center text-[9px] font-extrabold text-slate-500">{pl.pos}</span> : <Avatar p={pl} />}
         </span>
+        {cleanNo(pl.no) && (
+          <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 rounded-full text-[8px] font-extrabold tabular-nums shadow bg-slate-900/85 text-white">#{cleanNo(pl.no)}</span>
+        )}
         {injTag(pl) && (
           <span className={"absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-0.5 rounded-full text-[7px] font-extrabold text-white shadow " + TAG_SOLID[tagOf(pl).kind] + (tagOf(pl).kind === "il" ? " animate-pulse" : "")}>{injTag(pl)}</span>
         )}
       </span>
-      <span className="block mt-1 text-[9px] font-bold text-slate-700 dark:text-slate-200 truncate">{lastNameOf(pl.name)}</span>
+      <span className="block mt-2 text-[9px] font-bold text-slate-700 dark:text-slate-200 truncate">{lastNameOf(pl.name)}</span>
       <span className="block text-[8px] font-extrabold truncate" style={{ color: tc }}>{pl.pos || ""}</span>
     </button>
   );
@@ -2280,6 +2298,33 @@ function useNextStarts(abbr, on) {
   return starts;
 }
 
+// Bats / throws for everyone on the 40-man, from MLB: { normalizedName: { bats: "R"|"L"|"S", throws: "R"|"L" } }
+const HANDS_CACHE = {};
+function useTeamHands(abbr, on = true) {
+  const [hands, setHands] = useState(HANDS_CACHE[abbr] || null);
+  useEffect(() => {
+    const tid = MLB_TEAM_ID[abbr];
+    if (!on || !tid || HANDS_CACHE[abbr]) return;
+    let alive = true;
+    (async () => {
+      try {
+        const d = await (await mlbFetch(`v1/teams/${tid}/roster?rosterType=40Man&hydrate=person`)).json();
+        const out = {};
+        for (const r of d.roster || []) {
+          const per = r.person || {};
+          if (!per.fullName) continue;
+          out[hrbNrm(per.fullName)] = { bats: (per.batSide || {}).code || null, throws: (per.pitchHand || {}).code || null };
+          if (per.id) MLB_ID_CACHE[String(per.fullName).toLowerCase() + "|" + abbr] = per.id;     // exact photos for the whole 40-man
+        }
+        HANDS_CACHE[abbr] = out;
+        if (alive) setHands(out);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [abbr, on]);
+  return hands || {};
+}
+
 // Header tile, football style: tinted border, team-colour label, big number, coloured rank line.
 function RankTile({ label, value, sub, subCls, tc, valueCls, onClick }) {
   const Tag = onClick ? "button" : "div";
@@ -2307,21 +2352,21 @@ function RosterRow({ p, abbr, chip, chipCls, tiles, badge, onSelect }) {
         <span className="block text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate">
           {cleanNo(p.no) && <span className="text-[13px] font-bold text-slate-400">#{cleanNo(p.no)} </span>}{p.name}
         </span>
-        <span className="flex items-end justify-between gap-2 mt-1">
-          <span className="min-w-0">
-            {badge}
-            {tag && <span className="block"><LiveStatus p={p} /></span>}
-            {tag && tag.kind !== "min" && note && <span className="block text-[11px] font-semibold text-rose-500 truncate lowercase mt-0.5">({note})</span>}
-          </span>
-          <span className="flex gap-1.5 shrink-0">
-            {tiles.map(([lbl, v]) => (
-              <span key={lbl} className="w-[50px] rounded-lg border text-center py-1" style={{ backgroundColor: tc + "12", borderColor: tc + "4D" }}>
-                <span className="block text-[7px] font-bold uppercase tracking-wider text-[color:var(--tc)] dark:text-slate-300" style={{ "--tc": tc }}>{lbl}</span>
-                <span className="block text-[14px] leading-tight font-extrabold tabular-nums text-slate-900 dark:text-white">{v ?? "—"}</span>
-              </span>
-            ))}
-          </span>
+        <span className="flex gap-1 mt-1 justify-end">
+          {tiles.map(([lbl, v]) => (
+            <span key={lbl} className={(tiles.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border text-center py-1"} style={{ backgroundColor: tc + "12", borderColor: tc + "4D" }}>
+              <span className="block text-[7px] font-bold uppercase tracking-wider text-[color:var(--tc)] dark:text-slate-300" style={{ "--tc": tc }}>{lbl}</span>
+              <span className="block text-[14px] leading-tight font-extrabold tabular-nums text-slate-900 dark:text-white">{v ?? "—"}</span>
+            </span>
+          ))}
         </span>
+        {(badge || tag) && (
+          <span className="flex items-center gap-1.5 mt-1.5 min-w-0">
+            {badge}
+            {tag && <LiveStatus p={p} />}
+            {tag && tag.kind !== "min" && note && <span className="text-[11px] font-semibold text-rose-500 truncate lowercase">({note})</span>}
+          </span>
+        )}
       </span>
     </button>
   );
@@ -2345,13 +2390,17 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
   const { stats } = useLeagueData();
   const starts = useNextStarts(abbr, view === "pitching");
   const todayLineup = useTodayLineup(abbr, view === "order");
+  const hands = useTeamHands(abbr, view === "order" || view === "pitching");
+  const batsOf = (p) => (hands[hrbNrm(p.name)] || {}).bats || batterHand(p) || "—";
+  const throwsOf = (p) => { const t = (hands[hrbNrm(p.name)] || {}).throws; return t ? t + "HP" : pitcherHand(p) || "P"; };
   const line = (p) => seasonLineFor(stats, p, abbr);
   const at = (p) => latestStats(p) || {};                       // Airtable fallback when MLB has no line yet
   const batTiles = (p) => { const s = line(p), h = s && s.hit, a = at(p); return [["AVG", h ? fmt3(h.avg) : a.avg != null ? fmt3(a.avg) : null], ["HR", h ? h.hr : a.hr != null ? Math.round(a.hr) : null], ["RBI", h ? h.rbi : a.rbi != null ? Math.round(a.rbi) : null]]; };
   const pitTiles = (p, mode) => {
     const s = line(p), x = s && s.pit, a = at(p);
     const era = x ? fmt2(x.era) : a.era != null ? fmt2(a.era) : null;
-    if (mode === "sp") return [["W-L", x ? x.w + "-" + x.l : a.w != null ? Math.round(a.w) + "-" + Math.round(a.l ?? 0) : null], ["ERA", era], ["K", x ? x.so : null]];
+    const whip = x ? fmt2(x.whip) : a.whip != null ? fmt2(a.whip) : null;
+    if (mode === "sp") return [["W-L", x ? x.w + "-" + x.l : a.w != null ? Math.round(a.w) + "-" + Math.round(a.l ?? 0) : null], ["ERA", era], ["K", x ? x.so : null], ["WHIP", whip]];
     if (mode === "rp") return [["IP", x ? x.ip : null], ["ERA", era], [x && x.sv > 0 ? "SV" : "HLD", x ? (x.sv > 0 ? x.sv : x.hld) : null]];
     return [["ERA", era], ["WHIP", x ? fmt2(x.whip) : a.whip != null ? fmt2(a.whip) : null], ["K", x ? x.so : null]];
   };
@@ -2369,8 +2418,8 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
     const mlbRows = todayLineup && todayLineup.order && todayLineup.order.length
       ? todayLineup.order.map((o) => {
           const k = String(o.name || "").toLowerCase();
-          if (o.id && MLB_ID_CACHE[k] == null) MLB_ID_CACHE[k] = o.id;                 // headshot without a name search
-          return { slot: o.slot, pos: o.pos, p: byNm[hrbNrm(o.name)] || { id: "mlb:" + o.id, name: o.name, pos: o.pos, no: o.no, teamName, stats: [], contracts: [], _virtual: true } };
+          if (o.id) MLB_ID_CACHE[k + "|" + abbr] = o.id;                                 // headshot without a name search
+          return { slot: o.slot, pos: o.pos, p: byNm[hrbNrm(o.name)] || { id: "mlb:" + o.id, name: o.name, pos: o.pos, no: o.no, teamName, teamAbbr: abbr, stats: [], contracts: [], _virtual: true } };
         })
       : null;
     const rows = mlbRows || batters.filter(isSlot).sort((a, b) => a.sort - b.sort).map((p) => ({ slot: p.sort, p }));   // fallback: Airtable order
@@ -2379,7 +2428,7 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
     return (
       <>
         <Section title="Batting Order" note={rows.length ? <LineupBadge lineup={todayLineup} /> : null}>
-          {rows.length ? rows.map(({ slot, pos, p }) => <RosterRow key={p.id} p={p} abbr={abbr} chip={pos || p.gamePos || p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
+          {rows.length ? rows.map(({ slot, p }) => <RosterRow key={p.id} p={p} abbr={abbr} chip={batsOf(p)} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
             : empty("No lineup posted yet. It fills in on its own once MLB publishes one.")}
         </Section>
         {bench.length > 0 && <Section title={"Bench (" + bench.length + ")"}>{bench.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
@@ -2397,12 +2446,12 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
     return (
       <>
         <Section title="Starting Rotation" note="Sort Priority 1–5">
-          {rotation.length ? rotation.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={"SP" + slot(p)} tiles={pitTiles(p, "sp")} badge={startBadge(p)} onSelect={onSelectPlayer} />)
+          {rotation.length ? rotation.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={throwsOf(p)} tiles={pitTiles(p, "sp")} badge={startBadge(p)} onSelect={onSelectPlayer} />)
             : empty("No rotation set. Give your five starters Sort Priority 1–5 in Airtable.")}
         </Section>
         <Section title={"Bullpen (" + (closers.length + pen.length) + ")"} note="closer first · then most innings">
-          {closers.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip="CL" tiles={pitTiles(p, "rp")} onSelect={onSelectPlayer} />)}
-          {pen.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={pitcherHand(p) || "RP"} tiles={pitTiles(p, "rp")} badge={startBadge(p)} onSelect={onSelectPlayer} />)}
+          {closers.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={throwsOf(p)} tiles={pitTiles(p, "rp")} badge={<span className="inline-block rounded px-1.5 py-px text-[9px] font-extrabold uppercase tracking-wide text-white" style={{ backgroundColor: bannerColor(abbr) }}>Closer</span>} onSelect={onSelectPlayer} />)}
+          {pen.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={throwsOf(p)} tiles={pitTiles(p, "rp")} badge={startBadge(p)} onSelect={onSelectPlayer} />)}
           {closers.length + pen.length === 0 && empty("No relievers on the roster.")}
         </Section>
       </>
@@ -3462,7 +3511,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v117";
+const HRB_VERSION = "v118";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -4116,12 +4165,12 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                       {/* center status pill */}
                       <span className="absolute left-1/2 -translate-x-1/2 shrink-0 text-center pointer-events-none">
                         {state === "Live" ? (
-                          <span className="block rounded-lg bg-black/45 backdrop-blur-sm px-2.5 py-1">
-                            <span className="block text-[13px] font-extrabold text-white tabular-nums leading-tight">
+                          <span className="block rounded-lg bg-rose-600 shadow-lg ring-2 ring-white/70 px-2.5 py-1 animate-pulse">
+                            <span className="block text-[13px] font-black text-white tabular-nums leading-tight">
                               {g.linescore && g.linescore.currentInning != null ? g.linescore.currentInning : ""}
                               <span className="ml-0.5">{g.linescore && String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "▲" : "▼"}</span>
                             </span>
-                            <span className="block text-[8px] font-extrabold uppercase tracking-wider text-white/75">
+                            <span className="block text-[8px] font-black uppercase tracking-wider text-white">
                               {g.linescore && g.linescore.outs != null ? g.linescore.outs + " OUT" + (g.linescore.outs === 1 ? "" : "S") : "LIVE"}
                             </span>
                           </span>
