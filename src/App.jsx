@@ -439,7 +439,7 @@ function SeasonPanel({ p, person, line, season }) {
     return w.reduce((n, x) => n + (cur[2] === "inningsPitched" ? ipNum(x.stat.inningsPitched) : Number(x.stat[cur[2]] || 0)), 0) / w.length;
   });
   const rate = cur[2] == null;
-  const vals = [...roll.filter((v) => v != null), ...(rate ? [] : raw)];
+  const vals = roll.filter((v) => v != null);
   const top = Math.max(rate ? (cur[0] === "avg" ? 0.4 : 6) : 2, ...vals) * 1.08;
   const W = 320, H = 150, L = 30, R = 8, T = 14, B = 20;
   const X = (i) => L + (games.length > 1 ? (i / (games.length - 1)) * (W - L - R) : (W - L - R) / 2);
@@ -448,16 +448,16 @@ function SeasonPanel({ p, person, line, season }) {
   const fmtV = (v) => (cur[0] === "avg" ? fmt3(v) : cur[0] === "era" ? fmt2(v) : Number.isInteger(v) ? String(v) : v.toFixed(1));
   const ticks = [0, top / 2 / 1.08, top / 1.08];
   const lastV = roll.length ? roll[roll.length - 1] : null;
-  const winLbl = cur[0] === "avg" ? "10-game average" : cur[0] === "era" ? "ERA over his last 5 outings" : win + (pitcher ? "-outing" : "-game") + " average";
+  const winLbl = cur[0] === "avg" ? "10-game rolling average" : cur[0] === "era" ? "5-outing rolling ERA" : "per " + (pitcher ? "outing" : "game") + ", " + win + "-" + (pitcher ? "outing" : "game") + " rolling average";
 
   return (
     <>
       <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">{season} Season · {S.g} GP</div>
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="grid grid-cols-4">
-          {tiles.map(([lbl, v, sub], i) => (
-            <div key={lbl} className={"text-center py-3.5 border-slate-100 dark:border-slate-800 " + (i % 4 !== 3 ? "border-r " : "") + "border-b"}>
-              <div className="text-[8px] font-bold tracking-widest uppercase text-[color:var(--tc)] dark:text-slate-300" style={{ "--tc": tc }}>{lbl}</div>
+        <div className="grid grid-cols-4 gap-2 p-3">
+          {tiles.map(([lbl, v, sub]) => (
+            <div key={lbl} className="rounded-xl border text-center py-2.5 px-0.5" style={{ backgroundColor: tc + "12", borderColor: tc + "4D" }}>
+              <div className="text-[7px] font-bold tracking-wider uppercase text-[color:var(--tc)] dark:text-slate-300 truncate" style={{ "--tc": tc }}>{lbl}</div>
               <div className="text-[19px] leading-tight font-black tabular-nums text-slate-900 dark:text-white mt-0.5">{v ?? "—"}</div>
               <div className="text-[9px] font-semibold tabular-nums text-slate-400 h-3">{sub || ""}</div>
             </div>
@@ -480,8 +480,8 @@ function SeasonPanel({ p, person, line, season }) {
                   <text x={L - 5} y={Y(t) + 3} textAnchor="end" className="fill-slate-400" fontSize="8" fontWeight="600">{fmtV(cur[0] === "avg" || cur[0] === "era" ? t : Math.round(t * 10) / 10)}</text>
                 </g>
               ))}
-              {!rate && raw.map((v, i) => <circle key={i} cx={X(i)} cy={Y(v)} r="2" fill="currentColor" fillOpacity={cur[0] === "hr" && v > 0 ? 0.95 : 0.28} />)}
-              {pts.length > 1 && <polyline points={pts.map((q) => q.join(",")).join(" ")} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />}
+              {pts.length > 1 && <polygon points={[[pts[0][0], Y(0)], ...pts, [pts[pts.length - 1][0], Y(0)]].map((q) => q.join(",")).join(" ")} fill="currentColor" fillOpacity="0.10" />}
+              {pts.length > 1 && <polyline points={pts.map((q) => q.join(",")).join(" ")} fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />}
               {pts.length > 0 && lastV != null && (
                 <g>
                   <circle cx={pts[pts.length - 1][0]} cy={pts[pts.length - 1][1]} r="3.4" fill="currentColor" stroke="#fff" strokeWidth="1.2" />
@@ -492,7 +492,7 @@ function SeasonPanel({ p, person, line, season }) {
               <text x={W - R} y={H - 5} textAnchor="end" className="fill-slate-400" fontSize="8" fontWeight="600">{String(games[games.length - 1].date || "").slice(5).replace("-", "/")}</text>
             </svg>
           )}
-          {gl != null && games.length >= 2 && <div className="text-[9px] text-slate-400 text-center mt-1">{cur[1]} · last {games.length} {pitcher ? "outings" : "games"} · {rate ? "line = " + winLbl : "dots = each " + (pitcher ? "outing" : "game") + " · line = " + winLbl}</div>}
+          {gl != null && games.length >= 2 && <div className="text-[9px] text-slate-400 text-center mt-1">{cur[1]} · {winLbl} over his last {games.length} {pitcher ? "outings" : "games"}</div>}
         </div>
       </div>
     </>
@@ -501,6 +501,7 @@ function SeasonPanel({ p, person, line, season }) {
 
 function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
   useEffect(() => { window.scrollTo(0, 0); }, []);
+  useBackSwipe(onBack);
   const act = activeOf(p);
   const past = p.contracts.filter((c) => c !== act);
   const no = cleanNo(p.no);
@@ -585,51 +586,6 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
         )}
 
         {mode === "full" && line && <SeasonPanel p={p} person={person} line={line} season={leagueStats ? leagueStats.season : ""} />}
-
-        {mode === "full" && p.stats && p.stats.length > 0 && (
-          <>
-            <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Stats</div>
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800">
-              {p.stats.map((st, i) => {
-                const isP = ["Pitching", "Bullpen"].includes(unitOf(p));
-                const showBat = !isP || st.avg != null || st.hr != null || st.rbi != null;
-                const showPit = isP || st.era != null || st.w != null || st.sv != null || st.whip != null;
-                const fmtPct = (v) => (v == null ? null : Number(v).toFixed(1) + "%");
-                return (
-                  <div key={i} className="px-4 py-3">
-                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{st.season || "—"}</div>
-                    {showBat && <div className="flex justify-between">
-                      {[["G", st.gp != null ? Math.round(st.gp) : null], ["AVG", st.avg != null ? Number(st.avg).toFixed(3).replace(/^0/, "") : null], ["HR", st.hr != null ? Math.round(st.hr) : null], ["RBI", st.rbi != null ? Math.round(st.rbi) : null], ["SB", st.sb != null ? Math.round(st.sb) : null], ...(i === 0 && p.barrel != null ? [["BRL%", Number(p.barrel).toFixed(1) + "%"]] : []), ...(i === 0 && p.bbe != null ? [["BBE", Math.round(p.bbe)]] : [])].map(([lbl, v]) => (
-                        <span key={lbl} className="flex-1 text-center">
-                          <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
-                          <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v ?? "—"}</span>
-                        </span>
-                      ))}
-                    </div>}
-                    {(st.avgVl != null || st.avgVr != null || st.opsVl != null || st.opsVr != null) && (
-                      <div className="flex justify-between mt-2">
-                        {[["AVG vs LHP", st.avgVl != null ? Number(st.avgVl).toFixed(3).replace(/^0/, "") : null], ["OPS vs LHP", st.opsVl != null ? Number(st.opsVl).toFixed(3).replace(/^0/, "") : null], ["AVG vs RHP", st.avgVr != null ? Number(st.avgVr).toFixed(3).replace(/^0/, "") : null], ["OPS vs RHP", st.opsVr != null ? Number(st.opsVr).toFixed(3).replace(/^0/, "") : null]].map(([lbl, v]) => (
-                          <span key={lbl} className="flex-1 text-center">
-                            <span className="block text-[8px] font-bold text-slate-400">{lbl}</span>
-                            <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v ?? "—"}</span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {showPit && <div className="flex justify-between mt-2">
-                      {[["W-L", st.w != null || st.l != null ? `${Math.round(st.w || 0)}-${Math.round(st.l || 0)}` : null], ["ERA", st.era != null ? Number(st.era).toFixed(2) : null], ["SO", st.so != null ? Math.round(st.so) : null], ["SV", st.sv != null ? Math.round(st.sv) : null], ...(i === 0 && p.hr9 != null ? [["HR/9", Number(p.hr9).toFixed(2)]] : [])].map(([lbl, v]) => (
-                        <span key={lbl} className="flex-1 text-center">
-                          <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
-                          <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">{v ?? "—"}</span>
-                        </span>
-                      ))}
-                    </div>}
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
 
         {act && salaried(act).length > 0 && (
           <div className="mt-4"><ContractCard c={act} big /></div>
@@ -1123,6 +1079,35 @@ function useSwipe({ onLeft, onRight }) {
   };
 }
 
+// ── Swipe right = back, on every page ──
+// Each open page (team page, player page…) registers its own back action while
+// it's on screen; a right swipe anywhere runs the top one. Pages stack, so
+// Teams › Yankees › Judge backs out one level at a time. The bottom tab bar
+// closes every page at once, so after a tab press there is nothing to back to.
+const BACK = { stack: [] };
+function useBackSwipe(fn) {
+  const r = useRef(fn); r.current = fn;
+  useEffect(() => { const e = { r }; BACK.stack.push(e); return () => { BACK.stack = BACK.stack.filter((x) => x !== e); }; }, []);
+}
+function useGlobalBackSwipe() {
+  useEffect(() => {
+    let st = null;
+    const onStart = (e) => { const t = e.touches[0]; st = { x: t.clientX, y: t.clientY, t: Date.now(), el: e.target }; };
+    const onEnd = (e) => {
+      if (!st) return;
+      const t = e.changedTouches[0], dx = t.clientX - st.x, dy = t.clientY - st.y, dt = Date.now() - st.t, el = st.el; st = null;
+      if (dt > 700 || dx < 70 || Math.abs(dy) > 70 || dx < Math.abs(dy) * 1.5) return;                 // left→right only
+      if (el && el.closest && el.closest("[data-own-swipe]")) return;                                    // game screen handles its own
+      for (let n = el; n && n !== document.body; n = n.parentElement) { if (n.scrollWidth > n.clientWidth + 2 && n.scrollLeft > 0) return; }   // was scrolling a pill row
+      const top = BACK.stack[BACK.stack.length - 1];
+      if (top) top.r.current();
+    };
+    document.addEventListener("touchstart", onStart, { passive: true });
+    document.addEventListener("touchend", onEnd, { passive: true });
+    return () => { document.removeEventListener("touchstart", onStart); document.removeEventListener("touchend", onEnd); };
+  }, []);
+}
+
 // Live game feed from our own /api/game (Step 1). Ticks every 20s while the
 // game is live, every 2 min before first pitch, stops at Final, and refreshes
 // the moment the app comes back to the foreground. Returns null until loaded
@@ -1304,7 +1289,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
   const order = (teamBox && teamBox.battingOrder) || [];
 
   return (
-    <div {...swipe}>
+    <div {...swipe} data-own-swipe="1">
       <div className="px-4 pb-5" style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)", backgroundColor: teamColor(abbrOf(side)) }}>
         <div className="flex items-center justify-between mb-3">
           <button onClick={onBack} className="text-white/90 text-sm font-semibold">‹ Matchups</button>
@@ -2275,13 +2260,14 @@ function useNextStarts(abbr, on) {
 }
 
 // Header tile, football style: tinted border, team-colour label, big number, coloured rank line.
-function RankTile({ label, value, sub, subCls, tc, valueCls }) {
+function RankTile({ label, value, sub, subCls, tc, valueCls, onClick }) {
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 px-1.5 py-3.5 text-center shadow-sm" style={{ borderColor: tc ? tc + "55" : undefined }}>
+    <Tag onClick={onClick} className={"bg-white dark:bg-slate-900 rounded-2xl border-2 px-1.5 py-3.5 text-center shadow-sm w-full " + (onClick ? "active:scale-[0.97] transition-transform" : "")} style={{ borderColor: tc ? tc + "55" : undefined }}>
       <div className={"text-[9px] font-bold tracking-widest uppercase " + (tc ? "text-[color:var(--tc)] dark:text-slate-300" : "text-slate-400")} style={tc ? { "--tc": tc } : undefined}>{label}</div>
       <div className={"text-[26px] leading-tight font-black tabular-nums mt-0.5 " + (valueCls || "text-slate-900 dark:text-white")}>{value}</div>
-      {sub && <div className={"text-[10px] font-extrabold mt-0.5 " + (subCls || "text-slate-400")}>{sub}</div>}
-    </div>
+      {sub && <div className={"text-[10px] font-extrabold mt-0.5 " + (subCls || "text-slate-400")}>{sub}{onClick ? " ›" : ""}</div>}
+    </Tag>
   );
 }
 
@@ -2363,7 +2349,7 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
       ? todayLineup.order.map((o) => {
           const k = String(o.name || "").toLowerCase();
           if (o.id && MLB_ID_CACHE[k] == null) MLB_ID_CACHE[k] = o.id;                 // headshot without a name search
-          return { slot: o.slot, p: byNm[hrbNrm(o.name)] || { id: "mlb:" + o.id, name: o.name, pos: o.pos, no: o.no, teamName, stats: [], contracts: [], _virtual: true } };
+          return { slot: o.slot, pos: o.pos, p: byNm[hrbNrm(o.name)] || { id: "mlb:" + o.id, name: o.name, pos: o.pos, no: o.no, teamName, stats: [], contracts: [], _virtual: true } };
         })
       : null;
     const rows = mlbRows || batters.filter(isSlot).sort((a, b) => a.sort - b.sort).map((p) => ({ slot: p.sort, p }));   // fallback: Airtable order
@@ -2372,7 +2358,7 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
     return (
       <>
         <Section title="Batting Order" note={rows.length ? <LineupBadge lineup={todayLineup} /> : null}>
-          {rows.length ? rows.map(({ slot, p }) => <RosterRow key={p.id} p={p} abbr={abbr} chip={String(slot)} chipCls="text-[10px] font-bold" tiles={batTiles(p)} onSelect={onSelectPlayer} />)
+          {rows.length ? rows.map(({ slot, pos, p }) => <RosterRow key={p.id} p={p} abbr={abbr} chip={pos || p.gamePos || p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
             : empty("No lineup posted yet. It fills in on its own once MLB publishes one.")}
         </Section>
         {bench.length > 0 && <Section title={"Bench (" + bench.length + ")"}>{bench.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
@@ -2494,8 +2480,9 @@ function TeamStatsPanel({ abbr, view, players, onSelectPlayer }) {
   );
 }
 
-function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
+function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }) {
   useEffect(() => { window.scrollTo(0, 0); }, []);
+  useBackSwipe(onBack);
   useInjuries();                                   // roster groups re-sort when the live report lands
   const abbr = team.abbr || toAbbr(team.name);
   const [seg, setSeg] = useState("roster");
@@ -2566,9 +2553,9 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer }) {
           return (
             <>
               <div className="grid grid-cols-3 gap-2">
-                <RankTile tc={tc} label="Runs Scored" value={team.rs != null ? team.rs : "—"} sub={rS && rS.text} subCls={rS && rS.cls} />
-                <RankTile tc={tc} label="Runs Allowed" value={team.ra != null ? team.ra : "—"} sub={rA && rA.text} subCls={rA && rA.cls} />
-                <RankTile tc={tc} label="Run Diff" value={diff != null ? (diff > 0 ? "+" : "") + diff : "—"} valueCls={diff == null ? "" : diff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"} sub={rD && rD.text} subCls={rD && rD.cls} />
+                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("rspg") : undefined} label="Runs Scored" value={team.rs != null ? team.rs : "—"} sub={rS && rS.text} subCls={rS && rS.cls} />
+                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("rapg") : undefined} label="Runs Allowed" value={team.ra != null ? team.ra : "—"} sub={rA && rA.text} subCls={rA && rA.cls} />
+                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("diffpg") : undefined} label="Run Diff" value={diff != null ? (diff > 0 ? "+" : "") + diff : "—"} valueCls={diff == null ? "" : diff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"} sub={rD && rD.text} subCls={rD && rD.cls} />
               </div>
             </>
           );
@@ -2886,15 +2873,24 @@ const MLB_LEADER_CATS = [
   { id: "hrallowed", label: "HR Allowed", side: "pit", positions: ["SP", "RP"],
     stats: [["hr9", "HR/9"], ["hr", "HR"]] },
   { id: "teams", label: "Teams",
-    stats: [["hr", "HR"], ["rpg", "Runs/G"], ["ops", "OPS"], ["avg", "AVG"], ["sb", "SB"], ["era", "ERA"], ["whip", "WHIP"], ["hr9", "HR/9 Allowed"]] },
+    stats: [["rspg", "Runs/G"], ["rapg", "Runs Allowed/G"], ["diffpg", "Run Diff/G"], ["hr", "HR"], ["ops", "OPS"], ["avg", "AVG"], ["sb", "SB"], ["era", "ERA"], ["whip", "WHIP"], ["hr9", "HR/9 Allowed"]] },
 ];
 const MLB_RATE = new Set(["avg", "obp", "slg", "ops", "iso", "hrPa", "era", "whip", "k9", "hr9"]);   // need a qualified sample
-const MLB_LOW_FIRST = { pitching: new Set(["era", "whip"]), teams: new Set(["era", "whip", "hr9"]) }; // lower is better
+const MLB_LOW_FIRST = { pitching: new Set(["era", "whip"]), teams: new Set(["era", "whip", "hr9", "rapg"]) }; // lower is better
+// Team value for a Stats › Teams key: the run tiles come from the standings (per game, so games in hand don't skew ranks), the rest from team stats.
+const teamStatVal = (t, key) => {
+  const gp = t.games || (t.wins ?? 0) + (t.losses ?? 0);
+  if (key === "rspg") return t.rs != null && gp ? t.rs / gp : null;
+  if (key === "rapg") return t.ra != null && gp ? t.ra / gp : null;
+  if (key === "diffpg") return t.rs != null && t.ra != null && gp ? (t.rs - t.ra) / gp : null;
+  return t.stx ? t.stx[key] : null;
+};
 const mlbFmtStat = (key, v) => {
   if (v == null) return "—";
   if (["avg", "obp", "slg", "ops", "iso"].includes(key)) return Number(v).toFixed(3).replace(/^0/, "");
   if (key === "hrPa") return (Number(v) * 100).toFixed(1) + "%";
-  if (["era", "whip", "k9", "hr9", "rpg"].includes(key)) return Number(v).toFixed(2);
+  if (["era", "whip", "k9", "hr9", "rpg", "rspg", "rapg"].includes(key)) return Number(v).toFixed(2);
+  if (key === "diffpg") return (v > 0 ? "+" : "") + Number(v).toFixed(2);
   if (key === "outs") return Math.floor(v / 3) + "." + (v % 3);
   return String(v);
 };
@@ -2907,12 +2903,21 @@ const mlbPosGroup = (P) => {
 const MLB_HEAD = (id) => "https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + id + "/headshot/silo/current";
 const LEADERS_CACHE = { stats: null, teams: null, at: 0 };   // survives tab switches — the page opens instantly the second time
 
-function StatsTab({ players, onSelect }) {
-  const [catId, setCatId] = useState("hitting");
-  const [statKey, setStatKey] = useState(null);
+function StatsTab({ players, onSelect, jump }) {
+  // jump = { catId, key, hl } from a team-page tile: open that board and highlight the team's row
+  const [catId, setCatId] = useState(jump ? jump.catId : "hitting");
+  const [statKey, setStatKey] = useState(jump ? jump.key : null);
+  const [hl, setHl] = useState(jump ? jump.hl : null);
   const [posPick, setPosPick] = useState("ALL");
   const [seasonStats, setSeasonStats] = useState(LEADERS_CACHE.stats);
   const [teamStats, setTeamStats] = useState(LEADERS_CACHE.teams);
+  useEffect(() => {
+    if (!hl) return;
+    const el = document.getElementById("team-row-" + hl);
+    if (el) el.scrollIntoView({ block: "center" });
+    const t = setTimeout(() => setHl(null), 4000);                       // the glow fades after a few seconds
+    return () => clearTimeout(t);
+  }, [hl, teamStats]);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -2952,8 +2957,7 @@ function StatsTab({ players, onSelect }) {
 
   const teamRows = useMemo(() => {
     if (cat.id !== "teams" || !teamStats) return [];
-    return (teamStats.teams || []).filter((t) => t.stx && t.stx[key] != null)
-      .map((t) => ({ abbr: t.abbr, name: t.name, v: t.stx[key], gp: t.games }))
+    return (teamStats.teams || []).map((t) => ({ abbr: t.abbr, name: t.name, v: teamStatVal(t, key), gp: t.games || (t.wins ?? 0) + (t.losses ?? 0) })).filter((r) => r.v != null)
       .sort((a, b) => (lowFirst ? a.v - b.v : b.v - a.v));
   }, [teamStats, catId, key]);
 
@@ -3008,10 +3012,10 @@ function StatsTab({ players, onSelect }) {
                 <span className="text-[9px] font-semibold tracking-widest uppercase text-slate-400">{headRight}</span>
               </div>
               {teamRows.map((r, i) => {
-                const best = teamRows[0].v || 1;
-                const w = lowFirst ? (best / (r.v || 1)) * 100 : (r.v / best) * 100;
+                const best = teamRows[0].v || 1, worst = teamRows[teamRows.length - 1].v || 0;
+                const w = key === "diffpg" ? ((r.v - worst) / ((best - worst) || 1)) * 100 : lowFirst ? (best / (r.v || 1)) * 100 : (r.v / best) * 100;
                 return (
-                  <div key={r.abbr} className="px-3 py-2 flex items-center gap-2.5">
+                  <div key={r.abbr} id={"team-row-" + r.abbr} className={"px-3 py-2 flex items-center gap-2.5 transition-colors duration-700 " + (hl === r.abbr ? "bg-amber-50 dark:bg-amber-900/30 ring-2 ring-inset ring-amber-400" : "")}>
                     <div className={"w-6 text-center text-[13px] font-black tabular-nums " + (i < 3 ? "text-blue-600" : "text-slate-400")}>{i + 1}</div>
                     {TEAM_LOGOS[r.abbr] && <img src={TEAM_LOGOS[r.abbr]} alt="" className="w-8 h-8 rounded-full object-contain p-0.5 bg-white shrink-0" />}
                     <div className="min-w-0 flex-1">
@@ -3437,7 +3441,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v114";
+const HRB_VERSION = "v115";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -4605,8 +4609,10 @@ const TABS = [
 ];
 
 export default function App() {
+  useGlobalBackSwipe();
   const [tab, setTab] = useState("hrboard");
   const [navTap, setNavTap] = useState(0);   // bumps on every tab-bar press so the tab can return to its main page
+  const [statsJump, setStatsJump] = useState(null);   // team-page tile → Stats › Teams with that team highlighted
   useEffect(() => {                          // live injury report: now, every 10 min, and when the app is reopened
     loadInjuries();
     const id = setInterval(loadInjuries, 10 * 60000);
@@ -4681,6 +4687,7 @@ export default function App() {
           players={players}
           onBack={() => setSelTeam(null)}
           onSelectPlayer={openPlayer}
+          onJumpStat={(key) => { setStatsJump({ catId: "teams", key, hl: selTeam.abbr || toAbbr(selTeam.name) }); setSel(null); setSelTeam(null); setTab("stats"); setNavTap((n) => n + 1); window.scrollTo(0, 0); }}
         />
       )}
       {fatal && (
@@ -4691,14 +4698,14 @@ export default function App() {
       )}
       {players && tab === "hrboard" && <HRBoardTab players={players} onSelectPlayer={openPlayer} resetSignal={navTap} />}
       {players && tab === "players" && <PlayersTab players={players} onSelect={openPlayer} />}
-      {players && tab === "stats" && <StatsTab players={players} onSelect={openPlayer} key={"st" + navTap} />}
+      {players && tab === "stats" && <StatsTab players={players} onSelect={openPlayer} jump={statsJump} key={"st" + navTap} />}
       </div>
 
       <div className="fixed bottom-0 inset-x-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex pb-[env(safe-area-inset-bottom)] z-20">
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => { setTab(t.id); setSel(null); setSelTeam(null); setNavTap((n) => n + 1); window.scrollTo(0, 0); }}
+            onClick={() => { setTab(t.id); setSel(null); setSelTeam(null); setStatsJump(null); setNavTap((n) => n + 1); window.scrollTo(0, 0); }}
             className={"flex-1 py-2.5 text-center " + (tab === t.id ? "text-blue-600" : "text-slate-400")}
           >
             <div className="text-lg leading-none">{t.icon}</div>
