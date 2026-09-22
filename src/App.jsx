@@ -479,7 +479,7 @@ function SeasonPanel({ p, person, line, season }) {
         <div className="grid grid-cols-4 gap-2 p-3">
           {tiles.map(([lbl, v, sub]) => (
             <div key={lbl} className="rounded-xl border-2 bg-white dark:bg-slate-900 text-center overflow-hidden" style={{ borderColor: tc + "66" }}>
-              <div className="text-[7px] font-extrabold tracking-wider uppercase text-black dark:text-white truncate px-0.5 py-1" style={{ backgroundColor: tc }}>{lbl}</div>
+              <div className="text-[7px] font-extrabold tracking-wider uppercase text-white truncate px-0.5 py-1" style={{ backgroundColor: tc }}>{lbl}</div>
               <div className="text-[19px] leading-tight font-black tabular-nums text-slate-900 dark:text-white mt-1.5">{v ?? "—"}</div>
               <div className="text-[9px] font-semibold tabular-nums text-slate-400 h-3 mb-1.5">{sub || ""}</div>
             </div>
@@ -2566,7 +2566,7 @@ function RankTile({ label, value, sub, subCls, tc, valueCls, onClick }) {
 }
 
 // One roster row, laid out like the football app: [chip] headshot · #no Name / tag (note) · three stat tiles
-function RosterRow({ p, abbr, chip, chipCls, tiles, badge, under, onSelect }) {
+function RosterRow({ p, abbr, chip, chipCls, rightChip, tiles, badge, under, onSelect }) {
   useInjuries();
   const tc = teamColor(abbr);
   const live = injFor(p.name, abbr);
@@ -2584,12 +2584,13 @@ function RosterRow({ p, abbr, chip, chipCls, tiles, badge, under, onSelect }) {
           <span className="flex gap-1 mt-1 justify-start">
             {tiles.map(([lbl, v]) => (
               <span key={lbl} className={(tiles.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border-2 bg-white dark:bg-slate-900 text-center overflow-hidden"} style={{ borderColor: tc + "66" }}>
-                <span className="block text-[7px] font-extrabold uppercase tracking-wider text-black dark:text-white py-0.5" style={{ backgroundColor: tc }}>{lbl}</span>
+                <span className="block text-[7px] font-extrabold uppercase tracking-wider text-white py-0.5" style={{ backgroundColor: tc }}>{lbl}</span>
                 <span className={"block leading-tight font-extrabold tabular-nums tracking-tight whitespace-nowrap text-slate-900 dark:text-white py-1 " + (String(v ?? "").length >= 5 ? "text-[11px]" : "text-[14px]")}>{v ?? "—"}</span>
               </span>
             ))}
           </span>
         </span>
+        {rightChip && <span className="shrink-0 w-11 text-center rounded-md py-1 mt-4 text-[11px] font-extrabold text-white tabular-nums" style={{ backgroundColor: bannerColor(abbr) }}>{rightChip}</span>}
       </span>
       {/* second row lines up with the columns above: tag under the picture, note + return date under the tiles */}
       {(tag || badge || under) && (
@@ -2665,7 +2666,7 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
     return (
       <>
         <Section title="Batting Order" note={rows.length ? <LineupBadge lineup={todayLineup} /> : null}>
-          {rows.length ? rows.map(({ slot, p }) => <RosterRow key={p.id} p={p} abbr={abbr} chip={batsOf(p)} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
+          {rows.length ? rows.map(({ slot, pos, p }) => <RosterRow key={p.id} p={p} abbr={abbr} chip={pos || p.gamePos || p.pos || "—"} rightChip={batsOf(p)} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
             : empty("No lineup posted yet. It fills in on its own once MLB publishes one.")}
         </Section>
         {bench.length > 0 && <Section title={"Bench (" + bench.length + ")"}>{bench.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
@@ -3748,7 +3749,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v124";
+const HRB_VERSION = "v125";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
