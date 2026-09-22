@@ -1329,18 +1329,21 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
             const ab = abbrOf(k);
             const logo = TEAM_LOGOS[ab];
             const rec = g.teams[k].leagueRecord ? g.teams[k].leagueRecord.wins + "-" + g.teams[k].leagueRecord.losses : "";
+            const on = side === k;
             return (
-              <div key={k} className={"flex items-center gap-3 " + (k === "home" ? "flex-row-reverse text-right" : "")}>
+              <button key={k} onClick={() => setSide(k)} aria-label={"Show " + ab + " box score"}
+                className={"flex items-center gap-3 rounded-2xl px-2 py-1.5 -mx-2 transition-colors " + (k === "home" ? "flex-row-reverse text-right" : "") + (on ? " bg-white/15 ring-2 ring-white/70" : " opacity-75")}>
                 {logo ? (
-                  <img src={logo} alt="" className="w-12 h-12 rounded-full object-contain bg-white shrink-0" />
+                  <img src={logo} alt="" className="w-12 h-12 object-contain shrink-0 drop-shadow" />
                 ) : (
                   <span className="w-12 h-12 rounded-full shrink-0" style={{ backgroundColor: teamColor(ab) }} />
                 )}
                 <div>
                   <div className="text-white font-extrabold text-lg leading-tight">{ab}</div>
                   <div className="text-white/70 text-[11px] font-bold">{rec}</div>
+                  <div className={"text-[8px] font-black tracking-widest uppercase mt-0.5 " + (on ? "text-white" : "text-white/50")}>{on ? "▾ Box score" : "Tap for box"}</div>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -1360,6 +1363,36 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
         )}
       </div>
       <div className="px-4 pb-28">
+        {live && live.state !== "pre" && live.away && live.away.linescores && (
+          <div className="mt-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-3 py-2.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+            {(() => {
+              const n = Math.max(9, live.away.linescores.length, live.home.linescores.length);
+              const cols = Array.from({ length: n }, (_, i) => i);
+              const cur = live.state === "in" ? (live.inning || 0) - 1 : -1;
+              const cell = "w-6 text-center text-[11px] tabular-nums";
+              return (
+                <table className="w-full border-collapse">
+                  <thead><tr>
+                    <th className="w-10 text-left text-[9px] font-bold tracking-widest uppercase text-slate-400"></th>
+                    {cols.map((i) => <th key={i} className={cell + " font-bold " + (i === cur ? "text-rose-500" : "text-slate-400")}>{i + 1}</th>)}
+                    {["R", "H", "E"].map((h) => <th key={h} className={cell + " font-black text-slate-500 dark:text-slate-300 border-l border-slate-200 dark:border-slate-700"}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {["away", "home"].map((k) => { const t = live[k]; return (
+                      <tr key={k} className="border-t border-slate-100 dark:border-slate-800">
+                        <td className="py-1 text-[11px] font-extrabold" style={{ color: teamColor(t.abbr) }}>{t.abbr}</td>
+                        {cols.map((i) => { const v = t.linescores[i]; return <td key={i} className={cell + " font-semibold " + (v == null ? "text-slate-300 dark:text-slate-600" : v > 0 ? "text-slate-900 dark:text-white" : "text-slate-500")}>{v == null ? (i < (live.inning || 0) || live.state === "post" ? "-" : "") : v}</td>; })}
+                        <td className={cell + " font-black text-slate-900 dark:text-white border-l border-slate-200 dark:border-slate-700"}>{t.score ?? 0}</td>
+                        <td className={cell + " font-bold text-slate-700 dark:text-slate-200"}>{t.hits ?? 0}</td>
+                        <td className={cell + " font-bold text-slate-700 dark:text-slate-200"}>{t.errors ?? 0}</td>
+                      </tr>
+                    ); })}
+                  </tbody>
+                </table>
+              );
+            })()}
+          </div>
+        )}
         {sit && (sit.lastPlay || sit.batter) && (
           <div className="mt-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3">
             {sit.lastPlay && (
@@ -1395,16 +1428,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
             </div>
           </div>
         )}
-        <div className="flex gap-2 mt-4">
-          {["away", "home"].map((k) => (
-            <button key={k} onClick={() => setSide(k)}
-              className={"flex-1 py-2 rounded-full text-xs font-bold transition-colors " + (side === k ? "text-white" : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800")}
-              style={side === k ? { backgroundColor: teamColor(abbrOf(k)) } : undefined}>
-              {(g.teams[k].team && g.teams[k].team.name) || (k === "away" ? "Away" : "Home")}
-            </button>
-          ))}
-        </div>
-
+        <div className="mt-4 text-[10px] font-bold tracking-widest uppercase text-slate-400 px-1">{(g.teams[side].team && g.teams[side].team.name) || side} · tap a logo up top to switch</div>
         <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(oppKey)) }}>Pitcher</div>
         <button onClick={myPP && onSelectPlayer ? () => onSelectPlayer(myPP.player) : undefined}
           className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
@@ -2338,7 +2362,7 @@ function RankTile({ label, value, sub, subCls, tc, valueCls, onClick }) {
 }
 
 // One roster row, laid out like the football app: [chip] headshot · #no Name / tag (note) · three stat tiles
-function RosterRow({ p, abbr, chip, chipCls, tiles, badge, onSelect }) {
+function RosterRow({ p, abbr, chip, chipCls, tiles, badge, under, onSelect }) {
   useInjuries();
   const tc = teamColor(abbr);
   const live = injFor(p.name, abbr);
@@ -2354,12 +2378,13 @@ function RosterRow({ p, abbr, chip, chipCls, tiles, badge, onSelect }) {
         </span>
         <span className="flex gap-1 mt-1 justify-end">
           {tiles.map(([lbl, v]) => (
-            <span key={lbl} className={(tiles.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border text-center py-1"} style={{ backgroundColor: tc + "12", borderColor: tc + "4D" }}>
-              <span className="block text-[7px] font-bold uppercase tracking-wider text-[color:var(--tc)] dark:text-slate-300" style={{ "--tc": tc }}>{lbl}</span>
-              <span className="block text-[14px] leading-tight font-extrabold tabular-nums text-slate-900 dark:text-white">{v ?? "—"}</span>
+            <span key={lbl} className={(tiles.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border-2 bg-white dark:bg-slate-900 text-center overflow-hidden"} style={{ borderColor: tc + "66" }}>
+              <span className="block text-[7px] font-extrabold uppercase tracking-wider text-black dark:text-white py-0.5" style={{ backgroundColor: tc }}>{lbl}</span>
+              <span className="block text-[14px] leading-tight font-extrabold tabular-nums text-slate-900 dark:text-white py-1">{v ?? "—"}</span>
             </span>
           ))}
         </span>
+        {under && <span className="block text-right text-[9px] font-medium text-slate-400 mt-0.5 pr-1">({under})</span>}
         {(badge || tag) && (
           <span className="flex items-center gap-1.5 mt-1.5 min-w-0">
             {badge}
@@ -2395,7 +2420,7 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
   const throwsOf = (p) => { const t = (hands[hrbNrm(p.name)] || {}).throws; return t ? t + "HP" : pitcherHand(p) || "P"; };
   const line = (p) => seasonLineFor(stats, p, abbr);
   const at = (p) => latestStats(p) || {};                       // Airtable fallback when MLB has no line yet
-  const batTiles = (p) => { const s = line(p), h = s && s.hit, a = at(p); return [["AVG", h ? fmt3(h.avg) : a.avg != null ? fmt3(a.avg) : null], ["HR", h ? h.hr : a.hr != null ? Math.round(a.hr) : null], ["RBI", h ? h.rbi : a.rbi != null ? Math.round(a.rbi) : null]]; };
+  const batTiles = (p) => { const s = line(p), h = s && s.hit, a = at(p); return [["AVG", h ? fmt3(h.avg) : a.avg != null ? fmt3(a.avg) : null], ["HR", h ? h.hr : a.hr != null ? Math.round(a.hr) : null], ["RBI", h ? h.rbi : a.rbi != null ? Math.round(a.rbi) : null], ["OPS", h ? fmt3(h.ops) : a.ops != null ? fmt3(a.ops) : null]]; };
   const pitTiles = (p, mode) => {
     const s = line(p), x = s && s.pit, a = at(p);
     const era = x ? fmt2(x.era) : a.era != null ? fmt2(a.era) : null;
@@ -2446,7 +2471,7 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
     return (
       <>
         <Section title="Starting Rotation" note="Sort Priority 1–5">
-          {rotation.length ? rotation.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={throwsOf(p)} tiles={pitTiles(p, "sp")} badge={startBadge(p)} onSelect={onSelectPlayer} />)
+          {rotation.length ? rotation.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={throwsOf(p)} tiles={pitTiles(p, "sp")} under={(() => { const s = line(p); return s && s.pit ? s.pit.gs + " start" + (s.pit.gs === 1 ? "" : "s") : null; })()} badge={startBadge(p)} onSelect={onSelectPlayer} />)
             : empty("No rotation set. Give your five starters Sort Priority 1–5 in Airtable.")}
         </Section>
         <Section title={"Bullpen (" + (closers.length + pen.length) + ")"} note="closer first · then most innings">
@@ -3511,7 +3536,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v118";
+const HRB_VERSION = "v119";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -4136,6 +4161,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
 <span className="block">
                     {/* ── Broadcast row: logo · score · center status · score · logo ──
                         Football-style banner: away colour on the left, home on the right. */}
+                    {state === "Live" && <span className="absolute top-1.5 left-2 z-10 rounded px-1.5 py-px text-[8px] font-black tracking-widest uppercase text-white bg-rose-600 shadow animate-pulse">Live</span>}
                     <span className="relative flex items-center gap-1">
                       {["away", "home"].map((kk, idx) => {
                         const sd = sides[kk];
@@ -4149,7 +4175,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                             {TEAM_LOGOS[sd.abbr]
                               ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-10 h-10 rounded-full object-contain bg-white p-0.5 shadow " + (lost ? "opacity-50" : "")} />
                               : <span className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px] font-extrabold" style={{ color: teamColor(sd.abbr) }}>{sd.abbr}</span>}
-                            {batting && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />}
+                            {batting && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 ring-2 ring-white" />}
                           </span>
                         );
                         const score = sc != null && state !== "Preview" ? (
@@ -4165,12 +4191,12 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                       {/* center status pill */}
                       <span className="absolute left-1/2 -translate-x-1/2 shrink-0 text-center pointer-events-none">
                         {state === "Live" ? (
-                          <span className="block rounded-lg bg-rose-600 shadow-lg ring-2 ring-white/70 px-2.5 py-1 animate-pulse">
-                            <span className="block text-[13px] font-black text-white tabular-nums leading-tight">
+                          <span className="block rounded-lg bg-black/45 backdrop-blur-sm px-2.5 py-1">
+                            <span className="block text-[13px] font-extrabold text-white tabular-nums leading-tight">
                               {g.linescore && g.linescore.currentInning != null ? g.linescore.currentInning : ""}
                               <span className="ml-0.5">{g.linescore && String(g.linescore.inningHalf || (g.linescore.isTopInning ? "Top" : "Bot")).toLowerCase().startsWith("top") ? "▲" : "▼"}</span>
                             </span>
-                            <span className="block text-[8px] font-black uppercase tracking-wider text-white">
+                            <span className="block text-[8px] font-extrabold uppercase tracking-wider text-white/75">
                               {g.linescore && g.linescore.outs != null ? g.linescore.outs + " OUT" + (g.linescore.outs === 1 ? "" : "S") : "LIVE"}
                             </span>
                           </span>
