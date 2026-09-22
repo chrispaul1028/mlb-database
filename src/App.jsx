@@ -543,12 +543,10 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
             <div className="text-2xl font-extrabold leading-tight truncate">
               {p.name}
             </div>
-            <div className="flex items-center gap-2 mt-0.5 min-w-0">
-              <span className="text-sm opacity-80 font-medium truncate">
-                {[cleanNo(p.no) ? "#" + cleanNo(p.no) : "", p.pos].filter(Boolean).join(" · ")}
-              </span>
-              <LiveStatus p={p} lg />
+            <div className="text-[13px] opacity-85 font-medium mt-0.5 leading-snug">
+              {[p.teamName || "", cleanNo(p.no) ? "#" + cleanNo(p.no) : "", posFull(p.pos)].filter(Boolean).join(" · ")}
             </div>
+            <div className="mt-1.5"><LiveStatus p={p} lg /></div>
             <InjuryLine p={p} />
           </div>
         </div>
@@ -669,7 +667,7 @@ function TeamPill({ team }) {
   if (!abbr) return null;
   const logo = TEAM_LOGOS[abbr];
   if (logo) {
-    return <img src={logo} alt={abbr} className="w-8 h-8 rounded-full object-contain bg-white shrink-0" />;
+    return <img src={logo} alt={abbr} className="w-10 h-10 object-contain shrink-0 drop-shadow" />;
   }
   return (
     <span className="text-[10px] font-bold text-white px-2 py-1 rounded-full shrink-0" style={{ backgroundColor: teamColor(abbr) }}>
@@ -715,7 +713,7 @@ function PlayersTab({ players, onSelect }) {
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
           {list.map((p) => (
             <button key={p.id} onClick={() => onSelect(p)} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-slate-50 dark:active:bg-slate-800">
-              <span className="w-7 text-center text-[11px] font-extrabold uppercase shrink-0" style={{ color: teamColor(teamOfPlayer(p)) }}>{p.pos || "—"}</span>
+              <span className="shrink-0 w-11 text-center rounded-md py-1 text-[11px] font-extrabold uppercase text-white tabular-nums" style={{ backgroundColor: bannerColor(teamOfPlayer(p)) }}>{p.pos || "—"}</span>
               <Avatar p={p} />
               <span className="flex-1 min-w-0">
                 <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{p.name} <InjBadge name={p.name} team={teamOfPlayer(p)} /></span>
@@ -1156,6 +1154,43 @@ function useLiveGame(gamePk) {
     return () => { alive = false; clearTimeout(timer); document.removeEventListener("visibilitychange", onVis); };
   }, [gamePk]);
   return live;
+}
+
+// Live strip on a Matchups card: bases · count · outs · who's pitching and his pitch count.
+// Polls /api/game every 30s while the game is live (edge-cached, so cheap).
+function LiveStrip({ pk }) {
+  const [d, setD] = useState(null);
+  useEffect(() => {
+    let alive = true, timer = null;
+    const load = async () => {
+      try { const r = await fetch("/api/game?pk=" + pk); const j = r.ok ? await r.json() : null; if (alive && j && !j.error) setD(j); } catch {}
+      if (alive) timer = setTimeout(load, 30000);
+    };
+    load();
+    return () => { alive = false; clearTimeout(timer); };
+  }, [pk]);
+  if (!d || d.state !== "in" || !d.situation) return null;
+  const sit = d.situation;
+  const on = (b) => !!(sit.runners && sit.runners[b]);
+  const base = (x, y, lit) => <rect x={x} y={y} width="7" height="7" rx="1.2" transform={`rotate(45 ${x + 3.5} ${y + 3.5})`} fill={lit ? "#fbbf24" : "rgba(255,255,255,0.18)"} stroke={lit ? "#f59e0b" : "rgba(255,255,255,0.6)"} strokeWidth="1.2" />;
+  const pitcher = sit.pitcher;
+  const pitches = pitcher ? [...(d.box.away.pitchers || []), ...(d.box.home.pitchers || [])].find((x) => x.id === pitcher.id) : null;
+  const runners = ["first", "second", "third"].filter(on).length;
+  return (
+    <span className="flex items-center gap-3 mt-2 pt-2 border-t border-white/20">
+      <svg width="32" height="24" viewBox="0 0 32 24" className="shrink-0" aria-label={runners + " on base"}>
+        {base(12.5, 2.5, on("second"))}{base(3, 12, on("third"))}{base(22, 12, on("first"))}
+      </svg>
+      <span className="shrink-0 text-center">
+        <span className="block text-[12px] font-black tabular-nums text-white leading-none">{sit.balls ?? 0}-{sit.strikes ?? 0}</span>
+        <span className="flex gap-1 mt-1 justify-center">{[0, 1, 2].map((i) => <span key={i} className={"w-1.5 h-1.5 rounded-full " + (i < (sit.outs ?? 0) ? "bg-rose-400" : "bg-white/30")} />)}</span>
+      </span>
+      <span className="min-w-0 flex-1 text-[10px] leading-snug text-white/90">
+        {pitcher && <span className="block truncate"><span className="font-black text-white/60">P </span><span className="font-bold">{pitcher.name}</span>{pitches && pitches.pitches != null ? <span className="text-white/75"> · {pitches.pitches} pitches</span> : null}</span>}
+        {sit.batter && <span className="block truncate text-white/75"><span className="font-black text-white/60">AB </span>{sit.batter.name}</span>}
+      </span>
+    </span>
+  );
 }
 
 // Bases diamond + count + outs — the baseball answer to football's "2nd & 7 at the DAL 34".
@@ -1632,7 +1667,7 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left shadow-sm active:opacity-90 transition-opacity"
                 style={{ backgroundColor: col }}>
                 {t.logo ? (
-                  <img src={t.logo} alt="" className="w-11 h-11 rounded-full object-contain bg-white shrink-0 ring-2 ring-white/70" />
+                  <img src={t.logo} alt="" className="w-14 h-14 object-contain shrink-0 drop-shadow-lg" />
                 ) : (
                   <span className="w-11 h-11 rounded-full shrink-0 bg-white/90 flex items-center justify-center text-[11px] font-extrabold" style={{ color: col }}>{abbr}</span>
                 )}
@@ -1797,13 +1832,15 @@ function LiveStatus({ p, lg = false }) {
   if (!t && STALE_INJ.test(String(p.status || ""))) return lg && INJ.map ? <StatusBadge status="Active" lg /> : null;   // Airtable says hurt, live report says healthy → healthy
   return <StatusBadge status={p.status} lg={lg} />;
 }
+const POS_FULL = { C: "Catcher", "1B": "First Baseman", "2B": "Second Baseman", "3B": "Third Baseman", SS: "Shortstop", LF: "Left Fielder", CF: "Center Fielder", RF: "Right Fielder", OF: "Outfielder", IF: "Infielder", UT: "Utility", UTIL: "Utility", DH: "Designated Hitter", SP: "Starting Pitcher", RP: "Relief Pitcher", CP: "Closer", CL: "Closer", P: "Pitcher", RHP: "Right-Handed Pitcher", LHP: "Left-Handed Pitcher", TWP: "Two-Way Player" };
+const posFull = (pos) => POS_FULL[String(pos || "").toUpperCase()] || String(pos || "");
 // Player-page line under the name: what the injury is and when he's due back.
 function InjuryLine({ p }) {
   useInjuries();
   const r = injFor(p.name, teamOfPlayer(p));
   const text = r ? injText(r) : "";
-  if (text) return <div className="inline-block mt-1.5 text-[11px] font-bold text-white bg-rose-600 rounded-full px-2.5 py-0.5 max-w-full truncate">{text}</div>;
-  if (!r && p.injuryNotes) return <div className="text-xs font-bold mt-1 truncate" style={{ color: "#f87171" }}>{p.injuryNotes}</div>;
+  if (text) return <div className="mt-1 text-[12px] font-semibold text-white/90 leading-snug">{text}</div>;
+  if (!r && p.injuryNotes) return <div className="mt-1 text-[12px] font-semibold text-white/90 leading-snug">{p.injuryNotes}</div>;
   return null;
 }
 
@@ -2610,7 +2647,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }
         <button onClick={onBack} className="text-sm font-semibold opacity-80 mb-4">‹ Teams</button>
         <div className="flex items-center gap-4">
           {team.logo ? (
-            <img src={team.logo} alt="" className="w-[72px] h-[72px] rounded-full object-contain bg-white p-1.5 shrink-0 ring-4 ring-black/70 shadow-lg" />
+            <img src={team.logo} alt="" className="w-20 h-20 object-contain shrink-0 drop-shadow-xl" />
           ) : (
             <span className="text-3xl">⚾</span>
           )}
@@ -3536,7 +3573,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v119";
+const HRB_VERSION = "v120";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -3670,7 +3707,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
       try {
         const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
         const [sched, standings] = await Promise.all([
-          (await mlbFetch(`v1/schedule?sportId=1&date=${dayStr(0)}&hydrate=team,linescore,probablePitcher,venue`)).json(),
+          (await mlbFetch(`v1/schedule?sportId=1&date=${dayStr(0)}&hydrate=team,linescore,probablePitcher,decisions,venue`)).json(),
           mlbFetch("v1/standings?leagueId=103,104").then((r) => r.json()).catch(() => ({})),
         ]);
         const teamRec = {};
@@ -4161,7 +4198,6 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
 <span className="block">
                     {/* ── Broadcast row: logo · score · center status · score · logo ──
                         Football-style banner: away colour on the left, home on the right. */}
-                    {state === "Live" && <span className="absolute top-1.5 left-2 z-10 rounded px-1.5 py-px text-[8px] font-black tracking-widest uppercase text-white bg-rose-600 shadow animate-pulse">Live</span>}
                     <span className="relative flex items-center gap-1">
                       {["away", "home"].map((kk, idx) => {
                         const sd = sides[kk];
@@ -4173,9 +4209,9 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                         const logo = (
                           <span key="lg" className="relative shrink-0">
                             {TEAM_LOGOS[sd.abbr]
-                              ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-10 h-10 rounded-full object-contain bg-white p-0.5 shadow " + (lost ? "opacity-50" : "")} />
+                              ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-14 h-14 object-contain drop-shadow-lg " + (lost ? "opacity-50" : "")} />
                               : <span className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px] font-extrabold" style={{ color: teamColor(sd.abbr) }}>{sd.abbr}</span>}
-                            {batting && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 ring-2 ring-white" />}
+                            
                           </span>
                         );
                         const score = sc != null && state !== "Preview" ? (
@@ -4217,7 +4253,19 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                             <span className="block text-[13px] font-extrabold leading-tight text-white drop-shadow-sm">
                               {sd.abbr} <span className="text-[10px] font-semibold text-white/70 tabular-nums">{sd.rec}</span>{streakBadge(sd)}
                             </span>
-                            {sd.pitcher
+                            {state === "Final" && g.decisions && (g.decisions.winner || g.decisions.loser)
+                              ? (() => {
+                                  const won = (g.teams[kk].score ?? 0) > (g.teams[kk === "away" ? "home" : "away"].score ?? 0);
+                                  const d = g.decisions;
+                                  return (
+                                    <>
+                                      {won && d.winner && <span className="block text-[10px] font-bold text-white/90 truncate leading-tight mt-0.5"><span className="text-emerald-300 font-black">W</span> {d.winner.fullName}</span>}
+                                      {!won && d.loser && <span className="block text-[10px] font-bold text-white/90 truncate leading-tight mt-0.5"><span className="text-rose-300 font-black">L</span> {d.loser.fullName}</span>}
+                                      {won && d.save && <span className="block text-[10px] font-bold text-white/80 truncate leading-tight"><span className="text-sky-200 font-black">SV</span> {d.save.fullName}</span>}
+                                    </>
+                                  );
+                                })()
+                              : sd.pitcher
                               ? <>
                                   <span className="block text-[10px] font-bold text-white/85 truncate leading-tight mt-0.5">{sd.pitcher.name}{sd.pitcher.rec ? " (" + sd.pitcher.rec + ")" : ""}</span>
                                   <span className="block text-[10px] font-extrabold tabular-nums leading-tight text-white">{era ? era + " ERA" : "— ERA"}</span>
@@ -4227,6 +4275,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                         );
                       })}
                     </span>
+                    {state === "Live" && <LiveStrip pk={g.gamePk} />}
                     {mode === "bets" && <span className="flex justify-center">
                       <span className={"text-white/60 text-[9px] transition-transform inline-block " + (isOpen ? "rotate-90" : "")}>▶</span>
                     </span>}
@@ -4366,11 +4415,9 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                 <React.Fragment key={"grp" + row.g.gamePk}>
                   {showHead && (
                     <div className={"flex items-center gap-1.5 text-[10px] font-extrabold tracking-widest uppercase px-1 " + (bucket === 0 ? "text-rose-500" : "text-slate-400") + (lastBucket != null ? " pt-1" : "")}>
-                      {bucket === 0 && <span className="relative flex w-2 h-2">
-                        <span className="absolute inline-flex w-full h-full rounded-full bg-rose-500 opacity-75 animate-ping" />
-                        <span className="relative inline-flex w-2 h-2 rounded-full bg-rose-500" />
-                      </span>}
-                      {bucket === 0 ? "Live" : bucket === 1 ? "Upcoming" : "Final"}
+                      {bucket === 0
+                        ? <span className="rounded px-2 py-0.5 text-[10px] font-black tracking-widest uppercase text-white bg-rose-600 shadow animate-pulse">Live</span>
+                        : bucket === 1 ? "Upcoming" : "Final"}
                     </div>
                   )}
                   {renderGameCard(row, mode)}
