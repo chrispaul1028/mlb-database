@@ -43,7 +43,7 @@ const TEAM_COLORS = {
   CLE: "#00385D", COL: "#333366", DET: "#0C2340", HOU: "#002D62",
   KC: "#004687", LAA: "#BA0021", LAD: "#005A9C", MIA: "#00A3E0",
   MIL: "#12284B", MIN: "#002B5C", NYM: "#002D72", NYY: "#003087",
-  OAK: "#003831", ATH: "#003831", PHI: "#E81828", PIT: "#FDB827",
+  OAK: "#003831", ATH: "#003831", PHI: "#E81828", PIT: "#0a0a0a",
   SD: "#2F241D", SF: "#FD5A1E", SEA: "#0C2C56", STL: "#C41E3A",
   TB: "#092C5C", TEX: "#003278", TOR: "#134A8E", WSH: "#AB0003",
 };
@@ -209,7 +209,7 @@ function LiveStreak({ p }) {
   return null;
 }
 function Avatar({ p, size }) {
-  const px = size === "lg" ? "w-20 h-20 text-2xl" : "w-11 h-11 text-sm";
+  const px = size === "lg" ? "w-20 h-20 text-2xl" : size === "md" ? "w-14 h-14 text-base" : "w-11 h-11 text-sm";
   const team = p._virtual ? (p.teamAbbr || "") : teamOfPlayer(p);
   const key = String(p.name || "").toLowerCase() + (team ? "|" + team : "");          // name + team: two players sharing a name never share a photo
   const byName = LEADERS_CACHE.stats && LEADERS_CACHE.stats.byName;
@@ -544,7 +544,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
               {p.name}
             </div>
             <div className="text-[13px] opacity-85 font-medium mt-0.5 leading-snug">
-              {[p.teamName || "", cleanNo(p.no) ? "#" + cleanNo(p.no) : "", posFull(p.pos)].filter(Boolean).join(" · ")}
+              {[teamFullName(p), cleanNo(p.no) ? "#" + cleanNo(p.no) : "", posFull(p.pos)].filter(Boolean).join(" · ")}
             </div>
             <div className="mt-1.5"><LiveStatus p={p} lg /></div>
             <InjuryLine p={p} />
@@ -661,13 +661,16 @@ function ListHeader({ title, q, setQ, placeholder }) {
 
 // Populated once data loads: abbr -> logo URL
 const TEAM_LOGOS = {};
+// Logos that read better as a white mark on their team colour
+const WHITE_LOGOS = new Set(["NYY", "LAD", "STL", "PHI", "KC"]);
+const logoFx = (abbr) => (WHITE_LOGOS.has(String(abbr || "").toUpperCase()) ? " brightness-0 invert" : "");
 
 function TeamPill({ team }) {
   const abbr = toAbbr(team) || team;
   if (!abbr) return null;
   const logo = TEAM_LOGOS[abbr];
   if (logo) {
-    return <img src={logo} alt={abbr} className="w-10 h-10 object-contain shrink-0 drop-shadow" />;
+    return <img src={logo} alt={abbr} className={"w-10 h-10 object-contain shrink-0 drop-shadow" + logoFx(abbr)} />;
   }
   return (
     <span className="text-[10px] font-bold text-white px-2 py-1 rounded-full shrink-0" style={{ backgroundColor: teamColor(abbr) }}>
@@ -1369,7 +1372,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
               <button key={k} onClick={() => setSide(k)} aria-label={"Show " + ab + " box score"}
                 className={"flex items-center gap-3 rounded-2xl px-2 py-1.5 -mx-2 transition-colors " + (k === "home" ? "flex-row-reverse text-right" : "") + (on ? " bg-white/15 ring-2 ring-white/70" : " opacity-75")}>
                 {logo ? (
-                  <img src={logo} alt="" className="w-12 h-12 object-contain shrink-0 drop-shadow" />
+                  <img src={logo} alt="" className={"w-12 h-12 object-contain shrink-0 drop-shadow" + logoFx(ab)} />
                 ) : (
                   <span className="w-12 h-12 rounded-full shrink-0" style={{ backgroundColor: teamColor(ab) }} />
                 )}
@@ -1667,7 +1670,7 @@ function TeamsTab({ teams, players, onSelect, onSelectPlayer }) {
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left shadow-sm active:opacity-90 transition-opacity"
                 style={{ backgroundColor: col }}>
                 {t.logo ? (
-                  <img src={t.logo} alt="" className="w-14 h-14 object-contain shrink-0 drop-shadow-lg" />
+                  <img src={t.logo} alt="" className={"w-14 h-14 object-contain shrink-0 drop-shadow-lg" + logoFx(abbr)} />
                 ) : (
                   <span className="w-11 h-11 rounded-full shrink-0 bg-white/90 flex items-center justify-center text-[11px] font-extrabold" style={{ color: col }}>{abbr}</span>
                 )}
@@ -1708,8 +1711,8 @@ function StatusBadge({ status, lg = false }) {
   const isMin = /minor|option/.test(s);
   const label = isMin ? "MIN" : dayMatch && /(il|injur)/i.test(raw) ? "IL" + dayMatch[1] : raw;
   let cls = "bg-slate-100 text-slate-500 dark:text-slate-400";
-  if (isMin) return <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300">MIN</span>;
-  if (s === "ir" || s.includes("injured reserve") || s.includes("out") || s.includes("il") || s.includes("injur") || s.includes("day")) cls = "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300";
+  if (isMin) return <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide bg-orange-500 text-white">MINORS</span>;
+  if (s === "ir" || s.includes("injured reserve") || s.includes("out") || s.includes("il") || s.includes("injur") || s.includes("day")) cls = "bg-rose-600 text-white";
   else if (s.includes("active") || s.includes("available")) cls = "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300";
   else if (s.includes("minor") || s.includes("question") || s.includes("doubt")) cls = "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300";
   return (
@@ -1750,17 +1753,17 @@ function injFor(name, team) {
   return r && (!t || !r.team || r.team === t) ? r : null;
 }
 const INJ_STYLE = {
-  il: "bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300",
-  dtd: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
-  off: "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
-  min: "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300",
+  il: "bg-rose-600 text-white",
+  dtd: "bg-rose-600 text-white",
+  off: "bg-slate-600 text-white",
+  min: "bg-orange-500 text-white",
 };
 const injLabel = (r) => {
   const c = String(r.code || "");
   const il = /^IL(\d+)$/.exec(c);
   if (il) return ["IL-" + il[1], INJ_STYLE.il];
   if (c === "DTD") return ["DTD", INJ_STYLE.dtd];
-  if (c === "MIN") return ["MIN", INJ_STYLE.min];
+  if (c === "MIN") return ["MINORS", INJ_STYLE.min];
   if (c === "OUT") return ["OUT", INJ_STYLE.il];
   if (c === "SUSP") return ["SUSP", INJ_STYLE.off];
   if (c === "BRV") return ["BEREAVEMENT", INJ_STYLE.off];
@@ -1791,12 +1794,12 @@ function statusTag(p, team) {
     const c = String(live.code || "");
     if (/^IL\d+$/.test(c)) return { label: c, kind: "il" };
     if (c === "DTD") return { label: "DTD", kind: "dtd" };
-    if (c === "MIN") return { label: "MIN", kind: "min" };
+    if (c === "MIN") return { label: "MINORS", kind: "min" };
     if (c === "OUT") return { label: "OUT", kind: "il" };
     if (c) return { label: c === "INJ" ? "INJ" : c.slice(0, 4), kind: c === "INJ" ? "dtd" : "off" };
   }
   const raw = String(p.status || "").trim(), low = raw.toLowerCase();
-  if (/minor|option/.test(low)) return { label: "MIN", kind: "min" };
+  if (/minor|option/.test(low)) return { label: "MINORS", kind: "min" };
   const note = String(p.injuryNotes || "").trim();
   if (raw && low !== "active" && !/available/.test(low)) {
     const stale = INJ.map && STALE_INJ.test(raw) && !note;      // live report loaded and doesn't back it up
@@ -1811,8 +1814,8 @@ function statusTag(p, team) {
   return note ? { label: "INJ", kind: "dtd" } : null;
 }
 const isMinors = (p, team) => { const t = statusTag(p, team); return !!t && t.kind === "min"; };
-const TAG_SOLID = { il: "bg-rose-600", dtd: "bg-amber-500", min: "bg-orange-500", off: "bg-slate-500" };
-const TAG_RING = { il: "border-rose-500", dtd: "border-amber-400", min: "border-orange-400", off: "border-slate-400" };
+const TAG_SOLID = { il: "bg-rose-600", dtd: "bg-rose-600", min: "bg-orange-500", off: "bg-slate-500" };
+const TAG_RING = { il: "border-rose-500", dtd: "border-rose-500", min: "border-orange-400", off: "border-slate-400" };
 
 function InjBadge({ name, team, lg = false }) {
   useInjuries();
@@ -1833,6 +1836,13 @@ function LiveStatus({ p, lg = false }) {
   return <StatusBadge status={p.status} lg={lg} />;
 }
 const POS_FULL = { C: "Catcher", "1B": "First Baseman", "2B": "Second Baseman", "3B": "Third Baseman", SS: "Shortstop", LF: "Left Fielder", CF: "Center Fielder", RF: "Right Fielder", OF: "Outfielder", IF: "Infielder", UT: "Utility", UTIL: "Utility", DH: "Designated Hitter", SP: "Starting Pitcher", RP: "Relief Pitcher", CP: "Closer", CL: "Closer", P: "Pitcher", RHP: "Right-Handed Pitcher", LHP: "Left-Handed Pitcher", TWP: "Two-Way Player" };
+// "SF" or "Giants" in Airtable → "San Francisco Giants"
+const teamFullName = (p) => {
+  const raw = String(p.teamName || "").trim();
+  if (raw.split(" ").length >= 2 && !/^[A-Z]{2,3}$/.test(raw) && raw.length > 4) return raw;
+  const full = ABBR_TO_NAME[teamOfPlayer(p)] || "";
+  return full ? full.replace(/\b\w/g, (c) => c.toUpperCase()) : raw;
+};
 const posFull = (pos) => POS_FULL[String(pos || "").toUpperCase()] || String(pos || "");
 // Player-page line under the name: what the injury is and when he's due back.
 function InjuryLine({ p }) {
@@ -2403,17 +2413,17 @@ function RosterRow({ p, abbr, chip, chipCls, tiles, badge, under, onSelect }) {
   useInjuries();
   const tc = teamColor(abbr);
   const live = injFor(p.name, abbr);
-  const note = live ? String(live.type || live.location || "").trim() : String(p.injuryNotes || "").trim();
+  const note = live ? injText(live) : String(p.injuryNotes || "").trim();
   const tag = statusTag(p, abbr);
   return (
-    <button onClick={p._virtual ? undefined : () => onSelect(p)} className={"w-full flex items-center gap-3 px-3 py-3 text-left " + (p._virtual ? "" : "active:bg-slate-50 dark:active:bg-slate-800")}>
-      <span className={"shrink-0 w-11 text-center rounded-md py-1 text-white tabular-nums " + (chipCls || "text-[11px] font-extrabold")} style={{ backgroundColor: bannerColor(abbr) }}>{chip}</span>
-      <Avatar p={p} />
+    <button onClick={p._virtual ? undefined : () => onSelect(p)} className={"w-full flex items-start gap-2.5 px-3 py-2.5 text-left " + (p._virtual ? "" : "active:bg-slate-50 dark:active:bg-slate-800")}>
+      <span className={"shrink-0 w-11 text-center rounded-md py-1 mt-4 text-white tabular-nums " + (chipCls || "text-[11px] font-extrabold")} style={{ backgroundColor: bannerColor(abbr) }}>{chip}</span>
+      <Avatar p={p} size="md" />
       <span className="flex-1 min-w-0">
         <span className="block text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate">
           {cleanNo(p.no) && <span className="text-[13px] font-bold text-slate-400">#{cleanNo(p.no)} </span>}{p.name}
         </span>
-        <span className="flex gap-1 mt-1 justify-end">
+        <span className="flex gap-1 mt-1 justify-start">
           {tiles.map(([lbl, v]) => (
             <span key={lbl} className={(tiles.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border-2 bg-white dark:bg-slate-900 text-center overflow-hidden"} style={{ borderColor: tc + "66" }}>
               <span className="block text-[7px] font-extrabold uppercase tracking-wider text-black dark:text-white py-0.5" style={{ backgroundColor: tc }}>{lbl}</span>
@@ -2421,10 +2431,10 @@ function RosterRow({ p, abbr, chip, chipCls, tiles, badge, under, onSelect }) {
             </span>
           ))}
         </span>
-        {under && <span className="block text-right text-[9px] font-medium text-slate-400 mt-0.5 pr-1">({under})</span>}
-        {(badge || tag) && (
-          <span className="flex items-center gap-1.5 mt-1.5 min-w-0">
+        {(badge || tag || under) && (
+          <span className="flex items-center gap-1.5 mt-1.5 min-w-0 flex-wrap">
             {badge}
+            {under && <span className="text-[9px] font-medium text-slate-400">({under})</span>}
             {tag && <LiveStatus p={p} />}
             {tag && tag.kind !== "min" && note && <span className="text-[11px] font-semibold text-rose-500 truncate lowercase">({note})</span>}
           </span>
@@ -2647,7 +2657,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }
         <button onClick={onBack} className="text-sm font-semibold opacity-80 mb-4">‹ Teams</button>
         <div className="flex items-center gap-4">
           {team.logo ? (
-            <img src={team.logo} alt="" className="w-20 h-20 object-contain shrink-0 drop-shadow-xl" />
+            <img src={team.logo} alt="" className={"w-20 h-20 object-contain shrink-0 drop-shadow-xl" + logoFx(abbr)} />
           ) : (
             <span className="text-3xl">⚾</span>
           )}
@@ -3573,7 +3583,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v120";
+const HRB_VERSION = "v121";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -4209,7 +4219,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                         const logo = (
                           <span key="lg" className="relative shrink-0">
                             {TEAM_LOGOS[sd.abbr]
-                              ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-14 h-14 object-contain drop-shadow-lg " + (lost ? "opacity-50" : "")} />
+                              ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-14 h-14 object-contain drop-shadow-lg " + (lost ? "opacity-50" : "") + logoFx(sd.abbr)} />
                               : <span className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px] font-extrabold" style={{ color: teamColor(sd.abbr) }}>{sd.abbr}</span>}
                             
                           </span>
