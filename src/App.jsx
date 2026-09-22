@@ -726,6 +726,26 @@ function TransactionsTab({ players, onSelect, q }) {
     })();
     return () => { alive = false; };
   }, []);
+  useInjuries();
+  // jersey number + position for everyone in the feed, from MLB (one batched call)
+  const [bio, setBio] = useState({});
+  useEffect(() => {
+    if (!list || !list.length) return;
+    const ids = [...new Set(list.map((t) => t.pid).filter((id) => id && bio[id] == null))];
+    if (!ids.length) return;
+    let alive = true;
+    (async () => {
+      const out = {};
+      for (let i = 0; i < ids.length; i += 60) {
+        try {
+          const d = await (await mlbFetch(`v1/people?personIds=${ids.slice(i, i + 60).join(",")}`)).json();
+          for (const per of d.people || []) out[per.id] = { no: per.primaryNumber || "", pos: (per.primaryPosition || {}).abbreviation || "" };
+        } catch {}
+      }
+      if (alive) setBio((b) => ({ ...b, ...out }));
+    })();
+    return () => { alive = false; };
+  }, [list]);
   const mine = useMemo(() => { const m = {}; for (const p of players || []) (m[hrbNrm(p.name)] = m[hrbNrm(p.name)] || []).push(p); return m; }, [players]);
   const findP = (t) => { const c = mine[hrbNrm(t.name)] || []; return c.length > 1 ? c.find((p) => teamOfPlayer(p) === t.team) || c[0] : c[0]; };
   const shown = (list || []).filter((t) => !q || hrbNrm(t.name).includes(hrbNrm(q)) || hrbNrm(t.teamName).includes(hrbNrm(q)) || String(t.team).toLowerCase() === q.toLowerCase().trim());
@@ -733,7 +753,7 @@ function TransactionsTab({ players, onSelect, q }) {
   let lastDay = null;
   return (
     <div className="px-4 pb-28 mt-4">
-      <div className="text-[11px] font-semibold text-slate-400 mb-3">MLB transaction log · last 14 days · {list ? shown.length + " moves" : "loading"} · newest first</div>
+      <div className="text-[11px] font-semibold text-slate-400 mb-3">MLB transaction log · {list ? shown.length + " moves" : "loading"} · last 14 days · newest first</div>
       {!list && !failed && <BallLoader label="Loading transactions" full={false} />}
       {failed && <div className="text-center text-sm text-slate-400 py-12">Couldn't reach MLB's transaction log. Tap the pill again to retry.</div>}
       {list && shown.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No moves found.</div>}
@@ -746,21 +766,34 @@ function TransactionsTab({ players, onSelect, q }) {
         return (
           <React.Fragment key={t.id}>
             {head && <div className="text-[10px] font-extrabold tracking-widest uppercase text-slate-400 mt-4 mb-2 px-1">{fmtDay(day)}</div>}
+            {(() => {
+              const b = bio[t.pid] || {};
+              const no = cleanNo((p && p.no) || b.no), pos = (p && p.pos) || b.pos || "";
+              const inj = injFor(t.name, t.team);
+              const status = inj ? <InjBadge name={t.name} team={t.team} /> : lbl === "To Minors" ? <span className="inline-block px-1.5 py-px rounded text-[9px] font-extrabold uppercase tracking-wide bg-orange-500 text-white">Minors</span> : lbl === "Leave" ? <span className="inline-block px-1.5 py-px rounded text-[9px] font-extrabold uppercase tracking-wide bg-slate-600 text-white">Leave</span> : <span className="inline-block px-1.5 py-px rounded text-[9px] font-extrabold uppercase tracking-wide bg-emerald-500 text-white">Active</span>;
+              const note = inj ? injText(inj) : "";
+              return (
             <button onClick={p ? () => onSelect(p) : undefined} className={"w-full text-left flex items-start gap-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm px-3 py-3 mb-2 " + (p ? "active:bg-slate-50 dark:active:bg-slate-800" : "")}
               style={{ borderLeft: "4px solid " + teamColor(t.team) }}>
-              <Avatar p={vp} />
+              <span className="shrink-0 w-11 text-center rounded-md py-1 mt-3 text-[11px] font-extrabold text-white tabular-nums" style={{ backgroundColor: bannerColor(t.team) }}>{no ? "#" + no : "—"}</span>
+              <Avatar p={vp} size="md" />
               <span className="flex-1 min-w-0">
-                <span className="flex items-center gap-2 min-w-0">
-                  <span className="text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate">{t.name}</span>
-                  {TEAM_LOGOS[t.team] && <img src={TEAM_LOGOS[t.team]} alt={t.team} className={"w-6 h-6 object-contain shrink-0" + (WHITE_LOGOS.has(t.team) ? " dark:brightness-0 dark:invert" : "")} />}
+                <span className="flex items-start justify-between gap-2 min-w-0">
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    {pos && <span className="text-[13px] font-bold text-slate-400 shrink-0">{pos}</span>}
+                    <span className="text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate">{t.name}</span>
+                    {TEAM_LOGOS[t.team] && <img src={TEAM_LOGOS[t.team]} alt={t.team} className={"w-6 h-6 object-contain shrink-0" + (WHITE_LOGOS.has(t.team) ? " dark:brightness-0 dark:invert" : "")} />}
+                  </span>
+                  <span className="shrink-0 text-[11px] font-semibold text-slate-400 mt-0.5">{fmtDay(day)}</span>
                 </span>
-                <span className="flex items-center gap-2 mt-1">
-                  <span className={"rounded px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-white " + cls}>{lbl}</span>
-                  <span className="text-[10px] font-semibold text-slate-400">{t.teamName}</span>
-                </span>
-                <span className="block text-[12px] text-slate-600 dark:text-slate-300 leading-snug mt-1.5">{t.text}</span>
+                <span className="flex items-center gap-2 mt-1.5">{status}<span className={"rounded px-1.5 py-px text-[9px] font-extrabold uppercase tracking-wide text-white " + cls}>{lbl}</span></span>
+                {note && <span className="block text-[11px] font-semibold text-rose-500 mt-1">({note})</span>}
+                {inj && <ReturnLine r={inj} className="mt-0.5" />}
+                <span className="block text-[12px] text-slate-500 dark:text-slate-300 leading-snug mt-1.5">{t.text}</span>
               </span>
             </button>
+              );
+            })()}
           </React.Fragment>
         );
       })}
@@ -2540,31 +2573,36 @@ function RosterRow({ p, abbr, chip, chipCls, tiles, badge, under, onSelect }) {
   const note = live ? injText(live) : String(p.injuryNotes || "").trim();
   const tag = statusTag(p, abbr);
   return (
-    <button onClick={p._virtual ? undefined : () => onSelect(p)} className={"w-full flex items-start gap-2.5 px-3 py-2.5 text-left " + (p._virtual ? "" : "active:bg-slate-50 dark:active:bg-slate-800")}>
-      <span className={"shrink-0 w-11 text-center rounded-md py-1 mt-4 text-white tabular-nums " + (chipCls || "text-[11px] font-extrabold")} style={{ backgroundColor: bannerColor(abbr) }}>{chip}</span>
-      <Avatar p={p} size="md" />
-      <span className="flex-1 min-w-0">
-        <span className="block text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate">
-          {cleanNo(p.no) && <span className="text-[13px] font-bold text-slate-400">#{cleanNo(p.no)} </span>}{p.name}
+    <button onClick={p._virtual ? undefined : () => onSelect(p)} className={"w-full block px-3 py-2.5 text-left " + (p._virtual ? "" : "active:bg-slate-50 dark:active:bg-slate-800")}>
+      <span className="flex items-start gap-2.5">
+        <span className={"shrink-0 w-11 text-center rounded-md py-1 mt-4 text-white tabular-nums " + (chipCls || "text-[11px] font-extrabold")} style={{ backgroundColor: bannerColor(abbr) }}>{chip}</span>
+        <Avatar p={p} size="md" />
+        <span className="flex-1 min-w-0">
+          <span className="block text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate">
+            {cleanNo(p.no) && <span className="text-[13px] font-bold text-slate-400">#{cleanNo(p.no)} </span>}{p.name}
+          </span>
+          <span className="flex gap-1 mt-1 justify-start">
+            {tiles.map(([lbl, v]) => (
+              <span key={lbl} className={(tiles.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border-2 bg-white dark:bg-slate-900 text-center overflow-hidden"} style={{ borderColor: tc + "66" }}>
+                <span className="block text-[7px] font-extrabold uppercase tracking-wider text-black dark:text-white py-0.5" style={{ backgroundColor: tc }}>{lbl}</span>
+                <span className={"block leading-tight font-extrabold tabular-nums tracking-tight whitespace-nowrap text-slate-900 dark:text-white py-1 " + (String(v ?? "").length >= 5 ? "text-[11px]" : "text-[14px]")}>{v ?? "—"}</span>
+              </span>
+            ))}
+          </span>
         </span>
-        <span className="flex gap-1 mt-1 justify-start">
-          {tiles.map(([lbl, v]) => (
-            <span key={lbl} className={(tiles.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border-2 bg-white dark:bg-slate-900 text-center overflow-hidden"} style={{ borderColor: tc + "66" }}>
-              <span className="block text-[7px] font-extrabold uppercase tracking-wider text-black dark:text-white py-0.5" style={{ backgroundColor: tc }}>{lbl}</span>
-              <span className={"block leading-tight font-extrabold tabular-nums tracking-tight whitespace-nowrap text-slate-900 dark:text-white py-1 " + (String(v ?? "").length >= 5 ? "text-[11px]" : "text-[14px]")}>{v ?? "—"}</span>
-            </span>
-          ))}
-        </span>
-        {(tag || under) && (
-          <span className="flex items-center gap-1.5 mt-1.5 min-w-0">
-            {tag && <LiveStatus p={p} />}
+      </span>
+      {/* under the picture: injury tag + note · return date · next start (which takes the tag's slot when he's healthy) */}
+      {(tag || badge || under) && (
+        <span className="block mt-1.5">
+          <span className="flex items-center gap-1.5 min-w-0">
+            {tag ? <LiveStatus p={p} /> : badge}
             {tag && tag.kind !== "min" && note && <span className="text-[11px] font-semibold text-rose-500 truncate min-w-0">({note})</span>}
             {under && <span className="ml-auto shrink-0 text-[9px] font-medium text-slate-400">({under})</span>}
           </span>
-        )}
-        {tag && tag.kind !== "min" && <ReturnLine r={live} className="mt-0.5" />}
-        {badge && <span className="block mt-1.5">{badge}</span>}
-      </span>
+          {tag && tag.kind !== "min" && <ReturnLine r={live} className="mt-0.5" />}
+          {tag && badge && <span className="block mt-1">{badge}</span>}
+        </span>
+      )}
     </button>
   );
 }
@@ -3708,7 +3746,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v122";
+const HRB_VERSION = "v123";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
