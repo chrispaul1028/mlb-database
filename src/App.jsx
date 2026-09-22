@@ -2591,16 +2591,18 @@ function RosterRow({ p, abbr, chip, chipCls, tiles, badge, under, onSelect }) {
           </span>
         </span>
       </span>
-      {/* under the picture: injury tag + note · return date · next start (which takes the tag's slot when he's healthy) */}
+      {/* second row lines up with the columns above: tag under the picture, note + return date under the tiles */}
       {(tag || badge || under) && (
-        <span className="block mt-1.5">
-          <span className="flex items-center gap-1.5 min-w-0">
-            {tag ? <LiveStatus p={p} /> : badge}
-            {tag && tag.kind !== "min" && note && <span className="text-[11px] font-semibold text-rose-500 truncate min-w-0">({note})</span>}
-            {under && <span className="ml-auto shrink-0 text-[9px] font-medium text-slate-400">({under})</span>}
+        <span className="flex items-start gap-2.5 mt-1.5 pl-[54px]">
+          <span className="shrink-0 min-w-[56px] flex justify-center">{tag ? <LiveStatus p={p} /> : badge}</span>
+          <span className="flex-1 min-w-0">
+            <span className="flex items-center gap-1.5 min-w-0">
+              {tag && tag.kind !== "min" && note && <span className="text-[11px] font-semibold text-rose-500 truncate min-w-0">({note})</span>}
+              {under && <span className="ml-auto shrink-0 text-[9px] font-medium text-slate-400">({under})</span>}
+            </span>
+            {tag && tag.kind !== "min" && <ReturnLine r={live} className="mt-0.5" />}
+            {tag && badge && <span className="block mt-1">{badge}</span>}
           </span>
-          {tag && tag.kind !== "min" && <ReturnLine r={live} className="mt-0.5" />}
-          {tag && badge && <span className="block mt-1">{badge}</span>}
         </span>
       )}
     </button>
@@ -3746,7 +3748,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v123";
+const HRB_VERSION = "v124";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
