@@ -42,7 +42,7 @@ const TEAM_COLORS = {
   CHC: "#0E3386", CWS: "#27251F", CHW: "#27251F", CIN: "#C6011F",
   CLE: "#00385D", COL: "#333366", DET: "#0C2340", HOU: "#002D62",
   KC: "#004687", LAA: "#BA0021", LAD: "#005A9C", MIA: "#00A3E0",
-  MIL: "#12284B", MIN: "#002B5C", NYM: "#002D72", NYY: "#003087",
+  MIL: "#12284B", MIN: "#002B5C", NYM: "#002D72", NYY: "#0C2340",
   OAK: "#003831", ATH: "#003831", PHI: "#E81828", PIT: "#0a0a0a",
   SD: "#2F241D", SF: "#FD5A1E", SEA: "#0C2C56", STL: "#C41E3A",
   TB: "#092C5C", TEX: "#003278", TOR: "#134A8E", WSH: "#AB0003",
@@ -115,6 +115,11 @@ function experienceOf(p) {
 // Search matches player name, current team (full name or abbreviation),
 // or the active contract's team. "knicks", "NY", "jalen" all work.
 function matchesQuery(p, q) {
+  if (!q) return true;
+  const s = q.toLowerCase().trim();
+  return hrbNrm(p.name).includes(hrbNrm(s));   // players are searched by name only
+}
+function matchesQueryWithTeam(p, q) {
   if (!q) return true;
   const s = q.toLowerCase().trim();
   if (p.name.toLowerCase().includes(s)) return true;
@@ -652,7 +657,7 @@ function ListHeader({ title, q, setQ, placeholder }) {
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder={placeholder || "Search players or teams…"}
+        placeholder={placeholder || "Search players…"}
         className="mt-3 w-full rounded-xl px-4 py-2.5 text-sm text-slate-800 dark:text-slate-200 bg-white/95 dark:bg-slate-900/80 placeholder-slate-400 outline-none"
       />
     </div>
@@ -680,6 +685,89 @@ function TeamPill({ team }) {
 }
 
 // ═══════════════ TAB: PLAYER HUB ═════════════════════════════════
+const TX_TYPES = {
+  // MLB typeCode → label + colour
+  ASG: ["Assigned", "bg-slate-500"], CU: ["Called Up", "bg-emerald-600"], SC: ["Called Up", "bg-emerald-600"], OPT: ["Optioned", "bg-orange-500"], OUT: ["Outrighted", "bg-orange-500"],
+  SFA: ["Signed (FA)", "bg-sky-600"], SGN: ["Signed", "bg-sky-600"], TR: ["Traded", "bg-violet-600"], CLW: ["Claimed", "bg-violet-600"], DES: ["DFA", "bg-rose-600"], REL: ["Released", "bg-rose-600"],
+  RET: ["Retired", "bg-slate-500"], SE: ["Selected", "bg-emerald-600"], DFA: ["DFA", "bg-rose-600"], NUM: ["Number Change", "bg-slate-500"], SUS: ["Suspended", "bg-rose-600"], REC: ["Recalled", "bg-emerald-600"],
+};
+const txLabel = (t) => {
+  const d = String(t.text || t.description || "").toLowerCase();
+  if (/placed .* on the .*injured list|10-day il|15-day il|60-day il/.test(d)) return ["To IL", "bg-rose-600"];
+  if (/activated .* from the .*injured list|reinstated/.test(d)) return ["Off IL", "bg-emerald-600"];
+  if (/recalled|selected the contract|called up/.test(d)) return ["Called Up", "bg-emerald-600"];
+  if (/optioned|sent .* to the minors|assigned .* to (?!the )/.test(d) && !/injured/.test(d)) return ["To Minors", "bg-orange-500"];
+  if (/designated .* for assignment/.test(d)) return ["DFA", "bg-rose-600"];
+  if (/traded/.test(d)) return ["Traded", "bg-violet-600"];
+  if (/claimed/.test(d)) return ["Claimed", "bg-violet-600"];
+  if (/released/.test(d)) return ["Released", "bg-rose-600"];
+  if (/signed/.test(d)) return ["Signed", "bg-sky-600"];
+  if (/paternity|bereavement/.test(d)) return ["Leave", "bg-slate-500"];
+  return TX_TYPES[t.typeCode] || [t.typeDesc || "Move", "bg-slate-500"];
+};
+const TX_CACHE = { at: 0, list: null };
+function TransactionsTab({ players, onSelect, q }) {
+  const [list, setList] = useState(TX_CACHE.list);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (TX_CACHE.list && Date.now() - TX_CACHE.at < 10 * 60000) return;
+    let alive = true;
+    (async () => {
+      try {
+        const day = (n) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() + n * 86400000));
+        const d = await (await mlbFetch(`v1/transactions?sportId=1&startDate=${day(-14)}&endDate=${day(0)}`)).json();
+        const rows = (d.transactions || []).filter((t) => t.person && t.person.fullName && t.description)
+          .map((t) => ({ id: t.id, name: t.person.fullName, pid: t.person.id, team: (t.toTeam && TEAM_ABBR_BY_ID[t.toTeam.id]) || (t.fromTeam && TEAM_ABBR_BY_ID[t.fromTeam.id]) || "", teamName: (t.toTeam && t.toTeam.name) || (t.fromTeam && t.fromTeam.name) || "", date: t.date || t.effectiveDate || "", text: t.description, typeCode: t.typeCode, typeDesc: t.typeDesc }))
+          .filter((t) => t.team)                                            // big-league moves only
+          .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+        TX_CACHE.list = rows; TX_CACHE.at = Date.now();
+        if (alive) setList(rows);
+      } catch { if (alive) setFailed(true); }
+    })();
+    return () => { alive = false; };
+  }, []);
+  const mine = useMemo(() => { const m = {}; for (const p of players || []) (m[hrbNrm(p.name)] = m[hrbNrm(p.name)] || []).push(p); return m; }, [players]);
+  const findP = (t) => { const c = mine[hrbNrm(t.name)] || []; return c.length > 1 ? c.find((p) => teamOfPlayer(p) === t.team) || c[0] : c[0]; };
+  const shown = (list || []).filter((t) => !q || hrbNrm(t.name).includes(hrbNrm(q)) || hrbNrm(t.teamName).includes(hrbNrm(q)) || String(t.team).toLowerCase() === q.toLowerCase().trim());
+  const fmtDay = (iso) => { const d = new Date(String(iso).slice(0, 10) + "T12:00:00Z"); return isNaN(d) ? iso : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(d); };
+  let lastDay = null;
+  return (
+    <div className="px-4 pb-28 mt-4">
+      <div className="text-[11px] font-semibold text-slate-400 mb-3">MLB transaction log · last 14 days · {list ? shown.length + " moves" : "loading"} · newest first</div>
+      {!list && !failed && <BallLoader label="Loading transactions" full={false} />}
+      {failed && <div className="text-center text-sm text-slate-400 py-12">Couldn't reach MLB's transaction log. Tap the pill again to retry.</div>}
+      {list && shown.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No moves found.</div>}
+      {shown.map((t) => {
+        const day = String(t.date).slice(0, 10);
+        const head = day !== lastDay; lastDay = day;
+        const [lbl, cls] = txLabel(t);
+        const p = findP(t);
+        const vp = p || { id: "tx:" + t.pid, name: t.name, mlbId: t.pid, teamAbbr: t.team, _virtual: true };
+        return (
+          <React.Fragment key={t.id}>
+            {head && <div className="text-[10px] font-extrabold tracking-widest uppercase text-slate-400 mt-4 mb-2 px-1">{fmtDay(day)}</div>}
+            <button onClick={p ? () => onSelect(p) : undefined} className={"w-full text-left flex items-start gap-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm px-3 py-3 mb-2 " + (p ? "active:bg-slate-50 dark:active:bg-slate-800" : "")}
+              style={{ borderLeft: "4px solid " + teamColor(t.team) }}>
+              <Avatar p={vp} />
+              <span className="flex-1 min-w-0">
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate">{t.name}</span>
+                  {TEAM_LOGOS[t.team] && <img src={TEAM_LOGOS[t.team]} alt={t.team} className={"w-6 h-6 object-contain shrink-0" + (WHITE_LOGOS.has(t.team) ? " dark:brightness-0 dark:invert" : "")} />}
+                </span>
+                <span className="flex items-center gap-2 mt-1">
+                  <span className={"rounded px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-white " + cls}>{lbl}</span>
+                  <span className="text-[10px] font-semibold text-slate-400">{t.teamName}</span>
+                </span>
+                <span className="block text-[12px] text-slate-600 dark:text-slate-300 leading-snug mt-1.5">{t.text}</span>
+              </span>
+            </button>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 function PlayersTab({ players, onSelect }) {
   const [q, setQ] = useState("");
   const [pill, setPill] = useState("active");
@@ -690,7 +778,7 @@ function PlayersTab({ players, onSelect }) {
   );
   const pillsBar = (
     <div className="flex gap-2 px-4 mt-3">
-      {[["active", "Active"], ["contracts", "Contracts"], ["retired", "Retired"]].map(([id, label]) => (
+      {[["active", "Active"], ["moves", "Transactions"], ["contracts", "Contracts"], ["retired", "Retired"]].map(([id, label]) => (
         <button key={id} onClick={() => setPill(id)}
           className={"flex-1 py-2 rounded-full text-[11px] font-extrabold " + (pill === id
             ? "bg-blue-600 text-white"
@@ -698,6 +786,13 @@ function PlayersTab({ players, onSelect }) {
           {label}
         </button>
       ))}
+    </div>
+  );
+  if (pill === "moves") return (
+    <div>
+      <ListHeader title="Players" q={q} setQ={setQ} />
+      {pillsBar}
+      <TransactionsTab players={players} onSelect={onSelect} q={q} />
     </div>
   );
   if (pill === "contracts") return (
@@ -735,8 +830,7 @@ function PlayersTab({ players, onSelect }) {
               <TeamPill team={teamOfPlayer(p) || p.teamName || activeOf(p)?.team} />
             </button>
           ))}
-          {list.length === 0 && faOnly && <div className="text-center text-sm text-slate-400 py-12 px-6">No events for the {startYear(CURRENT_SEASON) + 1} offseason yet. Add UFA/RFA rows or option years in Contract Years.</div>}
-          {list.length === 0 && !faOnly && <div className="text-center text-sm text-slate-400 py-12">No players match "{q}".</div>}
+          {list.length === 0 && <div className="text-center text-sm text-slate-400 py-12">{q ? `No players match "${q}".` : "No players yet."}</div>}
         </div>
       </div>
     </div>
@@ -1775,10 +1869,15 @@ const injLabel = (r) => {
 const injText = (r) => {
   const ok = (v) => (v && !/not specified|^n\/?a$/i.test(v) ? v : "");
   const what = [ok(r.side), ok(r.type) || ok(r.location), ok(r.detail)].filter(Boolean).join(" ").trim();
-  let ret = "";
-  if (r.returnDate) { const d = new Date(r.returnDate); if (!isNaN(d)) ret = "Est. return " + new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(d); }
-  return [what ? what.charAt(0).toUpperCase() + what.slice(1).toLowerCase() : "", ret].filter(Boolean).join(" · ");
+  return what ? what.charAt(0).toUpperCase() + what.slice(1).toLowerCase() : "";
 };
+// "Estimated Return Date: Sep 22" (month always capitalised)
+const injReturn = (r) => {
+  if (!r || !r.returnDate) return "";
+  const d = new Date(r.returnDate);
+  return isNaN(d) ? "" : "Estimated Return Date: " + new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(d);
+};
+const ReturnLine = ({ r, className = "" }) => { const t = injReturn(r); return t ? <span className={"block text-[11px] font-bold text-rose-500 " + className}>{t}</span> : null; };
 // ONE answer to "what tag does this player wear?", used by the field view, the
 // bench and the roster so they can never disagree:
 //   live report (ESPN + MLB's official roster status) → Airtable Status →
@@ -1849,7 +1948,7 @@ function InjuryLine({ p }) {
   useInjuries();
   const r = injFor(p.name, teamOfPlayer(p));
   const text = r ? injText(r) : "";
-  if (text) return <div className="mt-1 text-[12px] font-semibold text-white/90 leading-snug">{text}</div>;
+  if (text || (r && r.returnDate)) return <div className="mt-1 text-[12px] font-semibold text-white/90 leading-snug">{text}<ReturnLine r={r} className="text-rose-200 mt-0.5" /></div>;
   if (!r && p.injuryNotes) return <div className="mt-1 text-[12px] font-semibold text-white/90 leading-snug">{p.injuryNotes}</div>;
   return null;
 }
@@ -1963,6 +2062,27 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
           else if (job.includes("hitting") && !job.includes("assistant")) roles.hitting = nm;
         }
         if (alive) setCoaches(roles);
+        // Tenure: walk back season by season while the same person holds the job
+        const yr = parseInt(String(CURRENT_SEASON).slice(0, 4), 10);
+        const since = {};
+        const open = new Set(Object.keys(roles));
+        for (let y = yr - 1; y >= yr - 30 && open.size; y -= 1) {
+          let prev = null;
+          try { prev = await (await mlbFetch(`v1/teams/${tid}/coaches?season=${y}`)).json(); } catch { break; }
+          const had = {};
+          for (const r of prev.roster || []) {
+            const job = String((r.job || r.jobId || "")).toLowerCase(); const nm = r.person && r.person.fullName;
+            if (!nm) continue;
+            if (job === "manager") had.manager = nm;
+            else if (job.includes("bench")) had.bench = nm;
+            else if (job.includes("pitching") && !job.includes("assistant") && !job.includes("bullpen")) had.pitching = nm;
+            else if (job.includes("hitting") && !job.includes("assistant")) had.hitting = nm;
+          }
+          for (const k of [...open]) { if (had[k] === roles[k]) since[k] = y; else open.delete(k); }
+        }
+        const seasons = {};
+        for (const k of Object.keys(roles)) seasons[k] = yr - (since[k] ?? yr) + 1;
+        if (alive) setCoaches({ ...roles, seasons });
       } catch {}
     })();
     return () => { alive = false; };
@@ -2055,7 +2175,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
         )}
       </span>
       <span className="block mt-2 text-[9px] font-bold text-slate-700 dark:text-slate-200 truncate">{lastNameOf(pl.name)}</span>
-      <span className="block text-[8px] font-extrabold truncate" style={{ color: tc }}>{pl.pos || ""}</span>
+      <span className="block text-[8px] font-extrabold truncate text-[color:var(--tc)] dark:text-white/80" style={{ "--tc": tc }}>{pl.pos || ""}</span>
     </button>
   );
 
@@ -2215,7 +2335,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
           <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Bench</div>
           {benchGroups.map((g) => (
             <div key={g.name}>
-              <div className="text-[10px] font-extrabold uppercase tracking-wider mb-1.5 pl-2 border-l-2" style={{ color: tc, borderColor: tc }}>
+              <div className="text-[10px] font-extrabold uppercase tracking-wider mb-1.5 pl-2 border-l-2 text-[color:var(--tc)] dark:text-white" style={{ "--tc": tc, borderColor: tc }}>
                 {g.name} ({g.list.length})
               </div>
               <div className="grid grid-cols-5 gap-y-3 gap-x-1">
@@ -2232,6 +2352,9 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
           <span key={lbl} className="min-w-0">
             <span className="block text-[8px] font-extrabold uppercase tracking-widest text-slate-400">{lbl}</span>
             <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 truncate">{v || (coaches ? "—" : "…")}</span>
+            {v && coaches && coaches.seasons && coaches.seasons[lbl === "Manager" ? "manager" : lbl === "Bench Coach" ? "bench" : lbl === "Pitching Coach" ? "pitching" : "hitting"] != null && (
+              <span className="block text-[10px] font-medium text-slate-400">({(() => { const n = coaches.seasons[lbl === "Manager" ? "manager" : lbl === "Bench Coach" ? "bench" : lbl === "Pitching Coach" ? "pitching" : "hitting"]; return ordinal(n) + " season"; })()})</span>
+            )}
           </span>
         ))}
       </div>
@@ -2302,6 +2425,7 @@ function TeamFormChart({ teamName }) {
 }
 
 // ═══════════════ TEAM PAGE PIECES (football-app layout) ══════════
+const TEAM_ABBR_BY_ID = { 108: "LAA", 109: "ARI", 110: "BAL", 111: "BOS", 112: "CHC", 113: "CIN", 114: "CLE", 115: "COL", 116: "DET", 117: "HOU", 118: "KC", 119: "LAD", 120: "WSH", 121: "NYM", 133: "ATH", 134: "PIT", 135: "SD", 136: "SEA", 137: "SF", 138: "STL", 139: "TB", 140: "TEX", 141: "TOR", 142: "MIN", 143: "PHI", 144: "ATL", 145: "CWS", 146: "MIA", 147: "NYY", 158: "MIL" };
 const MLB_TEAM_ID = { LAA: 108, ARI: 109, BAL: 110, BOS: 111, CHC: 112, CIN: 113, CLE: 114, COL: 115, DET: 116, HOU: 117, KC: 118, LAD: 119, WSH: 120, NYM: 121, ATH: 133, PIT: 134,
   SD: 135, SEA: 136, SF: 137, STL: 138, TB: 139, TEX: 140, TOR: 141, MIN: 142, PHI: 143, ATL: 144, CWS: 145, MIA: 146, NYY: 147, MIL: 158 };
 
@@ -2427,18 +2551,19 @@ function RosterRow({ p, abbr, chip, chipCls, tiles, badge, under, onSelect }) {
           {tiles.map(([lbl, v]) => (
             <span key={lbl} className={(tiles.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border-2 bg-white dark:bg-slate-900 text-center overflow-hidden"} style={{ borderColor: tc + "66" }}>
               <span className="block text-[7px] font-extrabold uppercase tracking-wider text-black dark:text-white py-0.5" style={{ backgroundColor: tc }}>{lbl}</span>
-              <span className="block text-[14px] leading-tight font-extrabold tabular-nums text-slate-900 dark:text-white py-1">{v ?? "—"}</span>
+              <span className={"block leading-tight font-extrabold tabular-nums tracking-tight whitespace-nowrap text-slate-900 dark:text-white py-1 " + (String(v ?? "").length >= 5 ? "text-[11px]" : "text-[14px]")}>{v ?? "—"}</span>
             </span>
           ))}
         </span>
-        {(badge || tag || under) && (
-          <span className="flex items-center gap-1.5 mt-1.5 min-w-0 flex-wrap">
-            {badge}
-            {under && <span className="text-[9px] font-medium text-slate-400">({under})</span>}
+        {(tag || under) && (
+          <span className="flex items-center gap-1.5 mt-1.5 min-w-0">
             {tag && <LiveStatus p={p} />}
-            {tag && tag.kind !== "min" && note && <span className="text-[11px] font-semibold text-rose-500 truncate lowercase">({note})</span>}
+            {tag && tag.kind !== "min" && note && <span className="text-[11px] font-semibold text-rose-500 truncate min-w-0">({note})</span>}
+            {under && <span className="ml-auto shrink-0 text-[9px] font-medium text-slate-400">({under})</span>}
           </span>
         )}
+        {tag && tag.kind !== "min" && <ReturnLine r={live} className="mt-0.5" />}
+        {badge && <span className="block mt-1.5">{badge}</span>}
       </span>
     </button>
   );
@@ -3583,7 +3708,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v121";
+const HRB_VERSION = "v122";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
