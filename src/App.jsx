@@ -1290,9 +1290,10 @@ function useLiveGame(gamePk) {
 //   away team + score on top, home team + score below, bases / count / inning /
 //   outs / pitch count on the right, pitcher and batter (with his line) underneath.
 const LIVE_CACHE = {};
-function useLiveBug(pk) {
+function useLiveBug(pk, on) {
   const [d, setD] = useState(LIVE_CACHE[pk] || null);
   useEffect(() => {
+    if (!on) return;
     let alive = true, timer = null;
     const load = async () => {
       try { const r = await fetch("/api/game?pk=" + pk); const j = r.ok ? await r.json() : null; if (alive && j && !j.error) { LIVE_CACHE[pk] = j; setD(j); } } catch {}
@@ -1300,56 +1301,82 @@ function useLiveBug(pk) {
     };
     load();
     return () => { alive = false; clearTimeout(timer); };
-  }, [pk]);
+  }, [pk, on]);
   return d;
 }
-function LiveBug({ pk, g, sides }) {
-  const d = useLiveBug(pk);
+// The Matchups card, every state: away team on top, home below (logo · abbr/record · score),
+// the right block is the game time (upcoming), FINAL, or the live situation; the bottom
+// line is the probables (upcoming), W/L/SV (final), or pitcher + batter (live).
+function MatchCard({ pk, g, sides, state }) {
+  const isLive = state === "Live", isFinal = state === "Final";
+  const d = useLiveBug(pk, isLive);
   const sit = d && d.state === "in" ? d.situation : null;
   const ls = g.linescore || {};
   const off = ls.offense || {};
   const on = (b) => (sit ? !!(sit.runners && sit.runners[b]) : !!off[b]);
   const balls = sit ? sit.balls : ls.balls, strikes = sit ? sit.strikes : ls.strikes, outs = sit ? sit.outs : ls.outs;
   const inning = sit ? d.inning : ls.currentInning, half = (sit ? d.inningHalf : ls.inningHalf) === "Top" ? "▲" : "▼";
-  const battingAbbr = sit ? sit.battingTeam : (ls.inningHalf === "Top" ? sides.away.abbr : sides.home.abbr);
+  const battingAbbr = isLive ? (sit ? sit.battingTeam : (ls.inningHalf === "Top" ? sides.away.abbr : sides.home.abbr)) : null;
   const batSide = battingAbbr === sides.home.abbr ? "home" : "away";
   const pitcher = sit ? sit.pitcher : (ls.defense && ls.defense.pitcher ? { id: ls.defense.pitcher.id, name: ls.defense.pitcher.fullName } : null);
   const batter = sit ? sit.batter : (off.batter ? { id: off.batter.id, name: off.batter.fullName } : null);
   const bLine = d && batter ? ((d.box[batSide] && d.box[batSide].batters) || []).find((x) => x.id === batter.id) : null;
   const pitches = d && pitcher ? [...(d.box.away.pitchers || []), ...(d.box.home.pitchers || [])].find((x) => x.id === pitcher.id) : null;
   const base = (x, y, lit) => <rect x={x} y={y} width="8" height="8" rx="1.5" transform={`rotate(45 ${x + 4} ${y + 4})`} fill={lit ? "#fbbf24" : "rgba(255,255,255,0.15)"} stroke={lit ? "#f59e0b" : "rgba(255,255,255,0.7)"} strokeWidth="1.3" />;
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
+  const dec = g.decisions || {};
+  const aS = g.teams.away.score, hS = g.teams.home.score;
+  const era = (sd) => (sd.pitcher && sd.pitcher.era != null && sd.pitcher.era !== "" && !/^-/.test(String(sd.pitcher.era)) ? String(sd.pitcher.era) : null);
   const row = (k) => {
-    const sd = sides[k]; const sc = g.teams[k].score ?? 0; const up = battingAbbr === sd.abbr;
+    const sd = sides[k]; const sc = g.teams[k].score;
+    const lost = isFinal && sc != null && (k === "away" ? sc < hS : sc < aS);
     return (
-      <span className="flex items-center gap-2">
-        {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-9 h-9 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : <span className="w-9 h-9 rounded-full" style={{ backgroundColor: teamColor(sd.abbr) }} />}
-        <span className={"w-11 text-[15px] font-black tracking-wide " + (up ? "text-white" : "text-white/80")}>{sd.abbr}</span>
-        <span className="text-[26px] leading-none font-black tabular-nums text-white drop-shadow">{sc}</span>
-        {up && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
+      <span className={"flex items-center gap-2.5 " + (lost ? "opacity-60" : "")}>
+        {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-11 h-11 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : <span className="w-11 h-11 rounded-full" style={{ backgroundColor: teamColor(sd.abbr) }} />}
+        <span className="min-w-0">
+          <span className="block text-[15px] font-black tracking-wide text-white leading-tight">{sd.abbr}</span>
+          <span className="block text-[10px] font-semibold text-white/70 tabular-nums leading-tight">{sd.rec}</span>
+        </span>
+        {state !== "Preview" && <span className="ml-2 text-[26px] leading-none font-black tabular-nums text-white drop-shadow w-8 text-right">{sc ?? 0}</span>}
       </span>
     );
   };
+  const pitLine = (sd) => (sd.pitcher
+    ? <><span className="font-bold">{sd.pitcher.name}</span>{sd.pitcher.rec ? <span className="text-white/70"> ({sd.pitcher.rec})</span> : null}{era(sd) ? <span className="text-white/80 tabular-nums"> · {era(sd)} ERA</span> : null}</>
+    : <span className="text-white/60">Pitcher TBD</span>);
   return (
     <span className="block">
       <span className="flex items-stretch gap-3">
-        <span className="flex flex-col justify-between gap-1.5 shrink-0">{row("away")}{row("home")}</span>
+        <span className="flex flex-col justify-between gap-2 shrink-0">{row("away")}{row("home")}</span>
         <span className="flex-1 flex items-center justify-end gap-3">
-          <svg width="40" height="30" viewBox="0 0 40 30" aria-label="bases">{base(16, 2, on("second"))}{base(4, 14, on("third"))}{base(28, 14, on("first"))}</svg>
-          <span className="text-right">
-            <span className="block text-[18px] font-black tabular-nums text-white leading-none">{half} {inning ?? "—"}</span>
-            <span className="block text-[11px] font-extrabold tabular-nums text-white/90 mt-1">{balls ?? 0}-{strikes ?? 0} <span className="text-white/60">·</span> {outs ?? 0} OUT</span>
-            <span className="block text-[10px] font-bold text-white/70 tabular-nums">P: {pitches && pitches.pitches != null ? pitches.pitches : "—"}</span>
-          </span>
+          {isLive && <svg width="40" height="30" viewBox="0 0 40 30" aria-label="bases">{base(16, 2, on("second"))}{base(4, 14, on("third"))}{base(28, 14, on("first"))}</svg>}
+          {isLive && (
+            <span className="text-right">
+              <span className="block text-[18px] font-black tabular-nums text-white leading-none">{half} {inning ?? "—"}</span>
+              <span className="block text-[11px] font-extrabold tabular-nums text-white/90 mt-1">{balls ?? 0}-{strikes ?? 0} <span className="text-white/60">·</span> {outs ?? 0} OUT</span>
+            </span>
+          )}
+          {isFinal && <span className="rounded-lg bg-black/40 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-white/90">Final</span>}
+          {state === "Preview" && <span className="text-right"><span className="block text-[16px] font-extrabold text-white tabular-nums">{time}</span><span className="block text-[9px] font-bold text-white/60 uppercase tracking-widest">ET</span></span>}
         </span>
       </span>
       <span className="flex items-center justify-between gap-3 mt-2 pt-2 border-t border-white/20 text-[11px]">
-        <span className="min-w-0 truncate text-white/90"><span className="font-black text-white/60">P </span><span className="font-extrabold uppercase tracking-wide">{pitcher ? lastNameOf(pitcher.name) : "—"}</span></span>
-        <span className="min-w-0 truncate text-right text-white/90">
-          <span className="inline-block w-1.5 h-3 mr-1.5 align-middle rounded-sm" style={{ backgroundColor: shade(teamColor(battingAbbr), 35) }} />
-          {bLine ? <span className="font-bold text-white/60">{bLine.slot}. </span> : null}
-          <span className="font-extrabold uppercase tracking-wide">{batter ? lastNameOf(batter.name) : "—"}</span>
-          {bLine ? <span className="font-bold text-white/75 tabular-nums"> {bLine.h}-{bLine.ab}</span> : null}
-        </span>
+        {isLive && (<>
+          <span className="min-w-0 truncate text-white/90"><span className="font-black text-white/60">P </span><span className="font-extrabold uppercase tracking-wide">{pitcher ? lastNameOf(pitcher.name) : "—"}</span>{pitches && pitches.pitches != null ? <span className="font-bold text-white/70 tabular-nums"> · {pitches.pitches} P</span> : null}</span>
+          <span className="min-w-0 truncate text-right text-white/90">
+            {bLine ? <span className="font-bold text-white/60">{bLine.slot}. </span> : null}
+            <span className="font-extrabold uppercase tracking-wide">{batter ? lastNameOf(batter.name) : "—"}</span>
+            {bLine ? <span className="font-bold text-white/75 tabular-nums"> {bLine.h}-{bLine.ab}</span> : null}
+          </span>
+        </>)}
+        {isFinal && (<>
+          <span className="min-w-0 truncate text-white/90">{dec.winner ? <><span className="font-black text-emerald-300">W </span><span className="font-bold">{lastNameOf(dec.winner.fullName)}</span></> : null}{dec.save ? <><span className="font-black text-sky-200">  SV </span><span className="font-bold">{lastNameOf(dec.save.fullName)}</span></> : null}</span>
+          <span className="min-w-0 truncate text-right text-white/90">{dec.loser ? <><span className="font-black text-rose-300">L </span><span className="font-bold">{lastNameOf(dec.loser.fullName)}</span></> : null}</span>
+        </>)}
+        {state === "Preview" && (<>
+          <span className="min-w-0 truncate text-white/90">{pitLine(sides.away)}</span>
+          <span className="min-w-0 truncate text-right text-white/90">{pitLine(sides.home)}</span>
+        </>)}
       </span>
     </span>
   );
@@ -1577,43 +1604,46 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
             </div>
           )}
         </div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between">
           {["away", "home"].map((k) => {
             const ab = abbrOf(k);
             const logo = TEAM_LOGOS[ab];
             const rec = g.teams[k].leagueRecord ? g.teams[k].leagueRecord.wins + "-" + g.teams[k].leagueRecord.losses : "";
             const on = side === k;
-            return (
+            const col = (
               <button key={k} onClick={() => setSide(k)} aria-label={"Show " + ab + " box score"}
-                className={"flex items-center gap-3 rounded-2xl px-2 py-1.5 -mx-2 transition-colors " + (k === "home" ? "flex-row-reverse text-right" : "") + (on ? " bg-white/15 ring-2 ring-white/70" : " opacity-75")}>
-                {logo ? (
-                  <img src={logo} alt="" className={"w-[68px] h-[68px] object-contain shrink-0 drop-shadow-lg" + logoFx(ab)} />
-                ) : (
-                  <span className="w-[68px] h-[68px] rounded-full shrink-0" style={{ backgroundColor: teamColor(ab) }} />
-                )}
-                <div>
-                  <div className="text-white font-extrabold text-lg leading-tight">{ab}</div>
-                  <div className="text-white/70 text-[11px] font-bold">{rec}</div>
-                  <div className={"text-[8px] font-black tracking-widest uppercase mt-0.5 " + (on ? "text-white" : "text-white/50")}>{on ? "▾ Box score" : "Tap for box"}</div>
-                </div>
+                className={"flex flex-col items-center rounded-2xl px-2 py-1.5 transition-colors " + (on ? "bg-white/15 ring-2 ring-white/70" : "opacity-80")}>
+                {logo ? <img src={logo} alt="" className={"w-24 h-24 object-contain drop-shadow-xl" + logoFx(ab)} /> : <span className="w-24 h-24 rounded-full" style={{ backgroundColor: teamColor(ab) }} />}
+                <span className="text-white font-extrabold text-lg leading-tight mt-1">{ab}</span>
+                <span className="text-white/70 text-[11px] font-bold">{rec}</span>
+                <span className={"text-[8px] font-black tracking-widest uppercase mt-0.5 " + (on ? "text-white" : "text-white/50")}>{on ? "▾ Box score" : "Tap for box"}</span>
               </button>
+            );
+            if (k === "away") return col;
+            return (
+              <React.Fragment key="mid">
+                <div className="flex flex-col items-center justify-center pt-6 px-2 min-w-0">
+                  <div className="flex items-baseline gap-2">
+                    <span className={"text-4xl font-black tabular-nums " + (state === "Final" && scoreOf("away") < scoreOf("home") ? "text-white/60" : "text-white")}>{scoreOf("away") != null ? scoreOf("away") : "–"}</span>
+                    <span className="text-white/50 text-xl font-bold">–</span>
+                    <span className={"text-4xl font-black tabular-nums " + (state === "Final" && scoreOf("home") < scoreOf("away") ? "text-white/60" : "text-white")}>{scoreOf("home") != null ? scoreOf("home") : "–"}</span>
+                  </div>
+                  <span className={"text-[11px] font-extrabold tracking-widest uppercase mt-1 " + (state === "Live" ? "text-red-400" : "text-white/80")}>{state === "Live" && inningNow ? inningNow.half + " " + inningNow.num : timeLabel}</span>
+                </div>
+                {col}
+              </React.Fragment>
             );
           })}
         </div>
-        <div className="flex items-center justify-center gap-4 mt-2">
-          <span className="text-white text-3xl font-extrabold tabular-nums">{scoreOf("away") != null ? scoreOf("away") : "–"}</span>
-          <span className={"text-[11px] font-extrabold " + (state === "Live" ? "text-red-500" : "text-white/70")}>{timeLabel}</span>
-          <span className="text-white text-3xl font-extrabold tabular-nums">{scoreOf("home") != null ? scoreOf("home") : "–"}</span>
-        </div>
-        {state === "Live" && inningNow && (
-          <div className="text-center text-[11px] font-extrabold text-white/80 mt-1">{inningNow.half} {inningNow.num}</div>
-        )}
         {wx && (
           <div className="text-center text-[11px] font-bold text-white/70 mt-1">
             {wxEmoji(wx.condition)} {wx.temp}° · {wx.condition}
             {wx.wind ? " · 💨 " + wx.wind : ""}
           </div>
         )}
+        {(live && live.venue && live.venue.name) || (g.venue && g.venue.name) ? (
+          <div className="text-center text-[11px] font-semibold text-white/60 mt-0.5">{(live && live.venue && live.venue.name) || g.venue.name}</div>
+        ) : null}
       </div>
       <div className="px-4 pb-28">
         {live && live.state !== "pre" && live.away && live.away.linescores && (
@@ -2844,8 +2874,8 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
             : empty("No rotation set. Give your five starters Sort Priority 1–5 in Airtable.")}
         </Section>
         <Section title={"Bullpen (" + (closers.length + pen.length) + ")"} note="closer first · then most innings">
-          {closers.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={throwsOf(p)} tiles={pitTiles(p, "rp")} badge={<span className="inline-block rounded px-1.5 py-px text-[9px] font-extrabold uppercase tracking-wide text-white" style={{ backgroundColor: bannerColor(abbr) }}>Closer</span>} onSelect={onSelectPlayer} />)}
-          {pen.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={throwsOf(p)} tiles={pitTiles(p, "rp")} badge={startBadge(p)} onSelect={onSelectPlayer} />)}
+          {closers.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={throwsOf(p)} tiles={pitTiles(p, "rp")} under={(() => { const s = line(p); return s && s.pit ? s.pit.g + " game" + (s.pit.g === 1 ? "" : "s") : null; })()} badge={<span className="inline-block rounded px-1.5 py-px text-[9px] font-extrabold uppercase tracking-wide text-white" style={{ backgroundColor: bannerColor(abbr) }}>Closer</span>} onSelect={onSelectPlayer} />)}
+          {pen.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={throwsOf(p)} tiles={pitTiles(p, "rp")} under={(() => { const s = line(p); return s && s.pit ? s.pit.g + " game" + (s.pit.g === 1 ? "" : "s") : null; })()} badge={startBadge(p)} onSelect={onSelectPlayer} />)}
           {closers.length + pen.length === 0 && empty("No relievers on the roster.")}
         </Section>
       </>
@@ -3905,7 +3935,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v130";
+const HRB_VERSION = "v131";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -4525,10 +4555,12 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                       })).then((pairs) => setStreaks((s2) => ({ ...s2, ...Object.fromEntries(pairs) })));
                     }
                   }}
-                  style={{ backgroundImage: `linear-gradient(100deg, ${bannerColor(sides.away.abbr)} 0%, ${bannerColor(sides.away.abbr)} 38%, ${shade(bannerColor(sides.away.abbr), -12)} 47%, ${shade(bannerColor(sides.home.abbr), -12)} 53%, ${bannerColor(sides.home.abbr)} 62%, ${bannerColor(sides.home.abbr)} 100%)` }}
-                  className="relative w-full text-left px-4 py-2.5 active:opacity-90">
+                  style={{ backgroundImage: mode === "open"
+                    ? `linear-gradient(180deg, ${bannerColor(sides.away.abbr)} 0%, ${bannerColor(sides.away.abbr)} 40%, ${shade(bannerColor(sides.away.abbr), -12)} 47%, ${shade(bannerColor(sides.home.abbr), -12)} 53%, ${bannerColor(sides.home.abbr)} 60%, ${bannerColor(sides.home.abbr)} 100%)`
+                    : `linear-gradient(100deg, ${bannerColor(sides.away.abbr)} 0%, ${bannerColor(sides.away.abbr)} 38%, ${shade(bannerColor(sides.away.abbr), -12)} 47%, ${shade(bannerColor(sides.home.abbr), -12)} 53%, ${bannerColor(sides.home.abbr)} 62%, ${bannerColor(sides.home.abbr)} 100%)` }}
+                  className="relative w-full text-left px-4 py-3 active:opacity-90">
 <span className="block">
-                    {state === "Live" && mode === "open" ? <LiveBug pk={g.gamePk} g={g} sides={sides} /> : (<>
+                    {mode === "open" ? <MatchCard pk={g.gamePk} g={g} sides={sides} state={state} /> : (<>
                     {/* ── Broadcast row: logo · score · center status · score · logo ──
                         Football-style banner: away colour on the left, home on the right. */}
                     <span className="relative flex items-center gap-1">
