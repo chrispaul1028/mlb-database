@@ -1518,9 +1518,9 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
               <button key={k} onClick={() => setSide(k)} aria-label={"Show " + ab + " box score"}
                 className={"flex items-center gap-3 rounded-2xl px-2 py-1.5 -mx-2 transition-colors " + (k === "home" ? "flex-row-reverse text-right" : "") + (on ? " bg-white/15 ring-2 ring-white/70" : " opacity-75")}>
                 {logo ? (
-                  <img src={logo} alt="" className={"w-12 h-12 object-contain shrink-0 drop-shadow" + logoFx(ab)} />
+                  <img src={logo} alt="" className={"w-[68px] h-[68px] object-contain shrink-0 drop-shadow-lg" + logoFx(ab)} />
                 ) : (
-                  <span className="w-12 h-12 rounded-full shrink-0" style={{ backgroundColor: teamColor(ab) }} />
+                  <span className="w-[68px] h-[68px] rounded-full shrink-0" style={{ backgroundColor: teamColor(ab) }} />
                 )}
                 <div>
                   <div className="text-white font-extrabold text-lg leading-tight">{ab}</div>
@@ -1600,13 +1600,13 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
             <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-400">Scoring</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
               {live.scoring.map((sp, i) => (
-                <div key={i} className="flex items-start gap-3 px-3 py-2.5">
-                  {TEAM_LOGOS[sp.team] ? <img src={TEAM_LOGOS[sp.team]} alt={sp.team} className={"w-7 h-7 object-contain shrink-0 mt-0.5" + logoFx(sp.team)} /> : <span className="w-7 h-7 rounded-full shrink-0" style={{ backgroundColor: teamColor(sp.team) }} />}
+                <div key={i} className="flex items-start gap-2.5 px-3 py-2">
+                  {TEAM_LOGOS[sp.team] ? <img src={TEAM_LOGOS[sp.team]} alt={sp.team} className={"w-6 h-6 object-contain shrink-0" + logoFx(sp.team)} /> : <span className="w-7 h-7 rounded-full shrink-0" style={{ backgroundColor: teamColor(sp.team) }} />}
                   <span className="flex-1 min-w-0">
-                    <span className="block text-[13px] font-semibold text-slate-900 dark:text-slate-100 leading-snug">{sp.text}</span>
-                    <span className="block text-[11px] text-slate-400 mt-0.5">{sp.event || "Run"}{sp.rbi > 1 ? " · " + sp.rbi + " RBI" : ""} · {sp.half} {sp.inning}{sp.hit && sp.hit.dist && sp.event === "Home Run" ? " · " + Math.round(sp.hit.dist) + " ft · " + sp.hit.ev.toFixed(1) + " mph" : ""}</span>
+                    <span className="block text-[12px] text-slate-800 dark:text-slate-100 leading-snug">{sp.text}</span>
+                    <span className="block text-[10px] text-slate-400 mt-0.5">{sp.event || "Run"}{sp.rbi > 1 ? " · " + sp.rbi + " RBI" : ""} · {sp.half} {sp.inning}{sp.hit && sp.hit.dist && sp.event === "Home Run" ? " · " + Math.round(sp.hit.dist) + " ft · " + sp.hit.ev.toFixed(1) + " mph" : ""}</span>
                   </span>
-                  <span className="shrink-0 text-[14px] font-black tabular-nums text-slate-900 dark:text-white">{sp.away}–{sp.home}</span>
+                  <span className="shrink-0 text-[12px] font-extrabold tabular-nums text-slate-900 dark:text-white">{sp.away}–{sp.home}</span>
                 </div>
               ))}
             </div>
@@ -1695,18 +1695,18 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
               const RowTag = mine && onSelectPlayer ? "button" : "div";
               return (
                 <RowTag key={pid} onClick={mine && onSelectPlayer ? () => onSelectPlayer(mine.player) : undefined}
-                  className={"w-full text-left grid grid-cols-[28px_32px_1fr_repeat(6,30px)] items-center px-2 py-2 border-t border-slate-100 dark:border-slate-800 " + (isBatting ? "bg-emerald-50 dark:bg-emerald-900/30" : i % 2 ? "bg-slate-50/60 dark:bg-slate-800/30" : "")}>
+                  className={"w-full text-left grid grid-cols-[28px_32px_1fr_repeat(6,30px)] items-center px-2 py-1.5 border-t border-slate-100 dark:border-slate-800 " + (isBatting ? "bg-emerald-50 dark:bg-emerald-900/30" : i % 2 ? "bg-slate-50/60 dark:bg-slate-800/30" : "")}>
                   <span className="text-[11px] font-extrabold tabular-nums text-slate-400">{i + 1}</span>
                   <span className="text-[10px] font-bold text-slate-400 uppercase">{pos}</span>
                   <span className="min-w-0 pr-1">
-                    <span className={"block text-[13px] font-bold truncate " + (isBatting ? "text-emerald-700 dark:text-emerald-300" : "text-slate-900 dark:text-slate-100")}>
+                    <span className={"block text-[12px] font-bold truncate " + (isBatting ? "text-emerald-700 dark:text-emerald-300" : "text-slate-900 dark:text-slate-100")}>
                       {lastNameOf(nm) || nm}{isBatting && <span className="ml-1.5 text-[8px] font-extrabold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">At bat</span>}
                       <InjBadge name={nm} team={abbrOf(side)} />
                     </span>
                     {extra && <span className={"block text-[10px] font-bold " + (hot ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500")}>{extra}</span>}
                   </span>
                   {[b ? b.ab : 0, b ? b.r : 0, b ? b.h : 0, b ? b.rbi : 0, b ? b.bb : 0, b ? b.so : 0].map((v, j) => (
-                    <span key={j} className={"text-center text-[13px] tabular-nums " + (j === 2 && v > 0 ? "font-black text-slate-900 dark:text-white" : v > 0 ? "font-bold text-slate-800 dark:text-slate-200" : "font-semibold text-slate-300 dark:text-slate-600")}>{v}</span>
+                    <span key={j} className={"text-center text-[12px] tabular-nums " + (j === 2 && v > 0 ? "font-black text-slate-900 dark:text-white" : v > 0 ? "font-bold text-slate-800 dark:text-slate-200" : "font-semibold text-slate-300 dark:text-slate-600")}>{v}</span>
                   ))}
                 </RowTag>
               );
@@ -1715,14 +1715,14 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
         )}
         {inGame && box != null && order.length === 0 && <div className="text-center text-sm text-slate-400 py-10">Lineup not posted yet.</div>}
         {inGame && (() => {
-          const staff = (live.box[oppKey] && live.box[oppKey].pitchers) || [];
+          const staff = (live.box[side] && live.box[side].pitchers) || [];
           const onMound = sit && sit.pitcher ? sit.pitcher.id : null;
           if (!staff.length) return null;
           return (
             <>
-              <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(oppKey)) }}>{(g.teams[oppKey].team && g.teams[oppKey].team.name) || ""} · Pitching</div>
+              <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(side)) }}>{(g.teams[side].team && g.teams[side].team.name) || ""} · Pitching</div>
               <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                <div className="grid grid-cols-[1fr_repeat(7,30px)] items-center px-2 py-1.5 text-[8px] font-extrabold uppercase tracking-wider text-white" style={{ backgroundColor: bannerColor(abbrOf(oppKey)) }}>
+                <div className="grid grid-cols-[1fr_repeat(7,30px)] items-center px-2 py-1.5 text-[8px] font-extrabold uppercase tracking-wider text-white" style={{ backgroundColor: bannerColor(abbrOf(side)) }}>
                   <span>Pitcher</span>{["IP", "H", "R", "ER", "BB", "K", "P"].map((k) => <span key={k} className="text-center">{k}</span>)}
                 </div>
                 {staff.map((pt, i) => {
@@ -1731,15 +1731,15 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
                   const RowTag = mp && onSelectPlayer ? "button" : "div";
                   return (
                     <RowTag key={pt.id} onClick={mp && onSelectPlayer ? () => onSelectPlayer(mp.player) : undefined}
-                      className={"w-full text-left grid grid-cols-[1fr_repeat(7,30px)] items-center px-2 py-2 border-t border-slate-100 dark:border-slate-800 " + (now ? "bg-emerald-50 dark:bg-emerald-900/30" : i % 2 ? "bg-slate-50/60 dark:bg-slate-800/30" : "")}>
+                      className={"w-full text-left grid grid-cols-[1fr_repeat(7,30px)] items-center px-2 py-1.5 border-t border-slate-100 dark:border-slate-800 " + (now ? "bg-emerald-50 dark:bg-emerald-900/30" : i % 2 ? "bg-slate-50/60 dark:bg-slate-800/30" : "")}>
                       <span className="min-w-0 pr-1">
-                        <span className={"block text-[13px] font-bold truncate " + (now ? "text-emerald-700 dark:text-emerald-300" : "text-slate-900 dark:text-slate-100")}>
+                        <span className={"block text-[12px] font-bold truncate " + (now ? "text-emerald-700 dark:text-emerald-300" : "text-slate-900 dark:text-slate-100")}>
                           {lastNameOf(pt.name) || pt.name}{pt.throws ? <span className="text-[10px] font-bold text-slate-400"> {pt.throws}HP</span> : null}{pt.note ? <span className="text-[10px] font-extrabold text-slate-500"> {pt.note}</span> : null}
                         </span>
                         {now && <span className="block text-[9px] font-extrabold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">On the mound{pt.pitches != null ? " · " + pt.pitches + " pitches" : ""}</span>}
                       </span>
                       {[pt.ip, pt.h, pt.r, pt.er, pt.bb, pt.so, pt.pitches ?? "—"].map((v, j) => (
-                        <span key={j} className={"text-center text-[13px] tabular-nums " + (j === 0 || j === 5 ? "font-black text-slate-900 dark:text-white" : Number(v) > 0 ? "font-bold text-slate-800 dark:text-slate-200" : "font-semibold text-slate-300 dark:text-slate-600")}>{v}</span>
+                        <span key={j} className={"text-center text-[12px] tabular-nums " + (j === 0 || j === 5 ? "font-black text-slate-900 dark:text-white" : Number(v) > 0 ? "font-bold text-slate-800 dark:text-slate-200" : "font-semibold text-slate-300 dark:text-slate-600")}>{v}</span>
                       ))}
                     </RowTag>
                   );
@@ -3836,7 +3836,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v128";
+const HRB_VERSION = "v129";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
