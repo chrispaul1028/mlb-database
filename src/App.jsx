@@ -1615,13 +1615,6 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
           className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
           style={{ borderLeft: "4px solid " + teamColor(abbrOf(oppKey)) }}>
           <div className="flex items-center gap-3">
-            {pp && (myPP && myPP.photo ? (
-              <img src={myPP.photo} alt="" className="w-11 h-11 rounded-full object-cover object-top bg-white shrink-0" loading="lazy" />
-            ) : (
-              <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + pp.id + "/headshot/silo/current"} alt=""
-                className="w-11 h-11 rounded-full object-cover object-top shrink-0"
-                style={{ backgroundColor: teamColor(abbrOf(oppKey)) + "26" }} loading="lazy" />
-            ))}
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
               {(() => {
                 const jn = pp && box && box.teams && box.teams[oppKey] && box.teams[oppKey].players && box.teams[oppKey].players["ID" + pp.id] && box.teams[oppKey].players["ID" + pp.id].jerseyNumber;
@@ -1629,15 +1622,21 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
               })()}
               {pp ? pp.fullName : "Starter TBD"}
               {ps && ps.hand && <span className="text-[11px] font-bold text-slate-400"> · {ps.hand}HP</span>}
-              {todayPit && (
-                <span className="block mt-1 text-[12px] font-bold text-slate-700 dark:text-slate-200 tabular-nums">
-                  Today: {todayPit.ip} IP · {todayPit.h} H · {todayPit.er} ER · {todayPit.so} K · {todayPit.bb} BB{todayPit.pitches != null ? " · " + todayPit.pitches + " pitches" : ""}{todayPit.note ? " " + todayPit.note : ""}
-                </span>
-              )}
+              {todayPit && todayPit.note && <span className="ml-2 text-[11px] font-extrabold text-slate-500">{todayPit.note}</span>}
               {liveNow && <span className="ml-2 text-[9px] font-extrabold uppercase tracking-wide text-red-500">Now Pitching</span>}
             </div>
           </div>
-          {ps && (
+          {todayPit && (
+            <div className="mt-3 grid grid-cols-7 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
+              {[["IP", todayPit.ip], ["H", todayPit.h], ["R", todayPit.r], ["ER", todayPit.er], ["BB", todayPit.bb], ["K", todayPit.so], ["P", todayPit.pitches ?? "—"]].map(([k, v]) => (
+                <span key={k} className="text-center">
+                  <span className="block text-[8px] font-extrabold uppercase tracking-wider text-white py-0.5" style={{ backgroundColor: bannerColor(abbrOf(oppKey)) }}>{k}</span>
+                  <span className="block text-[15px] font-black tabular-nums text-slate-900 dark:text-white py-1.5 bg-white dark:bg-slate-900">{v}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          {ps && !inGame && (
             <div className="mt-3">
               {/* Traditional line - two clean rows of five, scoreboard style */}
               <div className="grid grid-cols-5 gap-y-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
@@ -1674,12 +1673,54 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
         </button>
 
         <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(side)) }}>
-          {(g.teams[side].team && g.teams[side].team.name) || ""} vs {ps && ps.hand === "L" ? "LHP" : "RHP"}
+          {(g.teams[side].team && g.teams[side].team.name) || ""}{inGame ? " · Batting" : " vs " + (ps && ps.hand === "L" ? "LHP" : "RHP")}
         </div>
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+        {inGame && order.length > 0 && (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="grid grid-cols-[28px_32px_1fr_repeat(6,30px)] items-center px-2 py-1.5 text-[8px] font-extrabold uppercase tracking-wider text-white" style={{ backgroundColor: bannerColor(abbrOf(side)) }}>
+              <span></span><span>Pos</span><span>Batter</span>{["AB", "R", "H", "RBI", "BB", "K"].map((k) => <span key={k} className="text-center">{k}</span>)}
+            </div>
+            {order.map((pid, i) => {
+              const pd = teamBox.players["ID" + pid] || {};
+              const nm = (pd.person && pd.person.fullName) || "";
+              const pos = (pd.position && pd.position.abbreviation) || "";
+              const b = todayBat(pid);
+              const mine = myByName[hrbNrm(nm)];
+              const isBatting = batterNow === pid && state === "Live";
+              const extra = b ? [b.hr ? (b.hr > 1 ? b.hr + " HR" : "HR") : "", b.t ? (b.t > 1 ? b.t + " 3B" : "3B") : "", b.d ? (b.d > 1 ? b.d + " 2B" : "2B") : "", b.sb ? (b.sb > 1 ? b.sb + " SB" : "SB") : ""].filter(Boolean).join(", ") : "";
+              const hot = b && (b.hr || b.h >= 2);
+              const RowTag = mine && onSelectPlayer ? "button" : "div";
+              return (
+                <RowTag key={pid} onClick={mine && onSelectPlayer ? () => onSelectPlayer(mine.player) : undefined}
+                  className={"w-full text-left grid grid-cols-[28px_32px_1fr_repeat(6,30px)] items-center px-2 py-2 border-t border-slate-100 dark:border-slate-800 " + (isBatting ? "bg-emerald-50 dark:bg-emerald-900/30" : i % 2 ? "bg-slate-50/60 dark:bg-slate-800/30" : "")}>
+                  <span className="text-[11px] font-extrabold tabular-nums text-slate-400">{i + 1}</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">{pos}</span>
+                  <span className="min-w-0 pr-1">
+                    <span className={"block text-[13px] font-bold truncate " + (isBatting ? "text-emerald-700 dark:text-emerald-300" : "text-slate-900 dark:text-slate-100")}>
+                      {lastNameOf(nm) || nm}{isBatting && <span className="ml-1.5 text-[8px] font-extrabold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">At bat</span>}
+                      <InjBadge name={nm} team={abbrOf(side)} />
+                    </span>
+                    {extra && <span className={"block text-[10px] font-bold " + (hot ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500")}>{extra}</span>}
+                  </span>
+                  {[b ? b.ab : 0, b ? b.r : 0, b ? b.h : 0, b ? b.rbi : 0, b ? b.bb : 0, b ? b.so : 0].map((v, j) => (
+                    <span key={j} className={"text-center text-[13px] tabular-nums " + (j === 2 && v > 0 ? "font-black text-slate-900 dark:text-white" : v > 0 ? "font-bold text-slate-800 dark:text-slate-200" : "font-semibold text-slate-300 dark:text-slate-600")}>{v}</span>
+                  ))}
+                </RowTag>
+              );
+            })}
+            {(() => { const t = (live.box[side] && live.box[side].batters) || []; const sum = (k) => t.reduce((n, x) => n + (x[k] || 0), 0); return (
+              <div className="grid grid-cols-[28px_32px_1fr_repeat(6,30px)] items-center px-2 py-2 border-t-2 border-slate-200 dark:border-slate-700 text-[12px] font-black tabular-nums text-slate-700 dark:text-slate-200">
+                <span></span><span></span><span className="text-[9px] uppercase tracking-widest text-slate-400">Totals</span>
+                {[sum("ab"), sum("r"), sum("h"), sum("rbi"), sum("bb"), sum("so")].map((v, j) => <span key={j} className="text-center">{v}</span>)}
+              </div>
+            ); })()}
+          </div>
+        )}
+        {inGame && box != null && order.length === 0 && <div className="text-center text-sm text-slate-400 py-10">Lineup not posted yet.</div>}
+        <div className={"bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden " + (inGame ? "hidden" : "")}>
           {box == null && <SkeletonCards cards={2} rows={5} />}
           {box != null && order.length === 0 && <div className="text-center text-sm text-slate-400 py-10">Lineup not posted yet.</div>}
-          {order.map((pid, i) => {
+          {!inGame && order.map((pid, i) => {
             const pd = teamBox.players["ID" + pid] || {};
             const nm = (pd.person && pd.person.fullName) || "";
             const pos = (pd.position && pd.position.abbreviation) || "—";
@@ -1709,10 +1750,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
                     {pd.jerseyNumber && <span className="text-[11px] font-bold text-slate-400">#{pd.jerseyNumber} </span>}
                     {nm} <InjBadge name={nm} team={abbrOf(side)} />
                   </span>
-                  {inGame && (() => { const b = todayBat(pid); const t = todayLine(b); const big = b && (b.hr || b.h >= 2); return t
-                    ? <span className={"block mt-0.5 text-[13px] font-extrabold tabular-nums " + (big ? "text-emerald-600 dark:text-emerald-400" : b && b.h ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400")}>{t}</span>
-                    : <span className="block mt-0.5 text-[12px] font-semibold text-slate-400">Hasn't batted yet</span>; })()}
-                  <span className={"flex gap-2 " + (inGame ? "mt-1 opacity-70" : "mt-1")}>
+                  <span className="flex gap-2 mt-1">
                     {[["AVG", bat.avg ? String(bat.avg).replace(/^0/, "") : "—"], ["HR", bat.hr != null ? bat.hr : "—"], ["RBI", bat.rbi != null ? bat.rbi : "—"], ["OPS", bat.ops ? String(bat.ops).replace(/^0/, "") : "—"], ["BRL%", mine && mine.barrel != null ? Number(mine.barrel).toFixed(1) + "%" : "—"]].map(([lbl, v]) => (
                       <span key={lbl} className="w-10 text-center">
                         <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
@@ -3767,7 +3805,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v126";
+const HRB_VERSION = "v127";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
