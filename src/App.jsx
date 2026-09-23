@@ -1364,6 +1364,9 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
   const [side, setSide] = useState("away");
   const live = useLiveGame(g.gamePk);                       // /api/game — score, inning, count, last play, HRs
   const swipe = useSwipe({ onLeft: onNext || undefined, onRight: onPrev || onBack });
+  // Follow the game: when the half-inning flips, show the team now batting (a tap on a logo still overrides until the next flip)
+  const battingNow = live && live.state === "in" && live.situation ? live.situation.battingTeam : null;
+  useEffect(() => { if (battingNow && live) setSide(live.away.abbr === battingNow ? "away" : "home"); }, [battingNow]);
   const [box, setBox] = useState(null);
   const [pstats, setPstats] = useState({});
   const [vsHand, setVsHand] = useState({});
@@ -1555,7 +1558,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
                 <table className="w-full border-collapse">
                   <thead><tr>
                     <th className="w-10 text-left text-[9px] font-bold tracking-widest uppercase text-slate-400"></th>
-                    {cols.map((i) => <th key={i} className={cell + " font-bold " + (i === cur ? "text-rose-500" : "text-slate-400")}>{i + 1}</th>)}
+                    {cols.map((i) => <th key={i} className={cell + " font-bold text-slate-400"}>{i + 1}</th>)}
                     {["R", "H", "E"].map((h) => <th key={h} className={cell + " font-black text-slate-500 dark:text-slate-300 border-l border-slate-200 dark:border-slate-700"}>{h}</th>)}
                   </tr></thead>
                   <tbody>
@@ -1592,26 +1595,26 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
             <SituationStrip sit={sit} />
           </div>
         )}
-        {live && live.homeRuns && live.homeRuns.length > 0 && (
-          <div className="mt-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3">
-            <div className="text-[9px] font-semibold tracking-widest uppercase text-orange-500 mb-1.5">Home runs · {live.homeRuns.length}</div>
-            <div className="space-y-1">
-              {live.homeRuns.map((h, i) => (
-                <div key={i} className="flex items-center gap-2 text-[12px]">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: teamColor(h.team) }} />
-                  <span className="font-bold text-slate-800 dark:text-slate-100 truncate">{h.batter ? h.batter.name : "—"}</span>
-                  <span className="text-[10px] font-bold text-slate-400 shrink-0">{h.half} {h.inning}{h.rbi > 1 ? " · " + h.rbi + "-run" : ""}</span>
-                  <span className="ml-auto text-[10px] font-extrabold tabular-nums text-slate-500 dark:text-slate-400 shrink-0">
-                    {h.hit && h.hit.dist ? Math.round(h.hit.dist) + " ft" : ""}{h.hit && h.hit.ev != null ? " · " + h.hit.ev.toFixed(1) : ""}
+        {live && live.scoring && live.scoring.length > 0 && (
+          <>
+            <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-400">Scoring</div>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+              {live.scoring.map((sp, i) => (
+                <div key={i} className="flex items-start gap-3 px-3 py-2.5">
+                  {TEAM_LOGOS[sp.team] ? <img src={TEAM_LOGOS[sp.team]} alt={sp.team} className={"w-7 h-7 object-contain shrink-0 mt-0.5" + logoFx(sp.team)} /> : <span className="w-7 h-7 rounded-full shrink-0" style={{ backgroundColor: teamColor(sp.team) }} />}
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[13px] font-semibold text-slate-900 dark:text-slate-100 leading-snug">{sp.text}</span>
+                    <span className="block text-[11px] text-slate-400 mt-0.5">{sp.event || "Run"}{sp.rbi > 1 ? " · " + sp.rbi + " RBI" : ""} · {sp.half} {sp.inning}{sp.hit && sp.hit.dist && sp.event === "Home Run" ? " · " + Math.round(sp.hit.dist) + " ft · " + sp.hit.ev.toFixed(1) + " mph" : ""}</span>
                   </span>
+                  <span className="shrink-0 text-[14px] font-black tabular-nums text-slate-900 dark:text-white">{sp.away}–{sp.home}</span>
                 </div>
               ))}
             </div>
-          </div>
+          </>
         )}
         <div className="mt-4 text-[10px] font-bold tracking-widest uppercase text-slate-400 px-1">{(g.teams[side].team && g.teams[side].team.name) || side} · tap a logo up top to switch</div>
-        <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(oppKey)) }}>Pitcher</div>
-        <button onClick={myPP && onSelectPlayer ? () => onSelectPlayer(myPP.player) : undefined}
+        {!inGame && <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(oppKey)) }}>Pitcher</div>}
+        {!inGame && <button onClick={myPP && onSelectPlayer ? () => onSelectPlayer(myPP.player) : undefined}
           className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
           style={{ borderLeft: "4px solid " + teamColor(abbrOf(oppKey)) }}>
           <div className="flex items-center gap-3">
@@ -1626,7 +1629,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
               {liveNow && <span className="ml-2 text-[9px] font-extrabold uppercase tracking-wide text-red-500">Now Pitching</span>}
             </div>
           </div>
-          {todayPit && (
+          {false && (
             <div className="mt-3 grid grid-cols-7 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
               {[["IP", todayPit.ip], ["H", todayPit.h], ["R", todayPit.r], ["ER", todayPit.er], ["BB", todayPit.bb], ["K", todayPit.so], ["P", todayPit.pitches ?? "—"]].map(([k, v]) => (
                 <span key={k} className="text-center">
@@ -1636,7 +1639,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
               ))}
             </div>
           )}
-          {ps && !inGame && (
+          {ps && (
             <div className="mt-3">
               {/* Traditional line - two clean rows of five, scoreboard style */}
               <div className="grid grid-cols-5 gap-y-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
@@ -1670,7 +1673,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
               })()}
             </div>
           )}
-        </button>
+        </button>}
 
         <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(side)) }}>
           {(g.teams[side].team && g.teams[side].team.name) || ""}{inGame ? " · Batting" : " vs " + (ps && ps.hand === "L" ? "LHP" : "RHP")}
@@ -1708,15 +1711,43 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
                 </RowTag>
               );
             })}
-            {(() => { const t = (live.box[side] && live.box[side].batters) || []; const sum = (k) => t.reduce((n, x) => n + (x[k] || 0), 0); return (
-              <div className="grid grid-cols-[28px_32px_1fr_repeat(6,30px)] items-center px-2 py-2 border-t-2 border-slate-200 dark:border-slate-700 text-[12px] font-black tabular-nums text-slate-700 dark:text-slate-200">
-                <span></span><span></span><span className="text-[9px] uppercase tracking-widest text-slate-400">Totals</span>
-                {[sum("ab"), sum("r"), sum("h"), sum("rbi"), sum("bb"), sum("so")].map((v, j) => <span key={j} className="text-center">{v}</span>)}
-              </div>
-            ); })()}
           </div>
         )}
         {inGame && box != null && order.length === 0 && <div className="text-center text-sm text-slate-400 py-10">Lineup not posted yet.</div>}
+        {inGame && (() => {
+          const staff = (live.box[oppKey] && live.box[oppKey].pitchers) || [];
+          const onMound = sit && sit.pitcher ? sit.pitcher.id : null;
+          if (!staff.length) return null;
+          return (
+            <>
+              <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(oppKey)) }}>{(g.teams[oppKey].team && g.teams[oppKey].team.name) || ""} · Pitching</div>
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div className="grid grid-cols-[1fr_repeat(7,30px)] items-center px-2 py-1.5 text-[8px] font-extrabold uppercase tracking-wider text-white" style={{ backgroundColor: bannerColor(abbrOf(oppKey)) }}>
+                  <span>Pitcher</span>{["IP", "H", "R", "ER", "BB", "K", "P"].map((k) => <span key={k} className="text-center">{k}</span>)}
+                </div>
+                {staff.map((pt, i) => {
+                  const now = pt.id === onMound && state === "Live";
+                  const mp = myByName[hrbNrm(pt.name)];
+                  const RowTag = mp && onSelectPlayer ? "button" : "div";
+                  return (
+                    <RowTag key={pt.id} onClick={mp && onSelectPlayer ? () => onSelectPlayer(mp.player) : undefined}
+                      className={"w-full text-left grid grid-cols-[1fr_repeat(7,30px)] items-center px-2 py-2 border-t border-slate-100 dark:border-slate-800 " + (now ? "bg-emerald-50 dark:bg-emerald-900/30" : i % 2 ? "bg-slate-50/60 dark:bg-slate-800/30" : "")}>
+                      <span className="min-w-0 pr-1">
+                        <span className={"block text-[13px] font-bold truncate " + (now ? "text-emerald-700 dark:text-emerald-300" : "text-slate-900 dark:text-slate-100")}>
+                          {lastNameOf(pt.name) || pt.name}{pt.throws ? <span className="text-[10px] font-bold text-slate-400"> {pt.throws}HP</span> : null}{pt.note ? <span className="text-[10px] font-extrabold text-slate-500"> {pt.note}</span> : null}
+                        </span>
+                        {now && <span className="block text-[9px] font-extrabold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">On the mound{pt.pitches != null ? " · " + pt.pitches + " pitches" : ""}</span>}
+                      </span>
+                      {[pt.ip, pt.h, pt.r, pt.er, pt.bb, pt.so, pt.pitches ?? "—"].map((v, j) => (
+                        <span key={j} className={"text-center text-[13px] tabular-nums " + (j === 0 || j === 5 ? "font-black text-slate-900 dark:text-white" : Number(v) > 0 ? "font-bold text-slate-800 dark:text-slate-200" : "font-semibold text-slate-300 dark:text-slate-600")}>{v}</span>
+                      ))}
+                    </RowTag>
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
         <div className={"bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden " + (inGame ? "hidden" : "")}>
           {box == null && <SkeletonCards cards={2} rows={5} />}
           {box != null && order.length === 0 && <div className="text-center text-sm text-slate-400 py-10">Lineup not posted yet.</div>}
@@ -3805,7 +3836,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v127";
+const HRB_VERSION = "v128";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -4441,7 +4472,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                         const logo = (
                           <span key="lg" className="relative shrink-0">
                             {TEAM_LOGOS[sd.abbr]
-                              ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-14 h-14 object-contain drop-shadow-lg " + (lost ? "opacity-50" : "") + logoFx(sd.abbr)} />
+                              ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-[68px] h-[68px] object-contain drop-shadow-lg " + (lost ? "opacity-50" : "") + logoFx(sd.abbr)} />
                               : <span className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px] font-extrabold" style={{ color: teamColor(sd.abbr) }}>{sd.abbr}</span>}
                             
                           </span>
