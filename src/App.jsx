@@ -1286,6 +1286,75 @@ function useLiveGame(gamePk) {
   return live;
 }
 
+// Broadcast scorebug for a live game on the Matchups board — the TV layout:
+//   away team + score on top, home team + score below, bases / count / inning /
+//   outs / pitch count on the right, pitcher and batter (with his line) underneath.
+const LIVE_CACHE = {};
+function useLiveBug(pk) {
+  const [d, setD] = useState(LIVE_CACHE[pk] || null);
+  useEffect(() => {
+    let alive = true, timer = null;
+    const load = async () => {
+      try { const r = await fetch("/api/game?pk=" + pk); const j = r.ok ? await r.json() : null; if (alive && j && !j.error) { LIVE_CACHE[pk] = j; setD(j); } } catch {}
+      if (alive) timer = setTimeout(load, 30000);
+    };
+    load();
+    return () => { alive = false; clearTimeout(timer); };
+  }, [pk]);
+  return d;
+}
+function LiveBug({ pk, g, sides }) {
+  const d = useLiveBug(pk);
+  const sit = d && d.state === "in" ? d.situation : null;
+  const ls = g.linescore || {};
+  const off = ls.offense || {};
+  const on = (b) => (sit ? !!(sit.runners && sit.runners[b]) : !!off[b]);
+  const balls = sit ? sit.balls : ls.balls, strikes = sit ? sit.strikes : ls.strikes, outs = sit ? sit.outs : ls.outs;
+  const inning = sit ? d.inning : ls.currentInning, half = (sit ? d.inningHalf : ls.inningHalf) === "Top" ? "▲" : "▼";
+  const battingAbbr = sit ? sit.battingTeam : (ls.inningHalf === "Top" ? sides.away.abbr : sides.home.abbr);
+  const batSide = battingAbbr === sides.home.abbr ? "home" : "away";
+  const pitcher = sit ? sit.pitcher : (ls.defense && ls.defense.pitcher ? { id: ls.defense.pitcher.id, name: ls.defense.pitcher.fullName } : null);
+  const batter = sit ? sit.batter : (off.batter ? { id: off.batter.id, name: off.batter.fullName } : null);
+  const bLine = d && batter ? ((d.box[batSide] && d.box[batSide].batters) || []).find((x) => x.id === batter.id) : null;
+  const pitches = d && pitcher ? [...(d.box.away.pitchers || []), ...(d.box.home.pitchers || [])].find((x) => x.id === pitcher.id) : null;
+  const base = (x, y, lit) => <rect x={x} y={y} width="8" height="8" rx="1.5" transform={`rotate(45 ${x + 4} ${y + 4})`} fill={lit ? "#fbbf24" : "rgba(255,255,255,0.15)"} stroke={lit ? "#f59e0b" : "rgba(255,255,255,0.7)"} strokeWidth="1.3" />;
+  const row = (k) => {
+    const sd = sides[k]; const sc = g.teams[k].score ?? 0; const up = battingAbbr === sd.abbr;
+    return (
+      <span className="flex items-center gap-2">
+        {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-9 h-9 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : <span className="w-9 h-9 rounded-full" style={{ backgroundColor: teamColor(sd.abbr) }} />}
+        <span className={"w-11 text-[15px] font-black tracking-wide " + (up ? "text-white" : "text-white/80")}>{sd.abbr}</span>
+        <span className="text-[26px] leading-none font-black tabular-nums text-white drop-shadow">{sc}</span>
+        {up && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
+      </span>
+    );
+  };
+  return (
+    <span className="block">
+      <span className="flex items-stretch gap-3">
+        <span className="flex flex-col justify-between gap-1.5 shrink-0">{row("away")}{row("home")}</span>
+        <span className="flex-1 flex items-center justify-end gap-3">
+          <svg width="40" height="30" viewBox="0 0 40 30" aria-label="bases">{base(16, 2, on("second"))}{base(4, 14, on("third"))}{base(28, 14, on("first"))}</svg>
+          <span className="text-right">
+            <span className="block text-[18px] font-black tabular-nums text-white leading-none">{half} {inning ?? "—"}</span>
+            <span className="block text-[11px] font-extrabold tabular-nums text-white/90 mt-1">{balls ?? 0}-{strikes ?? 0} <span className="text-white/60">·</span> {outs ?? 0} OUT</span>
+            <span className="block text-[10px] font-bold text-white/70 tabular-nums">P: {pitches && pitches.pitches != null ? pitches.pitches : "—"}</span>
+          </span>
+        </span>
+      </span>
+      <span className="flex items-center justify-between gap-3 mt-2 pt-2 border-t border-white/20 text-[11px]">
+        <span className="min-w-0 truncate text-white/90"><span className="font-black text-white/60">P </span><span className="font-extrabold uppercase tracking-wide">{pitcher ? lastNameOf(pitcher.name) : "—"}</span></span>
+        <span className="min-w-0 truncate text-right text-white/90">
+          <span className="inline-block w-1.5 h-3 mr-1.5 align-middle rounded-sm" style={{ backgroundColor: shade(teamColor(battingAbbr), 35) }} />
+          {bLine ? <span className="font-bold text-white/60">{bLine.slot}. </span> : null}
+          <span className="font-extrabold uppercase tracking-wide">{batter ? lastNameOf(batter.name) : "—"}</span>
+          {bLine ? <span className="font-bold text-white/75 tabular-nums"> {bLine.h}-{bLine.ab}</span> : null}
+        </span>
+      </span>
+    </span>
+  );
+}
+
 // Live strip on a Matchups card: bases · count · outs · who's pitching and his pitch count.
 // Polls /api/game every 30s while the game is live (edge-cached, so cheap).
 function LiveStrip({ pk }) {
@@ -3836,7 +3905,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v129";
+const HRB_VERSION = "v130";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -4459,6 +4528,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                   style={{ backgroundImage: `linear-gradient(100deg, ${bannerColor(sides.away.abbr)} 0%, ${bannerColor(sides.away.abbr)} 38%, ${shade(bannerColor(sides.away.abbr), -12)} 47%, ${shade(bannerColor(sides.home.abbr), -12)} 53%, ${bannerColor(sides.home.abbr)} 62%, ${bannerColor(sides.home.abbr)} 100%)` }}
                   className="relative w-full text-left px-4 py-2.5 active:opacity-90">
 <span className="block">
+                    {state === "Live" && mode === "open" ? <LiveBug pk={g.gamePk} g={g} sides={sides} /> : (<>
                     {/* ── Broadcast row: logo · score · center status · score · logo ──
                         Football-style banner: away colour on the left, home on the right. */}
                     <span className="relative flex items-center gap-1">
@@ -4538,7 +4608,8 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                         );
                       })}
                     </span>
-                    {state === "Live" && <LiveStrip pk={g.gamePk} />}
+                    {state === "Live" && mode === "bets" && <LiveStrip pk={g.gamePk} />}
+                    </>)}
                     {mode === "bets" && <span className="flex justify-center">
                       <span className={"text-white/60 text-[9px] transition-transform inline-block " + (isOpen ? "rotate-90" : "")}>▶</span>
                     </span>}
