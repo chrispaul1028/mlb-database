@@ -1472,6 +1472,22 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
     ? { id: liveDefNow.id, fullName: liveDefNow.name } : null;
   const pp = liveNow || probable;
   const ps = pp ? pstats[pp.id] : null;
+  // Once the game starts, the story is TODAY: each batter's line so far, and the pitcher's line.
+  const inGame = live && live.state !== "pre";
+  const todayBat = (pid) => { const b = inGame && live.box[side] && live.box[side].batters.find((x) => x.id === pid); return b || null; };
+  const todayLine = (b) => {
+    if (!b) return "";
+    const parts = [];
+    if (b.hr) parts.push(b.hr > 1 ? b.hr + " HR" : "HR");
+    if (b.t) parts.push(b.t > 1 ? b.t + " 3B" : "3B");
+    if (b.d) parts.push(b.d > 1 ? b.d + " 2B" : "2B");
+    if (b.rbi) parts.push(b.rbi + " RBI");
+    if (b.bb) parts.push(b.bb > 1 ? b.bb + " BB" : "BB");
+    if (b.sb) parts.push(b.sb > 1 ? b.sb + " SB" : "SB");
+    if (b.so) parts.push(b.so > 1 ? b.so + " K" : "K");
+    return `${b.h}-for-${b.ab}` + (parts.length ? " · " + parts.join(", ") : "");
+  };
+  const todayPit = pp && inGame ? [...(live.box.away.pitchers || []), ...(live.box.home.pitchers || [])].find((x) => x.id === pp.id) : null;
   const myPP = pp ? myByName[hrbNrm(pp.fullName)] : undefined;
   const teamBox = box && box.teams && box.teams[side];
   const order = (teamBox && teamBox.battingOrder) || [];
@@ -1613,6 +1629,11 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
               })()}
               {pp ? pp.fullName : "Starter TBD"}
               {ps && ps.hand && <span className="text-[11px] font-bold text-slate-400"> · {ps.hand}HP</span>}
+              {todayPit && (
+                <span className="block mt-1 text-[12px] font-bold text-slate-700 dark:text-slate-200 tabular-nums">
+                  Today: {todayPit.ip} IP · {todayPit.h} H · {todayPit.er} ER · {todayPit.so} K · {todayPit.bb} BB{todayPit.pitches != null ? " · " + todayPit.pitches + " pitches" : ""}{todayPit.note ? " " + todayPit.note : ""}
+                </span>
+              )}
               {liveNow && <span className="ml-2 text-[9px] font-extrabold uppercase tracking-wide text-red-500">Now Pitching</span>}
             </div>
           </div>
@@ -1683,18 +1704,15 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
                   <span className="w-4 text-right text-[11px] font-extrabold tabular-nums text-[color:var(--tc)] dark:text-white" style={{ "--tc": teamColor(abbrOf(side)) }}>{i + 1}</span>
                   <span className="w-9 text-center text-[11px] font-extrabold text-slate-400 uppercase">{pos}</span>
                 </span>
-                {mine && mine.photo ? (
-                  <img src={mine.photo} alt="" className="w-11 h-11 rounded-full object-cover object-top bg-white shrink-0" loading="lazy" />
-                ) : (
-                  <img src={"https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + pid + "/headshot/silo/current"} alt=""
-                    className="w-11 h-11 rounded-full object-cover object-top bg-slate-200 dark:bg-slate-700 shrink-0" loading="lazy" />
-                )}
                 <span className="flex-1 min-w-0">
                   <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
                     {pd.jerseyNumber && <span className="text-[11px] font-bold text-slate-400">#{pd.jerseyNumber} </span>}
                     {nm} <InjBadge name={nm} team={abbrOf(side)} />
                   </span>
-                  <span className="flex gap-2 mt-1">
+                  {inGame && (() => { const b = todayBat(pid); const t = todayLine(b); const big = b && (b.hr || b.h >= 2); return t
+                    ? <span className={"block mt-0.5 text-[13px] font-extrabold tabular-nums " + (big ? "text-emerald-600 dark:text-emerald-400" : b && b.h ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400")}>{t}</span>
+                    : <span className="block mt-0.5 text-[12px] font-semibold text-slate-400">Hasn't batted yet</span>; })()}
+                  <span className={"flex gap-2 " + (inGame ? "mt-1 opacity-70" : "mt-1")}>
                     {[["AVG", bat.avg ? String(bat.avg).replace(/^0/, "") : "—"], ["HR", bat.hr != null ? bat.hr : "—"], ["RBI", bat.rbi != null ? bat.rbi : "—"], ["OPS", bat.ops ? String(bat.ops).replace(/^0/, "") : "—"], ["BRL%", mine && mine.barrel != null ? Number(mine.barrel).toFixed(1) + "%" : "—"]].map(([lbl, v]) => (
                       <span key={lbl} className="w-10 text-center">
                         <span className="block text-[8px] font-bold text-slate-400 uppercase">{lbl}</span>
@@ -3749,7 +3767,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v125";
+const HRB_VERSION = "v126";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
