@@ -2763,7 +2763,7 @@ function RosterRow({ p, abbr, chip, chipCls, chipText = false, nameSuffix, right
     <button onClick={p._virtual ? undefined : () => onSelect(p)} className={"w-full block px-3 py-2.5 text-left " + (p._virtual ? "" : "active:bg-slate-50 dark:active:bg-slate-800")}>
       <span className="flex items-start gap-2.5">
         {chipText
-          ? <span className="shrink-0 w-11 text-center self-center text-[22px] font-black tabular-nums leading-none text-[color:var(--tc)] dark:text-white" style={{ "--tc": bannerColor(abbr) }}>{chip}</span>
+          ? <span className="shrink-0 w-11 text-center self-center text-[15px] font-black tabular-nums leading-none text-[color:var(--tc)] dark:text-white" style={{ "--tc": bannerColor(abbr) }}>{chip}</span>
           : <span className={"shrink-0 w-11 text-center rounded-md py-1 mt-4 text-white tabular-nums " + (chipCls || "text-[11px] font-extrabold")} style={{ backgroundColor: bannerColor(abbr) }}>{chip}</span>}
         <Avatar p={p} size="md" />
         <span className="flex-1 min-w-0">
@@ -2858,7 +2858,7 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
           {rows.length ? rows.map(({ slot, pos, p }) => <RosterRow key={p.id} p={p} abbr={abbr} chip={String(slot)} chipText nameSuffix={pos || p.gamePos || p.pos || ""} rightChip={batsOf(p)} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
             : empty("No lineup posted yet. It fills in on its own once MLB publishes one.")}
         </Section>
-        {bench.length > 0 && <Section title={"Bench (" + bench.length + ")"}>{bench.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
+        {bench.length > 0 && <Section title={"Bench (" + bench.length + ")"}>{bench.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} rightChip={batsOf(p)} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
       </>
     );
   }
@@ -3938,7 +3938,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v134";
+const HRB_VERSION = "v135";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
