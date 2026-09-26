@@ -281,7 +281,7 @@ function Tile({ value, label, sub, accent, valueClass, topColor }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 px-2 py-4 text-center shadow-sm flex flex-col items-center justify-start"
       style={topColor ? { borderTop: "3px solid " + topColor } : undefined}>
-      <div className="text-[10px] font-semibold text-slate-400 tracking-widest uppercase mb-1">{label}</div>
+      <div className="text-[10px] font-extrabold text-black dark:text-white tracking-widest uppercase mb-1">{label}</div>
       <div className={"text-2xl font-extrabold tracking-tight " + (valueClass ? valueClass : accent ? ACCENT_TEXT : "text-slate-900 dark:text-slate-100")}>{value}</div>
       {sub && (
         <div className={"text-[10px] font-bold mt-0.5 " + (typeof sub === "object" && sub.cls ? sub.cls : "text-blue-600 dark:text-blue-400")}>
@@ -331,7 +331,7 @@ function ContractCard({ c, big }) {
     <div className={"bg-white dark:bg-slate-900 rounded-2xl border shadow-sm px-4 py-4 " + (big ? ACCENT_BORDER : "border-slate-200 dark:border-slate-800")}>
       <div className="flex items-baseline justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase truncate">
+          <div className="text-[11px] font-extrabold tracking-widest text-black dark:text-white uppercase truncate">
             {c.kind}{c.team ? " · " + c.team : ""}{c.signed ? " · " + c.signed : ""}
           </div>
           <div className="text-sm font-extrabold text-slate-800 dark:text-slate-200 mt-0.5">{terms(c)}</div>
@@ -474,7 +474,7 @@ function SeasonPanel({ p, person, line, season }) {
 
   return (
     <>
-      <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">{season} Season · {S.g} GP</div>
+      <div className="text-[11px] font-extrabold tracking-widest text-black dark:text-white uppercase mt-6 mb-2 px-1">{season} Season · {S.g} GP</div>
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="grid grid-cols-4 gap-2 p-3">
           {tiles.map(([lbl, v, sub]) => (
@@ -495,7 +495,7 @@ function SeasonPanel({ p, person, line, season }) {
         <div className="px-2 pt-2 pb-3">
           {gl != null && games.length >= 2 && total && (
             <div className="flex items-baseline justify-between px-2 mb-1">
-              <span className="text-[9px] font-bold tracking-widest uppercase text-slate-400">Last {games.length} {pitcher ? "outings" : "games"}</span>
+              <span className="text-[9px] font-extrabold tracking-widest uppercase text-black dark:text-white">Last {games.length} {pitcher ? "outings" : "games"}</span>
               <span className="text-[13px] font-black tabular-nums text-slate-900 dark:text-white">{total}</span>
             </div>
           )}
@@ -590,7 +590,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
 
         {mode === "full" && (hw || p.age || M.birthDate || M.mlbDebutDate || p.birthplace) && (
           <>
-            <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Bio</div>
+            <div className="text-[11px] font-extrabold tracking-widest text-black dark:text-white uppercase mt-6 mb-2 px-1">Bio</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800">
               <BioRow k="Height / Weight" v={hw} />
               <BioRow k="Date of Birth" v={fmtDateLong(M.birthDate)} />
@@ -619,7 +619,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
 
         {past.length > 0 && (
           <>
-            <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Contract history</div>
+            <div className="text-[11px] font-extrabold tracking-widest text-black dark:text-white uppercase mt-6 mb-2 px-1">Contract history</div>
             <div className="flex flex-col gap-3">
               {past.map((c, i) => <ContractCard key={i} c={c} />)}
             </div>
@@ -629,7 +629,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
 
         {mode === "full" && p.awards && p.awards.length > 0 && (
           <>
-            <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Awards</div>
+            <div className="text-[11px] font-extrabold tracking-widest text-black dark:text-white uppercase mt-6 mb-2 px-1">Awards</div>
             <div className="flex flex-wrap gap-1.5">
               {p.awards.map((a, i) => (
                 <span key={i} className="text-[11px] font-semibold px-2.5 py-1.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
@@ -765,7 +765,7 @@ function TransactionsTab({ players, onSelect, q }) {
         const vp = p || { id: "tx:" + t.pid, name: t.name, mlbId: t.pid, teamAbbr: t.team, _virtual: true };
         return (
           <React.Fragment key={t.id}>
-            {head && <div className="text-[10px] font-extrabold tracking-widest uppercase text-slate-400 mt-4 mb-2 px-1">{fmtDay(day)}</div>}
+            {head && <div className="text-[10px] font-extrabold tracking-widest uppercase text-black dark:text-white mt-4 mb-2 px-1">{fmtDay(day)}</div>}
             {(() => {
               const b = bio[t.pid] || {};
               const no = cleanNo((p && p.no) || b.no), pos = (p && p.pos) || b.pos || "";
@@ -1358,7 +1358,7 @@ function MatchCard({ pk, g, sides, state }) {
             </span>
           )}
           {isFinal && <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300">Final</span>}
-          {state === "Preview" && <span className="text-right"><span className="block text-[16px] font-extrabold text-slate-900 dark:text-white tabular-nums">{time}</span><span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">ET</span></span>}
+          {state === "Preview" && <span className="text-right"><span className="block text-[16px] font-extrabold text-slate-900 dark:text-white tabular-nums">{time}</span><span className="block text-[9px] font-extrabold text-black dark:text-white uppercase tracking-widest">ET</span></span>}
         </span>
       </span>
       <span className="flex items-center justify-between gap-3 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px]">
@@ -1657,7 +1657,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
               return (
                 <table className="w-full border-collapse">
                   <thead><tr>
-                    <th className="w-10 text-left text-[9px] font-bold tracking-widest uppercase text-slate-400"></th>
+                    <th className="w-10 text-left text-[9px] font-extrabold tracking-widest uppercase text-black dark:text-white"></th>
                     {cols.map((i) => <th key={i} className={cell + " font-bold text-slate-400"}>{i + 1}</th>)}
                     {["R", "H", "E"].map((h) => <th key={h} className={cell + " font-black text-slate-500 dark:text-slate-300 border-l border-slate-200 dark:border-slate-700"}>{h}</th>)}
                   </tr></thead>
@@ -1697,7 +1697,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
         )}
         {live && live.scoring && live.scoring.length > 0 && (
           <>
-            <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-400">Scoring</div>
+            <div className="text-[11px] font-extrabold tracking-widest uppercase mt-5 mb-2 px-1 text-black dark:text-white">Scoring</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
               {live.scoring.map((sp, i) => (
                 <div key={i} className="flex items-start gap-2.5 px-3 py-2">
@@ -1712,7 +1712,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
             </div>
           </>
         )}
-        <div className="mt-4 text-[10px] font-bold tracking-widest uppercase text-slate-400 px-1">Box score · tap a team up top to switch</div>
+        <div className="mt-4 text-[10px] font-extrabold tracking-widest uppercase text-black dark:text-white px-1">Box score · tap a team up top to switch</div>
         {!inGame && <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(oppKey)) }}>Pitcher</div>}
         {!inGame && <button onClick={myPP && onSelectPlayer ? () => onSelectPlayer(myPP.player) : undefined}
           className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
@@ -2552,7 +2552,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
       {/* ── BENCH: grouped, wrapping grid, no sideways scroll ── */}
       {benchGroups.length > 0 && (
         <div className="mt-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm px-3 py-3 space-y-3">
-          <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Bench</div>
+          <div className="text-[10px] font-extrabold uppercase tracking-widest text-black dark:text-white">Bench</div>
           {benchGroups.map((g) => (
             <div key={g.name}>
               <div className="text-[10px] font-extrabold uppercase tracking-wider mb-1.5 pl-2 border-l-2 text-[color:var(--tc)] dark:text-white" style={{ "--tc": tc, borderColor: tc }}>
@@ -2803,7 +2803,7 @@ function Section({ title, note, color, children }) {
   return (
     <div>
       <div className="flex items-baseline justify-between mt-6 mb-2 px-1">
-        <span className={"text-[11px] font-bold tracking-widest uppercase " + (color ? "" : "text-slate-400")} style={color ? { color } : undefined}>{title}</span>
+        <span className={"text-[11px] font-extrabold tracking-widest uppercase " + (color ? "" : "text-black dark:text-white")} style={color ? { color } : undefined}>{title}</span>
         {note && (typeof note === "string" ? <span className="text-[9px] font-semibold text-slate-400">{note}</span> : note)}
       </div>
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">{children}</div>
@@ -2858,7 +2858,7 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
           {rows.length ? rows.map(({ slot, pos, p }) => <RosterRow key={p.id} p={p} abbr={abbr} chip={String(slot)} chipText nameSuffix={pos || p.gamePos || p.pos || ""} rightChip={batsOf(p)} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
             : empty("No lineup posted yet. It fills in on its own once MLB publishes one.")}
         </Section>
-        {bench.length > 0 && <Section title={"Bench (" + bench.length + ")"}>{bench.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} rightChip={batsOf(p)} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
+        {bench.length > 0 && <Section title={"Bench (" + bench.length + ")"}>{bench.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip="" chipText nameSuffix={p.pos || ""} rightChip={batsOf(p)} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
       </>
     );
   }
@@ -2920,7 +2920,7 @@ function TeamStatsPanel({ abbr, view, players, onSelectPlayer }) {
     const lead = rows[0].v || 1;
     return (
       <div key={side + keyName}>
-        <div className="text-[11px] font-bold tracking-widest uppercase text-slate-400 mt-6 mb-2 px-1">{yr} {title}</div>
+        <div className="text-[11px] font-extrabold tracking-widest uppercase text-black dark:text-white mt-6 mb-2 px-1">{yr} {title}</div>
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 divide-y divide-slate-100 dark:divide-slate-800">
           {rows.map(({ P, v }) => {
             const p = findP(P);
@@ -3102,7 +3102,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }
         {seg === "contracts" && (
           <>
             <div className="flex items-baseline justify-between mt-6 mb-2 px-1">
-              <span className="text-[11px] font-bold tracking-widest text-slate-400 uppercase">Team Contracts</span>
+              <span className="text-[11px] font-extrabold tracking-widest text-black dark:text-white uppercase">Team Contracts</span>
               <span className="text-[11px] font-bold text-green-600 dark:text-green-400">{fmtM(payroll)} payroll</span>
             </div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
@@ -3162,7 +3162,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }
                 const selT = totals.find((t) => t.season === capSeason) || null;
                 return (
                   <>
-                    <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Committed Payroll by Season</div>
+                    <div className="text-[11px] font-extrabold tracking-widest text-black dark:text-white uppercase mt-6 mb-2 px-1">Committed Payroll by Season</div>
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4">
                       <div className="flex items-end gap-2 h-36">
                         {totals.map((t) => {
@@ -3182,7 +3182,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }
                     </div>
                     {selT && (
                       <>
-                        <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-5 mb-2 px-1">{selT.season} · {selT.rows.length} players</div>
+                        <div className="text-[11px] font-extrabold tracking-widest text-black dark:text-white uppercase mt-5 mb-2 px-1">{selT.season} · {selT.rows.length} players</div>
                         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
                           {selT.rows.map(({ p, y }) => (
                             <button key={p.id} onClick={() => onSelectPlayer(p)} className="w-full flex items-center gap-3 px-4 py-2.5 text-left active:bg-slate-50 dark:active:bg-slate-800">
@@ -3213,7 +3213,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }
                   .sort((a, b) => currentSalary(b.p) - currentSalary(a.p));
                 return (
                   <>
-                    <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">Contract Timeline</div>
+                    <div className="text-[11px] font-extrabold tracking-widest text-black dark:text-white uppercase mt-6 mb-2 px-1">Contract Timeline</div>
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="w-20 shrink-0" />
@@ -3263,7 +3263,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }
                 const yOf = (v) => H - PAD - (v / maxPts) * (H - PAD * 2);
                 return (
                   <>
-                    <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">HR Trends</div>
+                    <div className="text-[11px] font-extrabold tracking-widest text-black dark:text-white uppercase mt-6 mb-2 px-1">HR Trends</div>
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4">
                       <svg viewBox={"0 0 " + W + " " + H} className="w-full">
                         {withTrend.map((x, i) => (
@@ -3505,8 +3505,8 @@ function StatsTab({ players, onSelect, jump }) {
           teamRows.length === 0 ? <div className="text-center text-xs text-slate-400 py-10">No {yr} team stats yet.</div> : (
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
               <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60">
-                <span className="text-[9px] font-semibold tracking-widest uppercase text-slate-400">Team</span>
-                <span className="text-[9px] font-semibold tracking-widest uppercase text-slate-400">{headRight}</span>
+                <span className="text-[9px] font-extrabold tracking-widest uppercase text-black dark:text-white">Team</span>
+                <span className="text-[9px] font-extrabold tracking-widest uppercase text-black dark:text-white">{headRight}</span>
               </div>
               {teamRows.map((r, i) => {
                 const best = teamRows[0].v || 1, worst = teamRows[teamRows.length - 1].v || 0;
@@ -3535,8 +3535,8 @@ function StatsTab({ players, onSelect, jump }) {
         {rows.length > 0 && (
           <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
             <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60">
-              <span className="text-[9px] font-semibold tracking-widest uppercase text-slate-400">Player</span>
-              <span className="text-[9px] font-semibold tracking-widest uppercase text-slate-400">{headRight}</span>
+              <span className="text-[9px] font-extrabold tracking-widest uppercase text-black dark:text-white">Player</span>
+              <span className="text-[9px] font-extrabold tracking-widest uppercase text-black dark:text-white">{headRight}</span>
             </div>
             {rows.map(({ P, v, rank, tie }) => {
               const p = findP(P);
@@ -3618,7 +3618,7 @@ function DraftTab({ players, onSelect }) {
             <div key={yr}>
               {rounds.map(([label, group]) => (
                 <div key={label}>
-                  <div className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mt-6 mb-2 px-1">
+                  <div className="text-[11px] font-extrabold tracking-widest text-black dark:text-white uppercase mt-6 mb-2 px-1">
                     {label}
                   </div>
                   <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
@@ -3938,7 +3938,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v135";
+const HRB_VERSION = "v136";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -4116,7 +4116,7 @@ function PostseasonTab({ onSelectTeam }) {
     return (
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-3 py-2">
         <div className="flex items-center justify-between">
-          <span className="text-[9px] font-bold tracking-widest uppercase text-slate-400">{label}</span>
+          <span className="text-[9px] font-extrabold tracking-widest uppercase text-black dark:text-white">{label}</span>
           {real && <span className={"text-[9px] font-extrabold uppercase tracking-wide " + (over ? "text-emerald-600" : real.next && real.next.live ? "text-rose-500" : "text-slate-400")}>{over ? "Final" : real.next && real.next.live ? "Live" : "Best of " + SERIES_LEN[real.type]}</span>}
           {byeNote && <span className="text-[9px] font-extrabold uppercase tracking-wide text-slate-400">{byeNote}</span>}
         </div>
@@ -4153,7 +4153,7 @@ function PostseasonTab({ onSelectTeam }) {
         <div className="mt-2"><Series label={lg + " Championship Series"} a={ds1} b={ds2} /></div>
         {hunt.length > 0 && (
           <div className="mt-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-3 py-2">
-            <div className="text-[9px] font-bold tracking-widest uppercase text-slate-400 mb-1">In the hunt · games back of WC3{cut ? " (" + cut.abbr + ")" : ""}</div>
+            <div className="text-[9px] font-extrabold tracking-widest uppercase text-black dark:text-white mb-1">In the hunt · games back of WC3{cut ? " (" + cut.abbr + ")" : ""}</div>
             {hunt.map((t) => (
               <button key={t.id} onClick={onSelectTeam ? () => onSelectTeam(t) : undefined} className="w-full flex items-center gap-2 py-1 text-left">
                 <Logo t={t} size="w-6 h-6" />
@@ -4967,7 +4967,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal, onSelectTeam }) {
         )}
         {view === "bets" && bet === "top" && top.length > 0 && (
           <>
-            <div className="text-[11px] font-bold tracking-widest uppercase mt-4 mb-2 px-1 text-slate-500 dark:text-slate-400">🎯 HR Targets</div>
+            <div className="text-[11px] font-extrabold tracking-widest uppercase mt-4 mb-2 px-1 text-slate-500 dark:text-black dark:text-white">🎯 HR Targets</div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
               {top.map((t, i) => (
                 <button key={t.h.id + "-" + t.g.gamePk} onClick={() => setSelGame(t.g)}
@@ -5044,7 +5044,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal, onSelectTeam }) {
           </>
         )}
         {view === "matchups" && (<>
-        <div className="text-[11px] font-bold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-500 dark:text-slate-400">Matchups</div>
+        <div className="text-[11px] font-extrabold tracking-widest uppercase mt-5 mb-2 px-1 text-slate-500 dark:text-black dark:text-white">Matchups</div>
         <div className="space-y-3">
           {data == null && <BallLoader label="Loading today's games" full={false} />}
           {data && data.length === 0 && <div className="text-center text-sm text-slate-400 py-12">No MLB games today.</div>}
@@ -5096,7 +5096,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal, onSelectTeam }) {
                 </div>
                 {valResult.bett && (
                   <>
-                    <div className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 mt-3 mb-1">Bettable picks only (evening / weekend games)</div>
+                    <div className="text-[9px] font-extrabold uppercase tracking-widest text-black dark:text-white mt-3 mb-1">Bettable picks only (evening / weekend games)</div>
                     <div className="grid grid-cols-4 gap-2 text-center">
                       {[["All", valResult.bett.all], ["#1 pick", valResult.bett.p1], ["Top 5", valResult.bett.t5], ["6-10", valResult.bett.t610]].map(([lbl, [h, t]]) => (
                         <span key={"b" + lbl}>
@@ -5141,7 +5141,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal, onSelectTeam }) {
               return (
                 <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Scorecard · {days.length} graded day{days.length > 1 ? "s" : ""}</span>
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-black dark:text-white">Scorecard · {days.length} graded day{days.length > 1 ? "s" : ""}</span>
                     {ratio != null && (
                       <span className={"text-[10px] font-extrabold " + (ratio > 1.25 ? "text-rose-500" : ratio < 0.8 ? "text-sky-500" : "text-emerald-500")}>
                         {ratio > 1.25 ? "HR% too bold" : ratio < 0.8 ? "HR% too timid" : "HR% honest"}
