@@ -109,7 +109,7 @@ function experienceOf(p) {
   const nowYear = parseInt(String(CURRENT_SEASON).slice(0, 4), 10);
   const seasons = nowYear - p.draftYear + 1;
   if (isNaN(seasons) || seasons < 1) return "";
-  return seasons === 1 ? "Rookie" : seasons + " seasons";
+  return seasons === 1 ? "Rookie" : ordinal(seasons) + " season";
 }
 
 // Search matches player name, current team (full name or abbreviation),
@@ -536,7 +536,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
   const { person, line, stats: leagueStats } = useMlbPerson(p);      // MLB's record + live season line
   const M = person || {};
   const debutYear = M.mlbDebutDate ? Number(String(M.mlbDebutDate).slice(0, 4)) : null;
-  const expText = (() => { if (!debutYear) return experienceOf(p); const n = parseInt(String(CURRENT_SEASON).slice(0, 4), 10) - debutYear + 1; return n <= 1 ? "Rookie" : n + " seasons"; })();
+  const expText = (() => { if (!debutYear) return experienceOf(p); const n = parseInt(String(CURRENT_SEASON).slice(0, 4), 10) - debutYear + 1; return n <= 1 ? "Rookie" : ordinal(n) + " season"; })();
   const hw = [fmtHeight(M.height || p.height), fmtWeight(M.weight || p.weight)].filter(Boolean).join(", ");
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 pb-24">
@@ -1322,7 +1322,7 @@ function MatchCard({ pk, g, sides, state }) {
   const batter = sit ? sit.batter : (off.batter ? { id: off.batter.id, name: off.batter.fullName } : null);
   const bLine = d && batter ? ((d.box[batSide] && d.box[batSide].batters) || []).find((x) => x.id === batter.id) : null;
   const pitches = d && pitcher ? [...(d.box.away.pitchers || []), ...(d.box.home.pitchers || [])].find((x) => x.id === pitcher.id) : null;
-  const base = (x, y, lit) => <rect x={x} y={y} width="8" height="8" rx="1.5" transform={`rotate(45 ${x + 4} ${y + 4})`} fill={lit ? "#fbbf24" : "rgba(255,255,255,0.15)"} stroke={lit ? "#f59e0b" : "rgba(255,255,255,0.7)"} strokeWidth="1.3" />;
+  const base = (x, y, lit) => <rect x={x} y={y} width="8" height="8" rx="1.5" transform={`rotate(45 ${x + 4} ${y + 4})`} fill={lit ? "#f59e0b" : "transparent"} stroke={lit ? "#d97706" : "#94a3b8"} strokeWidth="1.3" />;
   const time = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
   const dec = g.decisions || {};
   const aS = g.teams.away.score, hS = g.teams.home.score;
@@ -1331,19 +1331,20 @@ function MatchCard({ pk, g, sides, state }) {
     const sd = sides[k]; const sc = g.teams[k].score;
     const lost = isFinal && sc != null && (k === "away" ? sc < hS : sc < aS);
     return (
-      <span className={"flex items-center gap-2.5 " + (lost ? "opacity-60" : "")}>
-        {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-11 h-11 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : <span className="w-11 h-11 rounded-full" style={{ backgroundColor: teamColor(sd.abbr) }} />}
+      <span className={"flex items-center gap-2.5 " + (lost ? "opacity-50" : "")}>
+        <span className="w-1 self-stretch rounded-full shrink-0" style={{ backgroundColor: teamColor(sd.abbr) }} />
+        {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-10 h-10 object-contain shrink-0" + (WHITE_LOGOS.has(sd.abbr) ? " dark:brightness-0 dark:invert" : "")} /> : <span className="w-10 h-10 rounded-full" style={{ backgroundColor: teamColor(sd.abbr) }} />}
         <span className="min-w-0">
-          <span className="block text-[15px] font-black tracking-wide text-white leading-tight">{sd.abbr}</span>
-          <span className="block text-[10px] font-semibold text-white/70 tabular-nums leading-tight">{sd.rec}</span>
+          <span className="block text-[15px] font-black tracking-wide text-slate-900 dark:text-white leading-tight">{sd.abbr}{isLive && battingAbbr === sd.abbr ? <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-rose-500 align-middle" /> : null}</span>
+          <span className="block text-[10px] font-semibold text-slate-400 tabular-nums leading-tight">{sd.rec}</span>
         </span>
-        {state !== "Preview" && <span className="ml-2 text-[26px] leading-none font-black tabular-nums text-white drop-shadow w-8 text-right">{sc ?? 0}</span>}
+        {state !== "Preview" && <span className={"ml-2 text-[26px] leading-none font-black tabular-nums w-8 text-right " + (lost ? "text-slate-400" : "text-slate-900 dark:text-white")}>{sc ?? 0}</span>}
       </span>
     );
   };
   const pitLine = (sd) => (sd.pitcher
-    ? <><span className="font-bold">{sd.pitcher.name}</span>{sd.pitcher.rec ? <span className="text-white/70"> ({sd.pitcher.rec})</span> : null}{era(sd) ? <span className="text-white/80 tabular-nums"> · {era(sd)} ERA</span> : null}</>
-    : <span className="text-white/60">Pitcher TBD</span>);
+    ? <><span className="font-bold text-slate-800 dark:text-slate-100">{sd.pitcher.name}</span>{sd.pitcher.rec ? <span className="text-slate-400"> ({sd.pitcher.rec})</span> : null}{era(sd) ? <span className="text-slate-500 dark:text-slate-400 tabular-nums"> · {era(sd)} ERA</span> : null}</>
+    : <span className="text-slate-400">Pitcher TBD</span>);
   return (
     <span className="block">
       <span className="flex items-stretch gap-3">
@@ -1352,30 +1353,30 @@ function MatchCard({ pk, g, sides, state }) {
           {isLive && <svg width="40" height="30" viewBox="0 0 40 30" aria-label="bases">{base(16, 2, on("second"))}{base(4, 14, on("third"))}{base(28, 14, on("first"))}</svg>}
           {isLive && (
             <span className="text-right">
-              <span className="block text-[18px] font-black tabular-nums text-white leading-none">{half} {inning ?? "—"}</span>
-              <span className="block text-[11px] font-extrabold tabular-nums text-white/90 mt-1">{balls ?? 0}-{strikes ?? 0} <span className="text-white/60">·</span> {outs ?? 0} OUT</span>
+              <span className="block text-[18px] font-black tabular-nums text-slate-900 dark:text-white leading-none">{half} {inning ?? "—"}</span>
+              <span className="block text-[11px] font-extrabold tabular-nums text-slate-600 dark:text-slate-300 mt-1">{balls ?? 0}-{strikes ?? 0} <span className="text-slate-400">·</span> {outs ?? 0} OUT</span>
             </span>
           )}
-          {isFinal && <span className="rounded-lg bg-black/40 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-white/90">Final</span>}
-          {state === "Preview" && <span className="text-right"><span className="block text-[16px] font-extrabold text-white tabular-nums">{time}</span><span className="block text-[9px] font-bold text-white/60 uppercase tracking-widest">ET</span></span>}
+          {isFinal && <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300">Final</span>}
+          {state === "Preview" && <span className="text-right"><span className="block text-[16px] font-extrabold text-slate-900 dark:text-white tabular-nums">{time}</span><span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">ET</span></span>}
         </span>
       </span>
-      <span className="flex items-center justify-between gap-3 mt-2 pt-2 border-t border-white/20 text-[11px]">
+      <span className="flex items-center justify-between gap-3 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px]">
         {isLive && (<>
-          <span className="min-w-0 truncate text-white/90"><span className="font-black text-white/60">P </span><span className="font-extrabold uppercase tracking-wide">{pitcher ? lastNameOf(pitcher.name) : "—"}</span>{pitches && pitches.pitches != null ? <span className="font-bold text-white/70 tabular-nums"> · {pitches.pitches} P</span> : null}</span>
-          <span className="min-w-0 truncate text-right text-white/90">
-            {bLine ? <span className="font-bold text-white/60">{bLine.slot}. </span> : null}
+          <span className="min-w-0 truncate text-slate-700 dark:text-slate-200"><span className="font-black text-slate-400">P </span><span className="font-extrabold uppercase tracking-wide">{pitcher ? lastNameOf(pitcher.name) : "—"}</span>{pitches && pitches.pitches != null ? <span className="font-bold text-slate-400 tabular-nums"> · {pitches.pitches} P</span> : null}</span>
+          <span className="min-w-0 truncate text-right text-slate-700 dark:text-slate-200">
+            {bLine ? <span className="font-bold text-slate-400">{bLine.slot}. </span> : null}
             <span className="font-extrabold uppercase tracking-wide">{batter ? lastNameOf(batter.name) : "—"}</span>
-            {bLine ? <span className="font-bold text-white/75 tabular-nums"> {bLine.h}-{bLine.ab}</span> : null}
+            {bLine ? <span className="font-bold text-slate-400 tabular-nums"> {bLine.h}-{bLine.ab}</span> : null}
           </span>
         </>)}
         {isFinal && (<>
-          <span className="min-w-0 truncate text-white/90">{dec.winner ? <><span className="font-black text-emerald-300">W </span><span className="font-bold">{lastNameOf(dec.winner.fullName)}</span></> : null}{dec.save ? <><span className="font-black text-sky-200">  SV </span><span className="font-bold">{lastNameOf(dec.save.fullName)}</span></> : null}</span>
-          <span className="min-w-0 truncate text-right text-white/90">{dec.loser ? <><span className="font-black text-rose-300">L </span><span className="font-bold">{lastNameOf(dec.loser.fullName)}</span></> : null}</span>
+          <span className="min-w-0 truncate text-slate-700 dark:text-slate-200">{dec.winner ? <><span className="font-black text-emerald-600">W </span><span className="font-bold">{lastNameOf(dec.winner.fullName)}</span></> : null}{dec.save ? <><span className="font-black text-sky-600">  SV </span><span className="font-bold">{lastNameOf(dec.save.fullName)}</span></> : null}</span>
+          <span className="min-w-0 truncate text-right text-slate-700 dark:text-slate-200">{dec.loser ? <><span className="font-black text-rose-500">L </span><span className="font-bold">{lastNameOf(dec.loser.fullName)}</span></> : null}</span>
         </>)}
         {state === "Preview" && (<>
-          <span className="min-w-0 truncate text-white/90">{pitLine(sides.away)}</span>
-          <span className="min-w-0 truncate text-right text-white/90">{pitLine(sides.home)}</span>
+          <span className="min-w-0 truncate">{pitLine(sides.away)}</span>
+          <span className="min-w-0 truncate text-right">{pitLine(sides.home)}</span>
         </>)}
       </span>
     </span>
@@ -3935,7 +3936,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v131";
+const HRB_VERSION = "v132";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -4044,7 +4045,140 @@ async function hrbBullpenHr9(teamIds, season) {
   return out;
 }
 
-function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
+// ═══════════════ POSTSEASON PICTURE ══════════════════════════════
+// Before October: the bracket as it stands today, projected from the standings
+// (3 division winners + 3 wild cards per league; seeds 1–2 skip the Wild Card
+// round; WC: 3 v 6 and 4 v 5 → DS: 1 v winner of 4/5, 2 v winner of 3/6), plus
+// who's still in the hunt for the last wild card. Once playoff games are on
+// the schedule, real series results take over round by round.
+const SERIES_LEN = { F: 3, D: 5, L: 7, W: 7 };
+const ROUND_NAME = { F: "Wild Card Series", D: "Division Series", L: "League Championship", W: "World Series" };
+function PostseasonTab({ onSelectTeam }) {
+  const { teams } = useLeagueData();
+  const [po, setPo] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const yr = parseInt(String(CURRENT_SEASON).slice(0, 4), 10);
+        const d = await (await mlbFetch(`v1/schedule?sportId=1&season=${yr}&gameTypes=F,D,L,W&hydrate=team,linescore`)).json();
+        const games = (d.dates || []).flatMap((x) => x.games || []);
+        const series = {};
+        for (const g of games) {
+          const a = g.teams.away.team.id, h = g.teams.home.team.id;
+          const key = g.gameType + ":" + [a, h].sort((x, y) => x - y).join("-");
+          const s = (series[key] = series[key] || { type: g.gameType, ids: [a, h], wins: {}, played: 0, next: null, desc: g.seriesDescription || ROUND_NAME[g.gameType] });
+          const st = g.status && g.status.abstractGameState;
+          if (st === "Final" && !/postpon|cancel/i.test((g.status && g.status.detailedState) || "")) {
+            s.played++;
+            const w = (g.teams.away.score ?? 0) > (g.teams.home.score ?? 0) ? a : h;
+            s.wins[w] = (s.wins[w] || 0) + 1;
+          } else if (!s.next) s.next = { date: g.gameDate, live: st === "Live", away: a, home: h, aScore: g.teams.away.score, hScore: g.teams.home.score, inning: g.linescore && g.linescore.currentInning, half: g.linescore && g.linescore.inningHalf };
+        }
+        if (alive) setPo(Object.values(series));
+      } catch { if (alive) setPo([]); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const all = (teams && teams.teams) || [];
+  const byId = Object.fromEntries(all.map((t) => [t.id, t]));
+  const cmp = (a, b) => (b.pct ?? 0) - (a.pct ?? 0) || (b.diff ?? 0) - (a.diff ?? 0);
+  const field = (lg) => {
+    const ts = all.filter((t) => t.league === lg);
+    const divWinners = ts.filter((t) => t.divRank === 1).sort(cmp);
+    const rest = ts.filter((t) => t.divRank !== 1).sort(cmp);
+    const wc = rest.slice(0, 3);
+    const seeds = [...divWinners, ...wc].map((t, i) => ({ ...t, seed: i + 1, wc: i >= 3 }));
+    const hunt = rest.slice(3, 8).map((t) => ({ ...t, back: t.wcGb }));
+    return { seeds, hunt, cut: wc[2] };
+  };
+  const Logo = ({ t, size = "w-8 h-8" }) => (t && TEAM_LOGOS[t.abbr] ? <img src={TEAM_LOGOS[t.abbr]} alt={t.abbr} className={size + " object-contain shrink-0" + (WHITE_LOGOS.has(t.abbr) ? " dark:brightness-0 dark:invert" : "")} /> : <span className={size + " rounded-full shrink-0"} style={{ backgroundColor: t ? teamColor(t.abbr) : "#94a3b8" }} />);
+  const TeamLine = ({ t, seed, right, dim }) => (
+    <button onClick={t && onSelectTeam ? () => onSelectTeam(t) : undefined} className={"w-full flex items-center gap-2 py-1.5 text-left " + (dim ? "opacity-50" : "")}>
+      <span className="w-4 text-[10px] font-extrabold text-slate-400 tabular-nums text-center">{seed ?? ""}</span>
+      <Logo t={t} />
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-extrabold text-slate-900 dark:text-slate-100 truncate">{t ? t.abbr : "TBD"}{t && t.clinched ? <span className="ml-1.5 text-[8px] font-black uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Clinched</span> : null}</span>
+        {t && <span className="block text-[10px] font-semibold text-slate-400">{t.wins}-{t.losses}{t.wc ? " · WC" : t.division ? " · " + t.division.replace(/^(AL|NL) /, "") : ""}</span>}
+      </span>
+      {right != null && <span className="text-[15px] font-black tabular-nums text-slate-900 dark:text-white shrink-0">{right}</span>}
+    </button>
+  );
+  const Series = ({ label, a, b, live, byeNote }) => {
+    // real series first, else the projected pairing
+    const real = a && b && po ? po.find((s) => s.ids.includes(a.id) && s.ids.includes(b.id)) : null;
+    const wa = real ? real.wins[a.id] || 0 : null, wb = real ? real.wins[b.id] || 0 : null;
+    const need = real ? Math.ceil(SERIES_LEN[real.type] / 2) : null;
+    const over = real && (wa >= need || wb >= need);
+    return (
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-3 py-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[9px] font-bold tracking-widest uppercase text-slate-400">{label}</span>
+          {real && <span className={"text-[9px] font-extrabold uppercase tracking-wide " + (over ? "text-emerald-600" : real.next && real.next.live ? "text-rose-500" : "text-slate-400")}>{over ? "Final" : real.next && real.next.live ? "Live" : "Best of " + SERIES_LEN[real.type]}</span>}
+          {byeNote && <span className="text-[9px] font-extrabold uppercase tracking-wide text-slate-400">{byeNote}</span>}
+        </div>
+        <TeamLine t={a} seed={a && a.seed} right={wa} dim={over && wa < wb} />
+        <div className="border-t border-slate-100 dark:border-slate-800" />
+        <TeamLine t={b} seed={b && b.seed} right={wb} dim={over && wb < wa} />
+        {real && real.next && !over && (
+          <div className="text-[10px] font-semibold text-slate-400 mt-1">{real.next.live ? `Now: ${(byId[real.next.away] || {}).abbr} ${real.next.aScore ?? 0}, ${(byId[real.next.home] || {}).abbr} ${real.next.hScore ?? 0} · ${real.next.half || ""} ${real.next.inning || ""}` : "Next: " + new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" }).format(new Date(real.next.date)) + " ET"}</div>
+        )}
+      </div>
+    );
+  };
+  const League = ({ lg }) => {
+    const { seeds, hunt, cut } = field(lg);
+    const S = (n) => seeds.find((t) => t.seed === n) || null;
+    // real round winners feed the next round when a series is decided
+    const winnerOf = (a, b) => { const real = a && b && po ? po.find((s) => s.ids.includes(a.id) && s.ids.includes(b.id)) : null; if (!real) return null; const need = Math.ceil(SERIES_LEN[real.type] / 2); const w = real.ids.find((id) => (real.wins[id] || 0) >= need); return w ? { ...(byId[w] || {}), seed: (a.id === w ? a : b).seed } : null; };
+    const wc45 = winnerOf(S(4), S(5)), wc36 = winnerOf(S(3), S(6));
+    const ds1 = winnerOf(S(1), wc45), ds2 = winnerOf(S(2), wc36);
+    const tc = lg === "AL" ? "#c8102e" : "#0c2340";
+    return (
+      <div className="mt-5">
+        <div className="text-[11px] font-extrabold tracking-widest uppercase mb-2 px-1" style={{ color: tc }}>{lg === "AL" ? "American League" : "National League"}</div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-2">
+            <Series label="Wild Card" a={S(3)} b={S(6)} />
+            <Series label="Wild Card" a={S(4)} b={S(5)} />
+          </div>
+          <div className="space-y-2">
+            <Series label="Division Series" a={S(2)} b={wc36} byeNote={!wc36 ? "2 seed · bye" : null} />
+            <Series label="Division Series" a={S(1)} b={wc45} byeNote={!wc45 ? "1 seed · bye" : null} />
+          </div>
+        </div>
+        <div className="mt-2"><Series label={lg + " Championship Series"} a={ds1} b={ds2} /></div>
+        {hunt.length > 0 && (
+          <div className="mt-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-3 py-2">
+            <div className="text-[9px] font-bold tracking-widest uppercase text-slate-400 mb-1">In the hunt · games back of WC3{cut ? " (" + cut.abbr + ")" : ""}</div>
+            {hunt.map((t) => (
+              <button key={t.id} onClick={onSelectTeam ? () => onSelectTeam(t) : undefined} className="w-full flex items-center gap-2 py-1 text-left">
+                <Logo t={t} size="w-6 h-6" />
+                <span className={"text-[12px] font-bold flex-1 truncate " + (t.eliminated ? "text-slate-400 line-through" : "text-slate-800 dark:text-slate-100")}>{t.abbr} <span className="text-[10px] font-semibold text-slate-400">{t.wins}-{t.losses}</span></span>
+                <span className={"text-[12px] font-black tabular-nums " + (t.eliminated ? "text-slate-400" : "text-rose-500")}>{t.eliminated ? "Out" : t.back != null ? t.back + " GB" : ""}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+  const wsA = po && po.find((s) => s.type === "W");
+  const ws = wsA ? [byId[wsA.ids[0]], byId[wsA.ids[1]]] : null;
+  const real = po && po.length > 0;
+  if (!teams) return <BallLoader label="Loading the postseason picture" full={false} />;
+  return (
+    <div className="pb-4">
+      <div className="text-[11px] font-semibold text-slate-400 mt-3 px-1">{real ? "Live series results from MLB · seeds from the final standings" : "Projected from today's standings · 3 division winners + 3 wild cards per league · seeds 1–2 skip the Wild Card round"}</div>
+      {ws && <div className="mt-4"><div className="text-[11px] font-extrabold tracking-widest uppercase mb-2 px-1 text-amber-600">World Series</div><Series label="World Series" a={ws[0]} b={ws[1]} /></div>}
+      <League lg="AL" />
+      <League lg="NL" />
+    </div>
+  );
+}
+
+function HRBoardTab({ players, onSelectPlayer, resetSignal, onSelectTeam }) {
   const [data, setData] = useState(null);
   const [selGame, setSelGame] = useState(null);
   const [view, setView] = useState("matchups"); // matchups | bets | history
@@ -4555,10 +4689,9 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
                       })).then((pairs) => setStreaks((s2) => ({ ...s2, ...Object.fromEntries(pairs) })));
                     }
                   }}
-                  style={{ backgroundImage: mode === "open"
-                    ? `linear-gradient(180deg, ${bannerColor(sides.away.abbr)} 0%, ${bannerColor(sides.away.abbr)} 40%, ${shade(bannerColor(sides.away.abbr), -12)} 47%, ${shade(bannerColor(sides.home.abbr), -12)} 53%, ${bannerColor(sides.home.abbr)} 60%, ${bannerColor(sides.home.abbr)} 100%)`
+                  style={{ backgroundImage: mode === "open" ? undefined
                     : `linear-gradient(100deg, ${bannerColor(sides.away.abbr)} 0%, ${bannerColor(sides.away.abbr)} 38%, ${shade(bannerColor(sides.away.abbr), -12)} 47%, ${shade(bannerColor(sides.home.abbr), -12)} 53%, ${bannerColor(sides.home.abbr)} 62%, ${bannerColor(sides.home.abbr)} 100%)` }}
-                  className="relative w-full text-left px-4 py-3 active:opacity-90">
+                  className={"relative w-full text-left px-4 py-3 " + (mode === "open" ? "bg-white dark:bg-slate-900 active:bg-slate-50 dark:active:bg-slate-800" : "active:opacity-90")}>
 <span className="block">
                     {mode === "open" ? <MatchCard pk={g.gamePk} g={g} sides={sides} state={state} /> : (<>
                     {/* ── Broadcast row: logo · score · center status · score · logo ──
@@ -4795,16 +4928,16 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
   return (
     <div>
       <div className="bg-blue-600 px-5 pb-5 text-white sticky top-0 z-10 shadow-md" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)" }}>
-        <div className="text-2xl font-extrabold tracking-tight">{view === "bets" ? "Bets" : view === "history" ? "History" : "Matchups"} ({todayLabel}) <span role="button" onClick={() => window.__hrbRefetch && window.__hrbRefetch()}
+        <div className="text-2xl font-extrabold tracking-tight">{view === "bets" ? "Bets" : view === "history" ? "History" : view === "playoffs" ? "Postseason" : "Matchups"} ({todayLabel}) <span role="button" onClick={() => window.__hrbRefetch && window.__hrbRefetch()}
               className="text-[10px] font-bold text-white/50 align-middle">
               {HRB_VERSION}{typeof window !== "undefined" && window.__hrbApiVer ? " · api " + window.__hrbApiVer : ""}{typeof window !== "undefined" && window.__hrbDataAt ? " · data " + window.__hrbDataAt + " ↻" : ""}
             </span></div>
       </div>
       <div className="px-4 pb-28">
         <div className="flex gap-2 mt-3">
-          {[["matchups", "Matchups"], ["bets", "Bets"], ["history", "History"]].map(([id, label]) => (
+          {[["matchups", "Matchups"], ["playoffs", "Postseason"], ["bets", "Bets"], ["history", "History"]].map(([id, label]) => (
             <button key={id} onClick={() => setView(id)}
-              className={"flex-1 py-2 rounded-full text-[11px] font-extrabold " + (view === id
+              className={"flex-1 py-2 rounded-full text-[10px] font-extrabold whitespace-nowrap " + (view === id
                 ? "bg-blue-600 text-white"
                 : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-800")}>
               {label}
@@ -4916,6 +5049,7 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal }) {
           {data && renderGameList("open")}
         </div>
         </>)}
+        {view === "playoffs" && <PostseasonTab onSelectTeam={onSelectTeam} />}
         {view === "history" && (
           <div className="mt-4 space-y-3">
             <div className="rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900 px-4 py-2.5 text-[10px] font-semibold text-slate-500 dark:text-slate-300 leading-relaxed">
@@ -5205,7 +5339,7 @@ export default function App() {
           <button className="block mt-1 underline" onClick={() => setFatal(null)}>dismiss</button>
         </div>
       )}
-      {players && tab === "hrboard" && <HRBoardTab players={players} onSelectPlayer={openPlayer} resetSignal={navTap} />}
+      {players && tab === "hrboard" && <HRBoardTab players={players} onSelectPlayer={openPlayer} resetSignal={navTap} onSelectTeam={(t) => { const tm = (teams || []).find((x) => (x.abbr || toAbbr(x.name)) === t.abbr); if (tm) { setTab("teams"); setSelTeam(tm); window.scrollTo(0, 0); } }} />}
       {players && tab === "players" && <PlayersTab players={players} onSelect={openPlayer} />}
       {players && tab === "stats" && <StatsTab players={players} onSelect={openPlayer} jump={statsJump} key={"st" + navTap} />}
       </div>
