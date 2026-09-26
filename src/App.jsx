@@ -2394,7 +2394,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
           <span className={"absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-0.5 rounded-full text-[7px] font-extrabold text-white shadow " + TAG_SOLID[tagOf(pl).kind] + (tagOf(pl).kind === "il" ? " animate-pulse" : "")}>{injTag(pl)}</span>
         )}
       </span>
-      <span className="block mt-2 text-[9px] font-bold text-slate-700 dark:text-slate-200 truncate">{lastNameOf(pl.name)}</span>
+      <span className={"block mt-2 font-bold text-slate-700 dark:text-slate-200 whitespace-nowrap " + (lastNameOf(pl.name).length > 9 ? "text-[8px]" : "text-[9px]")}>{lastNameOf(pl.name)}</span>
       <span className="block text-[8px] font-extrabold truncate text-[color:var(--tc)] dark:text-white/80" style={{ "--tc": tc }}>{pl.pos || ""}</span>
     </button>
   );
@@ -2543,7 +2543,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
                   <span className={"absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded-full text-[7px] font-extrabold text-white shadow ring-2 ring-white/80 " + TAG_SOLID[tagOf(p).kind] + (tagOf(p).kind === "il" ? " animate-pulse" : "")}>{injTag(p)}</span>
                 )}
               </span>
-              <span className="mt-1.5 text-[8px] font-bold text-white/95 max-w-[64px] truncate drop-shadow">{p ? lastNameOf(p.name) : ""}</span>
+              <span className={"mt-1.5 font-bold text-white/95 whitespace-nowrap drop-shadow " + (p && lastNameOf(p.name).length > 9 ? "text-[7px]" : "text-[8px]")}>{p ? lastNameOf(p.name) : ""}</span>
             </button>
           );
         })}
@@ -2753,7 +2753,7 @@ function RankTile({ label, value, sub, subCls, tc, valueCls, onClick }) {
 }
 
 // One roster row, laid out like the football app: [chip] headshot · #no Name / tag (note) · three stat tiles
-function RosterRow({ p, abbr, chip, chipCls, rightChip, tiles, badge, under, onSelect }) {
+function RosterRow({ p, abbr, chip, chipCls, chipText = false, nameSuffix, rightChip, tiles, badge, under, onSelect }) {
   useInjuries();
   const tc = teamColor(abbr);
   const live = injFor(p.name, abbr);
@@ -2762,11 +2762,13 @@ function RosterRow({ p, abbr, chip, chipCls, rightChip, tiles, badge, under, onS
   return (
     <button onClick={p._virtual ? undefined : () => onSelect(p)} className={"w-full block px-3 py-2.5 text-left " + (p._virtual ? "" : "active:bg-slate-50 dark:active:bg-slate-800")}>
       <span className="flex items-start gap-2.5">
-        <span className={"shrink-0 w-11 text-center rounded-md py-1 mt-4 text-white tabular-nums " + (chipCls || "text-[11px] font-extrabold")} style={{ backgroundColor: bannerColor(abbr) }}>{chip}</span>
+        {chipText
+          ? <span className="shrink-0 w-11 text-center self-center text-[22px] font-black tabular-nums leading-none text-[color:var(--tc)] dark:text-white" style={{ "--tc": bannerColor(abbr) }}>{chip}</span>
+          : <span className={"shrink-0 w-11 text-center rounded-md py-1 mt-4 text-white tabular-nums " + (chipCls || "text-[11px] font-extrabold")} style={{ backgroundColor: bannerColor(abbr) }}>{chip}</span>}
         <Avatar p={p} size="md" />
         <span className="flex-1 min-w-0">
           <span className="block text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate">
-            {cleanNo(p.no) && <span className="text-[13px] font-bold text-slate-400">#{cleanNo(p.no)} </span>}{p.name}
+            {cleanNo(p.no) && <span className="text-[13px] font-bold text-slate-400">#{cleanNo(p.no)} </span>}{p.name}{nameSuffix && <span className="text-[13px] font-bold text-slate-400"> {nameSuffix}</span>}
           </span>
           <span className="flex gap-1 mt-1 justify-start">
             {tiles.map(([lbl, v]) => (
@@ -2777,7 +2779,7 @@ function RosterRow({ p, abbr, chip, chipCls, rightChip, tiles, badge, under, onS
             ))}
           </span>
         </span>
-        {rightChip && <span className="shrink-0 w-11 text-center rounded-md py-1 mt-4 text-[11px] font-extrabold text-white tabular-nums" style={{ backgroundColor: bannerColor(abbr) }}>{rightChip}</span>}
+        {rightChip && <span className="shrink-0 w-9 self-center text-center rounded-md py-1 text-[11px] font-extrabold text-white tabular-nums" style={{ backgroundColor: bannerColor(abbr) }}>{rightChip}</span>}
       </span>
       {/* second row lines up with the columns above: tag under the picture, note + return date under the tiles */}
       {(tag || badge || under) && (
@@ -2853,7 +2855,7 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
     return (
       <>
         <Section title="Batting Order" note={rows.length ? <LineupBadge lineup={todayLineup} /> : null}>
-          {rows.length ? rows.map(({ slot, pos, p }) => <RosterRow key={p.id} p={p} abbr={abbr} chip={pos || p.gamePos || p.pos || "—"} rightChip={batsOf(p)} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
+          {rows.length ? rows.map(({ slot, pos, p }) => <RosterRow key={p.id} p={p} abbr={abbr} chip={String(slot)} chipText nameSuffix={pos || p.gamePos || p.pos || ""} rightChip={batsOf(p)} tiles={batTiles(p)} onSelect={onSelectPlayer} />)
             : empty("No lineup posted yet. It fills in on its own once MLB publishes one.")}
         </Section>
         {bench.length > 0 && <Section title={"Bench (" + bench.length + ")"}>{bench.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={p.pos || "—"} tiles={batTiles(p)} onSelect={onSelectPlayer} />)}</Section>}
@@ -3936,7 +3938,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v133";
+const HRB_VERSION = "v134";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
