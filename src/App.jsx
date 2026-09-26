@@ -1320,7 +1320,7 @@ function MatchCard({ pk, g, sides, state }) {
   const batSide = battingAbbr === sides.home.abbr ? "home" : "away";
   const pitcher = sit ? sit.pitcher : (ls.defense && ls.defense.pitcher ? { id: ls.defense.pitcher.id, name: ls.defense.pitcher.fullName } : null);
   const batter = sit ? sit.batter : (off.batter ? { id: off.batter.id, name: off.batter.fullName } : null);
-  const bLine = d && batter ? ((d.box[batSide] && d.box[batSide].batters) || []).find((x) => x.id === batter.id) : null;
+  const bLine = d && batter ? ([...((d.box.away && d.box.away.batters) || []), ...((d.box.home && d.box.home.batters) || [])].find((x) => x.id === batter.id) || { h: 0, ab: 0, slot: null }) : null;
   const pitches = d && pitcher ? [...(d.box.away.pitchers || []), ...(d.box.home.pitchers || [])].find((x) => x.id === pitcher.id) : null;
   const base = (x, y, lit) => <rect x={x} y={y} width="8" height="8" rx="1.5" transform={`rotate(45 ${x + 4} ${y + 4})`} fill={lit ? "#f59e0b" : "transparent"} stroke={lit ? "#d97706" : "#94a3b8"} strokeWidth="1.3" />;
   const time = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(g.gameDate));
@@ -1331,14 +1331,14 @@ function MatchCard({ pk, g, sides, state }) {
     const sd = sides[k]; const sc = g.teams[k].score;
     const lost = isFinal && sc != null && (k === "away" ? sc < hS : sc < aS);
     return (
-      <span className={"flex items-center gap-2.5 " + (lost ? "opacity-50" : "")}>
-        <span className="w-1 self-stretch rounded-full shrink-0" style={{ backgroundColor: teamColor(sd.abbr) }} />
-        {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-10 h-10 object-contain shrink-0" + (WHITE_LOGOS.has(sd.abbr) ? " dark:brightness-0 dark:invert" : "")} /> : <span className="w-10 h-10 rounded-full" style={{ backgroundColor: teamColor(sd.abbr) }} />}
+      <span className={"grid grid-cols-[4px_40px_60px_40px] items-center gap-x-2.5 " + (lost ? "opacity-50" : "")}>
+        <span className="w-1 self-stretch rounded-full" style={{ backgroundColor: teamColor(sd.abbr) }} />
+        {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-10 h-10 object-contain" + (WHITE_LOGOS.has(sd.abbr) ? " dark:brightness-0 dark:invert" : "")} /> : <span className="w-10 h-10 rounded-full" style={{ backgroundColor: teamColor(sd.abbr) }} />}
         <span className="min-w-0">
-          <span className="block text-[15px] font-black tracking-wide text-slate-900 dark:text-white leading-tight">{sd.abbr}{isLive && battingAbbr === sd.abbr ? <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-rose-500 align-middle" /> : null}</span>
+          <span className="block text-[15px] font-black tracking-wide text-slate-900 dark:text-white leading-tight">{sd.abbr}</span>
           <span className="block text-[10px] font-semibold text-slate-400 tabular-nums leading-tight">{sd.rec}</span>
         </span>
-        {state !== "Preview" && <span className={"ml-2 text-[26px] leading-none font-black tabular-nums w-8 text-right " + (lost ? "text-slate-400" : "text-slate-900 dark:text-white")}>{sc ?? 0}</span>}
+        <span className={"text-[26px] leading-none font-black tabular-nums text-right " + (lost ? "text-slate-400" : "text-slate-900 dark:text-white")}>{state !== "Preview" ? sc ?? 0 : ""}</span>
       </span>
     );
   };
@@ -1365,7 +1365,7 @@ function MatchCard({ pk, g, sides, state }) {
         {isLive && (<>
           <span className="min-w-0 truncate text-slate-700 dark:text-slate-200"><span className="font-black text-slate-400">P </span><span className="font-extrabold uppercase tracking-wide">{pitcher ? lastNameOf(pitcher.name) : "—"}</span>{pitches && pitches.pitches != null ? <span className="font-bold text-slate-400 tabular-nums"> · {pitches.pitches} P</span> : null}</span>
           <span className="min-w-0 truncate text-right text-slate-700 dark:text-slate-200">
-            {bLine ? <span className="font-bold text-slate-400">{bLine.slot}. </span> : null}
+            {bLine && bLine.slot ? <span className="font-bold text-slate-400">{bLine.slot}. </span> : null}
             <span className="font-extrabold uppercase tracking-wide">{batter ? lastNameOf(batter.name) : "—"}</span>
             {bLine ? <span className="font-bold text-slate-400 tabular-nums"> {bLine.h}-{bLine.ab}</span> : null}
           </span>
@@ -1594,7 +1594,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
 
   return (
     <div {...swipe} data-own-swipe="1">
-      <div className="px-4 pb-5" style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)", backgroundColor: teamColor(abbrOf(side)) }}>
+      <div className="px-4 pb-5" style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)", backgroundImage: `linear-gradient(100deg, ${bannerColor(abbrOf("away"))} 0%, ${bannerColor(abbrOf("away"))} 40%, ${shade(bannerColor(abbrOf("away")), -12)} 47%, ${shade(bannerColor(abbrOf("home")), -12)} 53%, ${bannerColor(abbrOf("home"))} 60%, ${bannerColor(abbrOf("home"))} 100%)` }}>
         <div className="flex items-center justify-between mb-3">
           <button onClick={onBack} className="text-white/90 text-sm font-semibold">‹ Matchups</button>
           {total > 1 && (
@@ -1613,11 +1613,11 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
             const on = side === k;
             const col = (
               <button key={k} onClick={() => setSide(k)} aria-label={"Show " + ab + " box score"}
-                className={"flex flex-col items-center rounded-2xl px-2 py-1.5 transition-colors " + (on ? "bg-white/15 ring-2 ring-white/70" : "opacity-80")}>
-                {logo ? <img src={logo} alt="" className={"w-24 h-24 object-contain drop-shadow-xl" + logoFx(ab)} /> : <span className="w-24 h-24 rounded-full" style={{ backgroundColor: teamColor(ab) }} />}
+                className="flex flex-col items-center px-2 py-1.5 w-[104px]">
+                {logo ? <img src={logo} alt="" className={"w-[76px] h-[76px] object-contain drop-shadow-xl" + logoFx(ab)} /> : <span className="w-[76px] h-[76px] rounded-full" style={{ backgroundColor: teamColor(ab) }} />}
                 <span className="text-white font-extrabold text-lg leading-tight mt-1">{ab}</span>
                 <span className="text-white/70 text-[11px] font-bold">{rec}</span>
-                <span className={"text-[8px] font-black tracking-widest uppercase mt-0.5 " + (on ? "text-white" : "text-white/50")}>{on ? "▾ Box score" : "Tap for box"}</span>
+                <span className={"mt-1.5 h-[3px] w-10 rounded-full " + (on ? "bg-white" : "bg-white/20")} />
               </button>
             );
             if (k === "away") return col;
@@ -1712,7 +1712,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
             </div>
           </>
         )}
-        <div className="mt-4 text-[10px] font-bold tracking-widest uppercase text-slate-400 px-1">{(g.teams[side].team && g.teams[side].team.name) || side} · tap a logo up top to switch</div>
+        <div className="mt-4 text-[10px] font-bold tracking-widest uppercase text-slate-400 px-1">Box score · tap a team up top to switch</div>
         {!inGame && <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(oppKey)) }}>Pitcher</div>}
         {!inGame && <button onClick={myPP && onSelectPlayer ? () => onSelectPlayer(myPP.player) : undefined}
           className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
@@ -3936,7 +3936,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v132";
+const HRB_VERSION = "v133";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
