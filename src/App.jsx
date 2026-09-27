@@ -44,7 +44,7 @@ const TEAM_COLORS = {
   KC: "#004687", LAA: "#BA0021", LAD: "#005A9C", MIA: "#00A3E0",
   MIL: "#12284B", MIN: "#002B5C", NYM: "#002D72", NYY: "#0C2340",
   OAK: "#003831", ATH: "#003831", PHI: "#E81828", PIT: "#0a0a0a",
-  SD: "#2F241D", SF: "#FD5A1E", SEA: "#0C2C56", STL: "#C41E3A",
+  SD: "#2F241D", SF: "#0a0a0a", SEA: "#0C2C56", STL: "#C41E3A",
   TB: "#092C5C", TEX: "#003278", TOR: "#134A8E", WSH: "#AB0003",
 };
 
@@ -667,15 +667,19 @@ function ListHeader({ title, q, setQ, placeholder }) {
 // Populated once data loads: abbr -> logo URL
 const TEAM_LOGOS = {};
 // Logos that read better as a white mark on their team colour
-const WHITE_LOGOS = new Set(["NYY", "LAD", "STL", "PHI", "KC"]);
-const logoFx = (abbr) => (WHITE_LOGOS.has(String(abbr || "").toUpperCase()) ? " brightness-0 invert" : "");
+const WHITE_LOGOS = new Set(["NYY", "LAD", "STL", "PHI", "KC", "DET", "CIN", "WSH", "TB", "ATH", "ATL"]);
+const GOLD_LOGOS = new Set(["SD"]);
+// On a team-colour surface: white marks (or gold for the Padres) so the logo never fights its own colour
+const logoFx = (abbr) => { const a = String(abbr || "").toUpperCase(); return WHITE_LOGOS.has(a) ? " brightness-0 invert" : GOLD_LOGOS.has(a) ? " brightness-0 invert sepia saturate-[6] hue-rotate-[8deg] brightness-110" : ""; };
+// On a white / slate card: the real logo by day, white only at night
+const logoFxNeutral = (abbr) => (WHITE_LOGOS.has(String(abbr || "").toUpperCase()) ? " dark:brightness-0 dark:invert" : "");
 
 function TeamPill({ team }) {
   const abbr = toAbbr(team) || team;
   if (!abbr) return null;
   const logo = TEAM_LOGOS[abbr];
   if (logo) {
-    return <img src={logo} alt={abbr} className={"w-10 h-10 object-contain shrink-0 drop-shadow" + logoFx(abbr)} />;
+    return <img src={logo} alt={abbr} className={"w-10 h-10 object-contain shrink-0 drop-shadow" + logoFxNeutral(abbr)} />;
   }
   return (
     <span className="text-[10px] font-bold text-white px-2 py-1 rounded-full shrink-0" style={{ backgroundColor: teamColor(abbr) }}>
@@ -726,7 +730,7 @@ function loadTransactions() {
 }
 // Which moves has the user already seen? (ids, kept on the phone)
 const txSeen = () => { try { return new Set(JSON.parse(localStorage.getItem("mlb.txSeen") || "[]")); } catch { return new Set(); } };
-const txMarkSeen = (list) => { try { localStorage.setItem("mlb.txSeen", JSON.stringify((list || []).map((t) => t.id).slice(0, 400))); } catch {} };
+const txMarkSeen = (list) => { try { localStorage.setItem("mlb.txSeen", JSON.stringify((list || []).map((t) => t.id).slice(0, 400))); } catch {} TX_CACHE.subs.forEach((f) => f()); };
 const txUnseenCount = (list) => { if (!list) return 0; const seen = txSeen(); if (!seen.size) return 0; return list.filter((t) => !seen.has(t.id)).length; };
 function useTransactions() {
   const [, tick] = useState(0);
@@ -1359,6 +1363,37 @@ function MatchCard({ pk, g, sides, state }) {
       </span>
     );
   };
+  // FINAL: same bug — team blocks with the score and the decision, then a FINAL block
+  if (isFinal) {
+    const dec = g.decisions || {};
+    const won = (k) => (g.teams[k].score ?? 0) > (g.teams[k === "away" ? "home" : "away"].score ?? 0);
+    const block = (k) => {
+      const sd = sides[k]; const sc = g.teams[k].score ?? 0; const w = won(k);
+      return (
+        <span className={"flex-1 min-w-0 px-2.5 py-2 text-white flex flex-col justify-between " + (w ? "" : "opacity-80")} style={{ backgroundColor: bannerColor(sd.abbr) }}>
+          <span className="flex items-center gap-1.5">
+            {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-7 h-7 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : null}
+            <span className="text-[14px] font-black tracking-wide">{sd.abbr}</span>
+            <span className="ml-auto text-[24px] leading-none font-black tabular-nums">{sc}</span>
+          </span>
+          <span className="block mt-1.5 text-[10px] font-extrabold uppercase tracking-wide leading-tight">
+            {w && dec.winner && <span className="block truncate"><span className="text-emerald-300">Win </span>{lastNameOf(dec.winner.fullName)}</span>}
+            {w && dec.save && <span className="block truncate"><span className="text-emerald-300">Save </span>{lastNameOf(dec.save.fullName)}</span>}
+            {!w && dec.loser && <span className="block truncate"><span className="text-rose-300">Loss </span>{lastNameOf(dec.loser.fullName)}</span>}
+          </span>
+        </span>
+      );
+    };
+    return (
+      <span className="flex -mx-4 -my-3 overflow-hidden rounded-2xl">
+        {block("away")}
+        {block("home")}
+        <span className="bg-black text-white px-3 py-2 flex items-center justify-center shrink-0">
+          <span className="text-[11px] font-black uppercase tracking-widest">Final</span>
+        </span>
+      </span>
+    );
+  }
   // LIVE: the broadcast bug — [away block][home block][bases · inning][count · outs], each team on its own colour
   if (isLive) {
     const batting = batSide;
@@ -1753,7 +1788,7 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
               {live.scoring.map((sp, i) => (
                 <div key={i} className="flex items-start gap-2.5 px-3 py-2">
-                  {TEAM_LOGOS[sp.team] ? <img src={TEAM_LOGOS[sp.team]} alt={sp.team} className={"w-6 h-6 object-contain shrink-0" + logoFx(sp.team)} /> : <span className="w-7 h-7 rounded-full shrink-0" style={{ backgroundColor: teamColor(sp.team) }} />}
+                  {TEAM_LOGOS[sp.team] ? <img src={TEAM_LOGOS[sp.team]} alt={sp.team} className={"w-6 h-6 object-contain shrink-0" + logoFxNeutral(sp.team)} /> : <span className="w-7 h-7 rounded-full shrink-0" style={{ backgroundColor: teamColor(sp.team) }} />}
                   <span className="flex-1 min-w-0">
                     <span className="block text-[12px] text-slate-800 dark:text-slate-100 leading-snug">{sp.text}</span>
                     <span className="block text-[10px] text-slate-400 mt-0.5">{sp.event || "Run"}{sp.rbi > 1 ? " · " + sp.rbi + " RBI" : ""} · {sp.half} {sp.inning}{sp.hit && sp.hit.dist && sp.event === "Home Run" ? " · " + Math.round(sp.hit.dist) + " ft · " + sp.hit.ev.toFixed(1) + " mph" : ""}</span>
@@ -3993,7 +4028,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v137";
+const HRB_VERSION = "v138";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -5313,6 +5348,8 @@ export default function App() {
   const [tab, setTab] = useState("hrboard");
   const [navTap, setNavTap] = useState(0);   // bumps on every tab-bar press so the tab can return to its main page
   const [statsJump, setStatsJump] = useState(null);   // team-page tile → Stats › Teams with that team highlighted
+  const txListApp = useTransactions();
+  const txNewApp = txUnseenCount(txListApp);
   useEffect(() => {                          // live injury report: now, every 10 min, and when the app is reopened
     loadInjuries();
     const id = setInterval(loadInjuries, 10 * 60000);
@@ -5408,7 +5445,9 @@ export default function App() {
             onClick={() => { setTab(t.id); setSel(null); setSelTeam(null); setStatsJump(null); setNavTap((n) => n + 1); window.scrollTo(0, 0); }}
             className={"flex-1 py-2.5 text-center " + (tab === t.id ? "text-blue-600" : "text-slate-400")}
           >
-            <div className="text-lg leading-none">{t.icon}</div>
+            <div className="relative inline-block text-lg leading-none">{t.icon}
+              {t.id === "players" && txNewApp > 0 && <span className="absolute -top-1.5 -right-3 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-black leading-[18px] text-center shadow">{txNewApp > 99 ? "99+" : txNewApp}</span>}
+            </div>
             <div className="text-[10px] font-bold mt-1">{t.label}</div>
           </button>
         ))}
