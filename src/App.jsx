@@ -2328,7 +2328,8 @@ const injText = (r) => {
   // "Concussion" + "Concussion" → once; "Elbow" + "Elbow strain" → "Elbow strain"
   const body = typ && det ? (det.toLowerCase().includes(typ.toLowerCase()) ? det : typ.toLowerCase().includes(det.toLowerCase()) ? typ : typ + " " + det) : typ || det;
   const what = [ok(r.side), body].filter(Boolean).join(" ").trim();
-  return what ? what.charAt(0).toUpperCase() + what.slice(1).toLowerCase() : "";
+  // all lowercase, except the acronyms people actually say in caps (ACL, UCL, TJ…)
+  return what.split(/\s+/).map((w) => (/^[A-Z]{2,4}s?$/.test(w) ? w : w.toLowerCase())).join(" ");
 };
 // "Estimated Return Date: Sep 22" (month always capitalised)
 const injReturn = (r) => {
@@ -2407,8 +2408,8 @@ function InjuryLine({ p }) {
   useInjuries();
   const r = injFor(p.name, teamOfPlayer(p));
   const text = r ? injText(r) : "";
-  if (text || (r && r.returnDate)) return <div className="mt-1 text-[12px] font-semibold text-rose-200 leading-snug">{text}<ReturnLine r={r} className="text-white mt-0.5" /></div>;
-  if (!r && p.injuryNotes) return <div className="mt-1 text-[12px] font-semibold text-white/90 leading-snug">{p.injuryNotes}</div>;
+  if (text || (r && r.returnDate)) return <div className="mt-1 text-[12px] font-semibold text-rose-500 leading-snug">{text ? "(" + text + ")" : ""}<ReturnLine r={r} className="text-white mt-0.5" /></div>;
+  if (!r && p.injuryNotes) return <div className="mt-1 text-[12px] font-semibold text-rose-500 leading-snug">({String(p.injuryNotes).toLowerCase()})</div>;
   return null;
 }
 
@@ -4178,7 +4179,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v144";
+const HRB_VERSION = "v145";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
