@@ -117,7 +117,9 @@ function experienceOf(p) {
 function matchesQuery(p, q) {
   if (!q) return true;
   const s = q.toLowerCase().trim();
-  return hrbNrm(p.name).includes(hrbNrm(s));   // players are searched by name only
+  if (hrbNrm(p.name).includes(hrbNrm(s))) return true;
+  const ab = teamOfPlayer(p), full = ab ? (ABBR_TO_NAME[ab] || "") : "";
+  return (ab && ab.toLowerCase() === s) || (full && full.includes(s)) || String(p.teamName || "").toLowerCase().includes(s);   // "yankees", "NYY", "New York"
 }
 function matchesQueryWithTeam(p, q) {
   if (!q) return true;
@@ -657,8 +659,8 @@ function ListHeader({ title, q, setQ, placeholder }) {
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder={placeholder || "Search players…"}
-        className="mt-3 w-full rounded-xl px-4 py-2.5 text-sm text-slate-800 dark:text-slate-200 bg-white/95 dark:bg-slate-900/80 placeholder-slate-400 outline-none"
+        placeholder={placeholder || "Search players or teams…"}
+        className="mt-3 w-full rounded-xl px-4 py-2.5 text-[16px] text-slate-800 dark:text-slate-200 bg-white/95 dark:bg-slate-900/80 placeholder-slate-400 outline-none"
       />
     </div>
   );
@@ -729,9 +731,10 @@ function loadTransactions() {
   return TX_CACHE.job;
 }
 // Which moves has the user already seen? (ids, kept on the phone)
-const txSeen = () => { try { return new Set(JSON.parse(localStorage.getItem("mlb.txSeen") || "[]")); } catch { return new Set(); } };
-const txMarkSeen = (list) => { try { localStorage.setItem("mlb.txSeen", JSON.stringify((list || []).map((t) => t.id).slice(0, 400))); } catch {} TX_CACHE.subs.forEach((f) => f()); };
-const txUnseenCount = (list) => { if (!list) return 0; const seen = txSeen(); if (!seen.size) return 0; return list.filter((t) => !seen.has(t.id)).length; };
+const txNewer = (t, mark) => String(t.date) > String(mark.date) || (String(t.date) === String(mark.date) && Number(t.id) > Number(mark.id));
+const txSeen = () => { try { const m = JSON.parse(localStorage.getItem("mlb.txMark") || "null"); return m && m.date ? m : null; } catch { return null; } };
+const txMarkSeen = (list) => { const top = (list || []).reduce((m, t) => (!m || txNewer(t, m) ? { date: String(t.date), id: Number(t.id) } : m), null); try { if (top) localStorage.setItem("mlb.txMark", JSON.stringify(top)); } catch {} TX_CACHE.subs.forEach((f) => f()); };
+const txUnseenCount = (list) => { if (!list) return 0; const mark = txSeen(); if (!mark) return 0; return list.filter((t) => txNewer(t, mark)).length; };
 function useTransactions() {
   const [, tick] = useState(0);
   useEffect(() => { const f = () => tick((n) => n + 1); TX_CACHE.subs.add(f); loadTransactions().catch(() => {}); return () => { TX_CACHE.subs.delete(f); }; }, []);
@@ -1370,7 +1373,7 @@ function MatchCard({ pk, g, sides, state }) {
     const block = (k) => {
       const sd = sides[k]; const sc = g.teams[k].score ?? 0; const w = won(k);
       return (
-        <span className={"flex-1 min-w-0 px-2.5 py-2 text-white flex flex-col justify-between " + (w ? "" : "opacity-80")} style={{ backgroundColor: bannerColor(sd.abbr) }}>
+        <span className={"flex-1 basis-0 min-w-0 px-2.5 py-2 text-white flex flex-col justify-between " + (w ? "" : "opacity-80")} style={{ backgroundColor: bannerColor(sd.abbr) }}>
           <span className="flex items-center gap-1.5">
             {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-7 h-7 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : null}
             <span className="text-[14px] font-black tracking-wide">{sd.abbr}</span>
@@ -1388,7 +1391,7 @@ function MatchCard({ pk, g, sides, state }) {
       <span className="flex -mx-4 -my-3 overflow-hidden rounded-2xl">
         {block("away")}
         {block("home")}
-        <span className="bg-black text-white px-3 py-2 flex items-center justify-center shrink-0">
+        <span className="bg-black text-white w-[118px] py-2 flex items-center justify-center shrink-0">
           <span className="text-[11px] font-black uppercase tracking-widest">Final</span>
         </span>
       </span>
@@ -1400,7 +1403,7 @@ function MatchCard({ pk, g, sides, state }) {
     const block = (k) => {
       const sd = sides[k]; const sc = g.teams[k].score ?? 0; const bat = k === batting;
       return (
-        <span className="flex-1 min-w-0 px-2.5 py-2 text-white flex flex-col justify-between" style={{ backgroundColor: bannerColor(sd.abbr) }}>
+        <span className="flex-1 basis-0 min-w-0 px-2.5 py-2 text-white flex flex-col justify-between" style={{ backgroundColor: bannerColor(sd.abbr) }}>
           <span className="flex items-center gap-1.5">
             {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-7 h-7 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : null}
             <span className="text-[14px] font-black tracking-wide">{sd.abbr}</span>
@@ -1418,11 +1421,11 @@ function MatchCard({ pk, g, sides, state }) {
       <span className="flex -mx-4 -my-3 overflow-hidden rounded-2xl">
         {block("away")}
         {block("home")}
-        <span className="bg-slate-800 text-white px-2.5 py-2 flex flex-col items-center justify-center shrink-0">
+        <span className="bg-slate-800 text-white w-[54px] py-2 flex flex-col items-center justify-center shrink-0">
           <svg width="34" height="24" viewBox="0 0 40 30" aria-label="bases">{[[16, 2, on("second")], [4, 14, on("third")], [28, 14, on("first")]].map(([x, y, lit], i) => <rect key={i} x={x} y={y} width="8" height="8" rx="1.5" transform={`rotate(45 ${x + 4} ${y + 4})`} fill={lit ? "#fbbf24" : "transparent"} stroke={lit ? "#f59e0b" : "rgba(255,255,255,0.8)"} strokeWidth="1.4" />)}</svg>
           <span className="text-[12px] font-black tabular-nums leading-none mt-1">{half} {inning ?? "—"}</span>
         </span>
-        <span className="bg-black text-white px-3 py-2 flex flex-col items-center justify-center shrink-0">
+        <span className="bg-black text-white w-[64px] py-2 flex flex-col items-center justify-center shrink-0">
           <span className="text-[20px] font-black tabular-nums leading-none">{balls ?? 0}-{strikes ?? 0}</span>
           <span className="flex gap-1 mt-1.5">{[0, 1, 2].map((i) => <span key={i} className={"w-2 h-2 rounded-full " + (i < (outs ?? 0) ? "bg-white" : "border border-white/70")} />)}</span>
         </span>
@@ -2187,7 +2190,7 @@ const injReturn = (r) => {
   const d = new Date(r.returnDate);
   return isNaN(d) ? "" : "Estimated Return Date: " + new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(d);
 };
-const ReturnLine = ({ r, className = "" }) => { const t = injReturn(r); return t ? <span className={"block text-[11px] font-bold text-rose-500 " + className}>{t}</span> : null; };
+const ReturnLine = ({ r, className = "" }) => { const t = injReturn(r); return t ? <span className={"block text-[11px] font-bold text-slate-900 dark:text-white " + className}>{t}</span> : null; };
 // ONE answer to "what tag does this player wear?", used by the field view, the
 // bench and the roster so they can never disagree:
 //   live report (ESPN + MLB's official roster status) → Airtable Status →
@@ -2258,7 +2261,7 @@ function InjuryLine({ p }) {
   useInjuries();
   const r = injFor(p.name, teamOfPlayer(p));
   const text = r ? injText(r) : "";
-  if (text || (r && r.returnDate)) return <div className="mt-1 text-[12px] font-semibold text-white/90 leading-snug">{text}<ReturnLine r={r} className="text-rose-200 mt-0.5" /></div>;
+  if (text || (r && r.returnDate)) return <div className="mt-1 text-[12px] font-semibold text-rose-200 leading-snug">{text}<ReturnLine r={r} className="text-white mt-0.5" /></div>;
   if (!r && p.injuryNotes) return <div className="mt-1 text-[12px] font-semibold text-white/90 leading-snug">{p.injuryNotes}</div>;
   return null;
 }
@@ -2861,15 +2864,15 @@ function RosterRow({ p, abbr, chip, chipCls, chipText = false, nameSuffix, right
             {cleanNo(p.no) && <span className="text-[13px] font-bold text-slate-400">#{cleanNo(p.no)} </span>}{p.name}{nameSuffix && <span className="text-[13px] font-bold text-slate-400"> {nameSuffix}</span>}
           </span>
           <span className="flex gap-1 mt-1 justify-start">
-            {tiles.map(([lbl, v]) => (
-              <span key={lbl} className={(tiles.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border-2 bg-white dark:bg-slate-900 text-center overflow-hidden"} style={{ borderColor: tc + "66" }}>
+            {[...tiles, ...(rightChip ? [["Bats", rightChip]] : [])].map(([lbl, v], _i, all) => (
+              <span key={lbl} className={(all.length > 4 ? "w-[42px]" : all.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border-2 bg-white dark:bg-slate-900 text-center overflow-hidden"} style={{ borderColor: tc + "66" }}>
                 <span className="block text-[7px] font-extrabold uppercase tracking-wider text-white py-0.5" style={{ backgroundColor: tc }}>{lbl}</span>
                 <span className={"block leading-tight font-extrabold tabular-nums tracking-tight whitespace-nowrap text-slate-900 dark:text-white py-1 " + (String(v ?? "").length >= 5 ? "text-[11px]" : "text-[14px]")}>{v ?? "—"}</span>
               </span>
             ))}
           </span>
         </span>
-        {rightChip && <span className="shrink-0 w-9 self-center text-center rounded-md py-1 text-[11px] font-extrabold text-white tabular-nums" style={{ backgroundColor: bannerColor(abbr) }}>{rightChip}</span>}
+
       </span>
       {/* second row lines up with the columns above: tag under the picture, note + return date under the tiles */}
       {(tag || badge || under) && (
@@ -4028,7 +4031,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v138";
+const HRB_VERSION = "v139";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -5345,6 +5348,11 @@ const TABS = [
 
 export default function App() {
   useGlobalBackSwipe();
+  useEffect(() => {                          // no pinch / focus zoom anywhere in the app
+    let m = document.querySelector('meta[name="viewport"]');
+    if (!m) { m = document.createElement("meta"); m.name = "viewport"; document.head.appendChild(m); }
+    m.setAttribute("content", "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover");
+  }, []);
   const [tab, setTab] = useState("hrboard");
   const [navTap, setNavTap] = useState(0);   // bumps on every tab-bar press so the tab can return to its main page
   const [statsJump, setStatsJump] = useState(null);   // team-page tile → Stats › Teams with that team highlighted
