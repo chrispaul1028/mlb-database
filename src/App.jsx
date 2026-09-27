@@ -214,7 +214,7 @@ function LiveStreak({ p }) {
   return null;
 }
 function Avatar({ p, size }) {
-  const px = size === "lg" ? "w-20 h-20 text-2xl" : size === "md" ? "w-14 h-14 text-base" : "w-11 h-11 text-sm";
+  const px = size === "lg" ? "w-28 h-28 text-3xl" : size === "md" ? "w-14 h-14 text-base" : "w-11 h-11 text-sm";
   const team = p._virtual ? (p.teamAbbr || "") : teamOfPlayer(p);
   const key = String(p.name || "").toLowerCase() + (team ? "|" + team : "");          // name + team: two players sharing a name never share a photo
   const byName = LEADERS_CACHE.stats && LEADERS_CACHE.stats.byName;
@@ -705,27 +705,41 @@ const txLabel = (t) => {
   if (/paternity|bereavement/.test(d)) return ["Leave", "bg-slate-500"];
   return TX_TYPES[t.typeCode] || [t.typeDesc || "Move", "bg-slate-500"];
 };
-const TX_CACHE = { at: 0, list: null };
-function TransactionsTab({ players, onSelect, q }) {
-  const [list, setList] = useState(TX_CACHE.list);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    if (TX_CACHE.list && Date.now() - TX_CACHE.at < 10 * 60000) return;
-    let alive = true;
-    (async () => {
-      try {
+const TX_CACHE = { at: 0, list: null, subs: new Set(), job: null };
+function loadTransactions() {
+  if (TX_CACHE.list && Date.now() - TX_CACHE.at < 10 * 60000) return Promise.resolve(TX_CACHE.list);
+  if (TX_CACHE.job) return TX_CACHE.job;
+  TX_CACHE.job = (async () => {
+    try {
         const day = (n) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() + n * 86400000));
         const d = await (await mlbFetch(`v1/transactions?sportId=1&startDate=${day(-14)}&endDate=${day(0)}`)).json();
         const rows = (d.transactions || []).filter((t) => t.person && t.person.fullName && t.description)
           .map((t) => ({ id: t.id, name: t.person.fullName, pid: t.person.id, team: (t.toTeam && TEAM_ABBR_BY_ID[t.toTeam.id]) || (t.fromTeam && TEAM_ABBR_BY_ID[t.fromTeam.id]) || "", teamName: (t.toTeam && t.toTeam.name) || (t.fromTeam && t.fromTeam.name) || "", date: t.date || t.effectiveDate || "", text: t.description, typeCode: t.typeCode, typeDesc: t.typeDesc }))
           .filter((t) => t.team)                                            // big-league moves only
           .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
-        TX_CACHE.list = rows; TX_CACHE.at = Date.now();
-        if (alive) setList(rows);
-      } catch { if (alive) setFailed(true); }
-    })();
-    return () => { alive = false; };
-  }, []);
+      TX_CACHE.list = rows; TX_CACHE.at = Date.now();
+      TX_CACHE.subs.forEach((f) => f());
+      return rows;
+    } catch { throw new Error("tx"); } finally { TX_CACHE.job = null; }
+  })();
+  return TX_CACHE.job;
+}
+// Which moves has the user already seen? (ids, kept on the phone)
+const txSeen = () => { try { return new Set(JSON.parse(localStorage.getItem("mlb.txSeen") || "[]")); } catch { return new Set(); } };
+const txMarkSeen = (list) => { try { localStorage.setItem("mlb.txSeen", JSON.stringify((list || []).map((t) => t.id).slice(0, 400))); } catch {} };
+const txUnseenCount = (list) => { if (!list) return 0; const seen = txSeen(); if (!seen.size) return 0; return list.filter((t) => !seen.has(t.id)).length; };
+function useTransactions() {
+  const [, tick] = useState(0);
+  useEffect(() => { const f = () => tick((n) => n + 1); TX_CACHE.subs.add(f); loadTransactions().catch(() => {}); return () => { TX_CACHE.subs.delete(f); }; }, []);
+  return TX_CACHE.list;
+}
+function TransactionsTab({ players, onSelect, q }) {
+  const cached = useTransactions();
+  const [list, setList] = useState(TX_CACHE.list);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { let alive = true; loadTransactions().then((rows) => { if (alive) setList(rows); }).catch(() => { if (alive) setFailed(true); }); return () => { alive = false; }; }, [cached]);
+  // Opening this pill marks everything currently listed as seen (the badge resets on the next visit)
+  useEffect(() => { if (list && list.length) txMarkSeen(list); }, [list]);
   useInjuries();
   // jersey number + position for everyone in the feed, from MLB (one batched call)
   const [bio, setBio] = useState({});
@@ -809,14 +823,17 @@ function PlayersTab({ players, onSelect }) {
     () => players.filter((p) => (pill === "retired" ? isRetired(p) : !isRetired(p))).filter((p) => matchesQuery(p, q)),
     [players, q, pill]
   );
+  const txList = useTransactions();
+  const txNew = txUnseenCount(txList);
   const pillsBar = (
     <div className="flex gap-2 px-4 mt-3">
       {[["active", "Active"], ["moves", "Transactions"], ["contracts", "Contracts"], ["retired", "Retired"]].map(([id, label]) => (
         <button key={id} onClick={() => setPill(id)}
-          className={"flex-1 py-2 rounded-full text-[11px] font-extrabold " + (pill === id
+          className={"relative flex-1 py-2 rounded-full text-[11px] font-extrabold " + (pill === id
             ? "bg-blue-600 text-white"
             : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-800")}>
           {label}
+          {id === "moves" && pill !== "moves" && txNew > 0 && <span className="absolute -top-1.5 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-black leading-[18px] text-center shadow">{txNew > 99 ? "99+" : txNew}</span>}
         </button>
       ))}
     </div>
@@ -1342,6 +1359,41 @@ function MatchCard({ pk, g, sides, state }) {
       </span>
     );
   };
+  // LIVE: the broadcast bug — [away block][home block][bases · inning][count · outs], each team on its own colour
+  if (isLive) {
+    const batting = batSide;
+    const block = (k) => {
+      const sd = sides[k]; const sc = g.teams[k].score ?? 0; const bat = k === batting;
+      return (
+        <span className="flex-1 min-w-0 px-2.5 py-2 text-white flex flex-col justify-between" style={{ backgroundColor: bannerColor(sd.abbr) }}>
+          <span className="flex items-center gap-1.5">
+            {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-7 h-7 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : null}
+            <span className="text-[14px] font-black tracking-wide">{sd.abbr}</span>
+            <span className="ml-auto text-[24px] leading-none font-black tabular-nums">{sc}</span>
+          </span>
+          <span className="flex items-baseline gap-1 mt-1.5 text-[10px] font-extrabold uppercase tracking-wide truncate">
+            {bat
+              ? <><span className="text-white/80">{bLine && bLine.slot ? bLine.slot + "." : ""}</span><span className="truncate">{batter ? lastNameOf(batter.name) : "—"}</span><span className="ml-auto pl-1 tabular-nums text-white/90">{bLine ? bLine.h + "-" + bLine.ab : ""}</span></>
+              : <><span className="truncate">{pitcher ? lastNameOf(pitcher.name) : "—"}</span><span className="ml-auto pl-1 tabular-nums text-white/90">{pitches && pitches.pitches != null ? "P: " + pitches.pitches : ""}</span></>}
+          </span>
+        </span>
+      );
+    };
+    return (
+      <span className="flex -mx-4 -my-3 overflow-hidden rounded-2xl">
+        {block("away")}
+        {block("home")}
+        <span className="bg-slate-800 text-white px-2.5 py-2 flex flex-col items-center justify-center shrink-0">
+          <svg width="34" height="24" viewBox="0 0 40 30" aria-label="bases">{[[16, 2, on("second")], [4, 14, on("third")], [28, 14, on("first")]].map(([x, y, lit], i) => <rect key={i} x={x} y={y} width="8" height="8" rx="1.5" transform={`rotate(45 ${x + 4} ${y + 4})`} fill={lit ? "#fbbf24" : "transparent"} stroke={lit ? "#f59e0b" : "rgba(255,255,255,0.8)"} strokeWidth="1.4" />)}</svg>
+          <span className="text-[12px] font-black tabular-nums leading-none mt-1">{half} {inning ?? "—"}</span>
+        </span>
+        <span className="bg-black text-white px-3 py-2 flex flex-col items-center justify-center shrink-0">
+          <span className="text-[20px] font-black tabular-nums leading-none">{balls ?? 0}-{strikes ?? 0}</span>
+          <span className="flex gap-1 mt-1.5">{[0, 1, 2].map((i) => <span key={i} className={"w-2 h-2 rounded-full " + (i < (outs ?? 0) ? "bg-white" : "border border-white/70")} />)}</span>
+        </span>
+      </span>
+    );
+  }
   const pitLine = (sd) => (sd.pitcher
     ? <><span className="font-bold text-slate-800 dark:text-slate-100">{sd.pitcher.name}</span>{sd.pitcher.rec ? <span className="text-slate-400"> ({sd.pitcher.rec})</span> : null}{era(sd) ? <span className="text-slate-500 dark:text-slate-400 tabular-nums"> · {era(sd)} ERA</span> : null}</>
     : <span className="text-slate-400">Pitcher TBD</span>);
@@ -2088,7 +2140,10 @@ const injLabel = (r) => {
 // "Left hamstring strain · Est. return Oct 1"
 const injText = (r) => {
   const ok = (v) => (v && !/not specified|^n\/?a$/i.test(v) ? v : "");
-  const what = [ok(r.side), ok(r.type) || ok(r.location), ok(r.detail)].filter(Boolean).join(" ").trim();
+  const typ = ok(r.type) || ok(r.location), det = ok(r.detail);
+  // "Concussion" + "Concussion" → once; "Elbow" + "Elbow strain" → "Elbow strain"
+  const body = typ && det ? (det.toLowerCase().includes(typ.toLowerCase()) ? det : typ.toLowerCase().includes(det.toLowerCase()) ? typ : typ + " " + det) : typ || det;
+  const what = [ok(r.side), body].filter(Boolean).join(" ").trim();
   return what ? what.charAt(0).toUpperCase() + what.slice(1).toLowerCase() : "";
 };
 // "Estimated Return Date: Sep 22" (month always capitalised)
@@ -2573,7 +2628,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
             <span className="block text-[8px] font-extrabold uppercase tracking-widest text-slate-400">{lbl}</span>
             <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-100 truncate">{v || (coaches ? "—" : "…")}</span>
             {v && coaches && coaches.seasons && coaches.seasons[lbl === "Manager" ? "manager" : lbl === "Bench Coach" ? "bench" : lbl === "Pitching Coach" ? "pitching" : "hitting"] != null && (
-              <span className="block text-[10px] font-medium text-slate-400">({(() => { const n = coaches.seasons[lbl === "Manager" ? "manager" : lbl === "Bench Coach" ? "bench" : lbl === "Pitching Coach" ? "pitching" : "hitting"]; return ordinal(n) + " season"; })()})</span>
+              <span className="block text-[10px] font-medium text-slate-400">{(() => { const n = coaches.seasons[lbl === "Manager" ? "manager" : lbl === "Bench Coach" ? "bench" : lbl === "Pitching Coach" ? "pitching" : "hitting"]; return ordinal(n) + " season"; })()}</span>
             )}
           </span>
         ))}
@@ -3938,7 +3993,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v136";
+const HRB_VERSION = "v137";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
