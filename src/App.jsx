@@ -1481,6 +1481,37 @@ function MatchCard({ pk, g, sides, state }) {
       </span>
     );
   };
+  // UPCOMING: team blocks with the probable pitcher (record · ERA), then the first-pitch block
+  if (state === "Preview") {
+    const block = (k) => {
+      const sd = sides[k]; const pp = sd.pitcher;
+      return (
+        <span className="flex-1 basis-0 min-w-0 px-2.5 py-2 text-white flex flex-col justify-between" style={{ backgroundColor: bannerColor(sd.abbr) }}>
+          <span className="flex items-center gap-1.5">
+            {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-7 h-7 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : null}
+            <span className="text-[14px] font-black tracking-wide">{sd.abbr}</span>
+            <span className="ml-auto text-[10px] font-semibold tabular-nums text-white/75">{sd.rec}</span>
+          </span>
+          <span className="block mt-1.5 text-[10px] font-extrabold uppercase tracking-wide leading-tight">
+            {pp
+              ? <><span className="flex items-baseline"><span className="truncate">{lastNameOf(pp.name)}</span>{pp.rec ? <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{pp.rec}</span> : null}</span>
+                  <span className="block text-white/75 normal-case tabular-nums">{era(sd) ? era(sd) + " ERA" : ""}{pp.hand ? " · " + pp.hand + "HP" : ""}</span></>
+              : <span className="text-white/70">Pitcher TBD</span>}
+          </span>
+        </span>
+      );
+    };
+    return (
+      <span className="flex -mx-4 -my-3 overflow-hidden rounded-2xl">
+        {block("away")}
+        {block("home")}
+        <span className="bg-black text-white w-[118px] py-2 flex flex-col items-center justify-center shrink-0">
+          <span className="text-[16px] font-black tabular-nums leading-none">{time}</span>
+          <span className="text-[9px] font-bold text-white/60 uppercase tracking-widest mt-1">ET</span>
+        </span>
+      </span>
+    );
+  }
   // FINAL: same bug — team blocks with the score and the decision, then a FINAL block
   if (isFinal) {
     const dec = g.decisions || {};
@@ -4147,7 +4178,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v142";
+const HRB_VERSION = "v143";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -4391,6 +4422,8 @@ function PostseasonTab({ onSelectTeam }) {
 
 function HRBoardTab({ players, onSelectPlayer, resetSignal, onSelectTeam }) {
   const [data, setData] = useState(null);
+  const etHour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }).format(new Date()));
+  const [dayOff, setDayOff] = useState(etHour < 5 ? -1 : 0);      // -1 yesterday · 0 today · 1 tomorrow (in ET)
   const [selGame, setSelGame] = useState(null);
   const [view, setView] = useState("matchups"); // matchups | bets | history
   const [bet, setBet] = useState("top");          // bets: top (ranked HR targets) | games (HR% by game)
@@ -4410,9 +4443,10 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal, onSelectTeam }) {
   }, [players]);
   useEffect(() => {
     let alive = true;
+    setData(null);
     (async () => {
       try {
-        const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - off * 86400000));
+        const dayStr = (off) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() - (off - dayOff) * 86400000));
         const [sched, standings] = await Promise.all([
           (await mlbFetch(`v1/schedule?sportId=1&date=${dayStr(0)}&hydrate=team,linescore,probablePitcher,decisions,venue`)).json(),
           mlbFetch("v1/standings?leagueId=103,104").then((r) => r.json()).catch(() => ({})),
@@ -4535,8 +4569,8 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal, onSelectTeam }) {
       }
     })();
     return () => { alive = false; };
-  }, []);
-  const todayLabel = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "2-digit", day: "2-digit" }).format(new Date());
+  }, [dayOff]);
+  const todayLabel = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "2-digit", day: "2-digit" }).format(new Date(Date.now() + dayOff * 86400000));
   // want = "hit" | "pit": with duplicate names (three Luis Garcias) only
   // consider records that carry that kind of stat, so a hitter can never
   // silently pick up a pitcher's Brl%-against.
@@ -5155,6 +5189,16 @@ function HRBoardTab({ players, onSelectPlayer, resetSignal, onSelectTeam }) {
             </button>
           ))}
         </div>
+        {view === "matchups" && (
+          <div className="flex gap-2 mt-3">
+            {[[-1, "Yesterday"], [0, "Today"], [1, "Tomorrow"]].map(([k, lbl]) => (
+              <button key={k} onClick={() => setDayOff(k)}
+                className={"flex-1 py-1.5 rounded-full text-[11px] font-extrabold " + (dayOff === k ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800")}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        )}
         {view === "bets" && (
           <div className="flex gap-2 mt-3">
             {[["top", "HR Targets"], ["games", "HR% by Game"]].map(([k, lbl]) => (
