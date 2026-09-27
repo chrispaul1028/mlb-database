@@ -1494,8 +1494,8 @@ function MatchCard({ pk, g, sides, state }) {
           </span>
           <span className="block mt-1.5 text-[10px] font-extrabold uppercase tracking-wide leading-tight">
             {pp
-              ? <><span className="flex items-baseline"><span className="truncate">{lastNameOf(pp.name)}</span>{pp.rec ? <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{pp.rec}</span> : null}</span>
-                  <span className="block text-white/75 normal-case tabular-nums">{era(sd) ? era(sd) + " ERA" : ""}{pp.hand ? " · " + pp.hand + "HP" : ""}</span></>
+              ? <><span className="flex items-baseline gap-1"><span className="truncate">{lastNameOf(pp.name)}</span>{pp.rec ? <span className="shrink-0 tabular-nums text-white/85">({pp.rec})</span> : null}</span>
+                  <span className="block text-white/75 normal-case tabular-nums">{era(sd) ? era(sd) + " ERA" : ""}</span></>
               : <span className="text-white/70">Pitcher TBD</span>}
           </span>
         </span>
@@ -4178,7 +4178,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v143";
+const HRB_VERSION = "v144";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
