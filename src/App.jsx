@@ -1495,9 +1495,9 @@ function MatchCard({ pk, g, sides, state }) {
             <span className="ml-auto text-[24px] leading-none font-black tabular-nums">{sc}</span>
           </span>
           <span className="block mt-1.5 text-[10px] font-extrabold uppercase tracking-wide leading-tight">
-            {w && dec.winner && <span className="flex items-baseline"><span className="text-emerald-300 shrink-0">W </span><span className="truncate">{lastNameOf(dec.winner.fullName)}</span>{recs[dec.winner.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.winner.id].w}-{recs[dec.winner.id].l}</span>}</span>}
-            {w && dec.save && <span className="flex items-baseline"><span className="text-emerald-300 shrink-0">SV </span><span className="truncate">{lastNameOf(dec.save.fullName)}</span>{recs[dec.save.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.save.id].sv}</span>}</span>}
-            {!w && dec.loser && <span className="flex items-baseline"><span className="text-rose-300 shrink-0">L </span><span className="truncate">{lastNameOf(dec.loser.fullName)}</span>{recs[dec.loser.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.loser.id].w}-{recs[dec.loser.id].l}</span>}</span>}
+            {w && dec.winner && <span className="flex items-baseline"><span className="text-emerald-300 shrink-0 mr-1">W</span><span className="truncate">{lastNameOf(dec.winner.fullName)}</span>{recs[dec.winner.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.winner.id].w}-{recs[dec.winner.id].l}</span>}</span>}
+            {w && dec.save && <span className="flex items-baseline"><span className="text-emerald-300 shrink-0 mr-1">SV</span><span className="truncate">{lastNameOf(dec.save.fullName)}</span>{recs[dec.save.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.save.id].sv}</span>}</span>}
+            {!w && dec.loser && <span className="flex items-baseline"><span className="text-rose-300 shrink-0 mr-1">L</span><span className="truncate">{lastNameOf(dec.loser.fullName)}</span>{recs[dec.loser.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.loser.id].w}-{recs[dec.loser.id].l}</span>}</span>}
           </span>
         </span>
       );
@@ -4147,7 +4147,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v141";
+const HRB_VERSION = "v142";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
