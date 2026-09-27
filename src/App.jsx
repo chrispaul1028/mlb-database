@@ -399,7 +399,7 @@ function useMlbPerson(p) {
         let id = lineId || MLB_ID_CACHE[String(p.name || "").toLowerCase()];
         if (!id) { const s = await (await mlbFetch(`v1/people/search?names=${encodeURIComponent(p.name)}`)).json(); id = ((s.people || [])[0] || {}).id; }
         if (!id) return;
-        const d = await (await mlbFetch(`v1/people/${id}`)).json();
+        const d = await (await mlbFetch(`v1/people/${id}?hydrate=currentTeam`)).json();
         if (alive) setPerson((d.people || [])[0] || { id });
       } catch {}
     })();
@@ -646,7 +646,7 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
             <div className="text-[13px] opacity-85 font-medium mt-0.5 leading-snug">
               {[teamFullName(p), cleanNo(p.no) ? "#" + cleanNo(p.no) : "", posFull(p.pos)].filter(Boolean).join(" · ")}
             </div>
-            <div className="mt-1.5"><LiveStatus p={p} lg /></div>
+            <div className="mt-1.5"><LiveStatus p={p} lg mlbUp={!!(M.currentTeam && TEAM_ABBR_BY_ID[M.currentTeam.id])} /></div>
             <InjuryLine p={p} />
           </div>
         </div>
@@ -2385,9 +2385,10 @@ function InjBadge({ name, team, lg = false }) {
 }
 // Status shown for an Airtable player: live report first; otherwise his Airtable
 // status — except a stale injury status the live report no longer backs up.
-function LiveStatus({ p, lg = false }) {
+function LiveStatus({ p, lg = false, mlbUp = false }) {
   useInjuries();
   const team = teamOfPlayer(p);
+  if (mlbUp && !injFor(p.name, team)) { const t0 = statusTag(p, team); if (t0 && t0.kind === "min") return <StatusBadge status="Active" lg={lg} />; }
   if (injFor(p.name, team)) return <InjBadge name={p.name} team={team} lg={lg} />;
   const t = statusTag(p, team);
   if (t && (t.kind === "min" || t.label === "INJ")) return <span className={"inline-block align-middle font-extrabold rounded shrink-0 " + (lg ? "text-[11px] px-2 py-0.5 " : "text-[9px] px-1.5 py-px ") + INJ_STYLE[t.kind]}>{t.label}</span>;
@@ -3222,6 +3223,7 @@ function TeamStatsPanel({ abbr, view, players, onSelectPlayer }) {
 function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }) {
   useEffect(() => { window.scrollTo(0, 0); }, []);
   useBackSwipe(onBack);
+  const { teams: leagueTeams } = useLeagueData();
   useInjuries();                                   // roster groups re-sort when the live report lands
   const abbr = team.abbr || toAbbr(team.name);
   const [seg, setSeg] = useState("roster");
@@ -3276,23 +3278,28 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }
 
       <div className="px-4 -mt-3">
         {(() => {
-          // Football-style header tiles. Ranks use per-game numbers so teams with games in hand compare fairly.
+          // Football-style header tiles, from MLB's standings (the same numbers Stats › Teams ranks) — Airtable only as a fallback
+          const stList = (leagueTeams && leagueTeams.teams) || null;
+          const stMine = stList ? stList.find((t) => t.abbr === abbr) : null;
+          const pool = stList || teams || [];
+          const T = stMine && stMine.rs != null ? { ...team, rs: stMine.rs, ra: stMine.ra, wins: stMine.wins ?? team.wins, losses: stMine.losses ?? team.losses } : team;
+          const TS = stList && stList.some((t) => t.rs != null) ? stList : teams || [];
           const gp = (t) => (t.wins ?? 0) + (t.losses ?? 0);
           const val = { rs: (t) => (t.rs != null ? t.rs : null), ra: (t) => (t.ra != null ? t.ra : null), diff: (t) => (t.rs != null && t.ra != null ? t.rs - t.ra : null) };
           const rk = (k, low) => {
-            const mineV = val[k](team); if (mineV == null) return null;
-            const vs = (teams || []).map(val[k]).filter((v) => v != null); if (vs.length < 2) return null;
+            const mineV = val[k](T); if (mineV == null) return null;
+            const vs = (TS || []).map(val[k]).filter((v) => v != null); if (vs.length < 2) return null;
             const r = vs.filter((v) => (low ? v < mineV : v > mineV)).length + 1, tied = vs.filter((v) => v === mineV).length > 1;
             return { text: ordinal(r) + (tied ? " (tie)" : ""), cls: rankCls(r) };
           };
-          const diff = team.rs != null && team.ra != null ? team.rs - team.ra : null;
+          const diff = T.rs != null && T.ra != null ? T.rs - T.ra : null;
           const rS = rk("rs"), rA = rk("ra", true), rD = rk("diff");
           const tc = bannerColor(abbr);
           return (
             <>
               <div className="grid grid-cols-3 gap-2">
-                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("rs") : undefined} label="Runs Scored" value={team.rs != null ? team.rs : "—"} sub={rS && rS.text} subCls={rS && rS.cls} />
-                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("ra") : undefined} label="Runs Allowed" value={team.ra != null ? team.ra : "—"} sub={rA && rA.text} subCls={rA && rA.cls} />
+                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("rs") : undefined} label="Runs Scored" value={T.rs != null ? T.rs : "—"} sub={rS && rS.text} subCls={rS && rS.cls} />
+                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("ra") : undefined} label="Runs Allowed" value={T.ra != null ? T.ra : "—"} sub={rA && rA.text} subCls={rA && rA.cls} />
                 <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("diff") : undefined} label="Run Diff" value={diff != null ? (diff > 0 ? "+" : "") + diff : "—"} valueCls={diff == null ? "" : diff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"} sub={rD && rD.text} subCls={rD && rD.cls} />
               </div>
             </>
@@ -4188,7 +4195,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v146";
+const HRB_VERSION = "v147";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -5550,6 +5557,7 @@ export default function App() {
   }, []);
   const [teams, setTeams] = useState([]);
   const [selTeam, setSelTeam] = useState(null);
+  useBackSwipe(() => { if (tab === "stats" && statsJump && statsJump.team) { setTab("teams"); setSelTeam(statsJump.team); setStatsJump(null); window.scrollTo(0, 0); } });
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -5602,7 +5610,7 @@ export default function App() {
           players={players}
           onBack={() => setSelTeam(null)}
           onSelectPlayer={openPlayer}
-          onJumpStat={(key) => { setStatsJump({ catId: "teams", key, hl: selTeam.abbr || toAbbr(selTeam.name) }); setSel(null); setSelTeam(null); setTab("stats"); setNavTap((n) => n + 1); window.scrollTo(0, 0); }}
+          onJumpStat={(key) => { setStatsJump({ catId: "teams", key, hl: selTeam.abbr || toAbbr(selTeam.name), team: selTeam }); setSel(null); setSelTeam(null); setTab("stats"); setNavTap((n) => n + 1); window.scrollTo(0, 0); }}
         />
       )}
       {fatal && (
