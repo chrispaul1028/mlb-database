@@ -38,7 +38,7 @@ const CHIP = {
 const HR_ACCENT = "text-emerald-600 dark:text-emerald-400";
 
 const TEAM_COLORS = {
-  ARI: "#A71930", ATL: "#CE1141", BAL: "#DF4601", BOS: "#BD3039",
+  ARI: "#A71930", ATL: "#13274F", BAL: "#DF4601", BOS: "#BD3039",
   CHC: "#0E3386", CWS: "#27251F", CHW: "#27251F", CIN: "#C6011F",
   CLE: "#00385D", COL: "#333366", DET: "#0C2340", HOU: "#002D62",
   KC: "#004687", LAA: "#BA0021", LAD: "#005A9C", MIA: "#00A3E0",
@@ -2549,7 +2549,8 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
   }, [abbr]);
 
   useInjuries();                                   // re-draw when the live report lands / refreshes
-  const tagOf = (pl) => statusTag(pl, abbr);       // { label, kind } or null — live report first
+  const inToday = (pl) => !!(lineup && pl && ((lineup.pitcher && hrbNrm(lineup.pitcher) === hrbNrm(pl.name)) || (lineup.order || []).some((o) => hrbNrm(o.name) === hrbNrm(pl.name))));
+  const tagOf = (pl) => { const t = statusTag(pl, abbr); return t && t.kind === "min" && inToday(pl) ? null : t; };   // today's starter / lineup can't be "in the minors"
   const injTag = (pl) => { const t = tagOf(pl); return t ? t.label : null; };
   // Minor leaguers never appear here — not on the field, not on the bench (they live at the bottom of the Roster tab).
   const bigLeague = roster.filter((pl) => !isMinors(pl, abbr));
@@ -2770,7 +2771,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
               style={{ left: sp.x + "%", top: (sp.y / FIELD_H * 100) + "%" }}>
               <span className="relative">
                 {p ? (
-                  <span className={"block w-11 h-11 rounded-full overflow-hidden shadow-md bg-white border-2 " + (tagOf(p) ? TAG_RING[tagOf(p).kind] : "border-white/80")}>
+                  <span className={"block w-[52px] h-[52px] rounded-full overflow-hidden shadow-md bg-white border-2 " + (tagOf(p) ? TAG_RING[tagOf(p).kind] : "border-white/80")}>
                     {p._virtual ? <span className="w-full h-full flex items-center justify-center text-[10px] font-extrabold text-slate-600">{sp.lbl}</span> : <Avatar p={p} />}
                   </span>
                 ) : (
@@ -3277,8 +3278,7 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }
         {(() => {
           // Football-style header tiles. Ranks use per-game numbers so teams with games in hand compare fairly.
           const gp = (t) => (t.wins ?? 0) + (t.losses ?? 0);
-          const val = { rs: (t) => (t.ppg != null ? t.ppg : t.rs != null && gp(t) ? t.rs / gp(t) : null), ra: (t) => (t.oppPpg != null ? t.oppPpg : t.ra != null && gp(t) ? t.ra / gp(t) : null),
-            diff: (t) => (t.rs != null && t.ra != null && gp(t) ? (t.rs - t.ra) / gp(t) : null) };
+          const val = { rs: (t) => (t.rs != null ? t.rs : null), ra: (t) => (t.ra != null ? t.ra : null), diff: (t) => (t.rs != null && t.ra != null ? t.rs - t.ra : null) };
           const rk = (k, low) => {
             const mineV = val[k](team); if (mineV == null) return null;
             const vs = (teams || []).map(val[k]).filter((v) => v != null); if (vs.length < 2) return null;
@@ -3291,9 +3291,9 @@ function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }
           return (
             <>
               <div className="grid grid-cols-3 gap-2">
-                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("rspg") : undefined} label="Runs Scored" value={team.rs != null ? team.rs : "—"} sub={rS && rS.text} subCls={rS && rS.cls} />
-                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("rapg") : undefined} label="Runs Allowed" value={team.ra != null ? team.ra : "—"} sub={rA && rA.text} subCls={rA && rA.cls} />
-                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("diffpg") : undefined} label="Run Diff" value={diff != null ? (diff > 0 ? "+" : "") + diff : "—"} valueCls={diff == null ? "" : diff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"} sub={rD && rD.text} subCls={rD && rD.cls} />
+                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("rs") : undefined} label="Runs Scored" value={team.rs != null ? team.rs : "—"} sub={rS && rS.text} subCls={rS && rS.cls} />
+                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("ra") : undefined} label="Runs Allowed" value={team.ra != null ? team.ra : "—"} sub={rA && rA.text} subCls={rA && rA.cls} />
+                <RankTile tc={tc} onClick={onJumpStat ? () => onJumpStat("diff") : undefined} label="Run Diff" value={diff != null ? (diff > 0 ? "+" : "") + diff : "—"} valueCls={diff == null ? "" : diff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"} sub={rD && rD.text} subCls={rD && rD.cls} />
               </div>
             </>
           );
@@ -3611,24 +3611,33 @@ const MLB_LEADER_CATS = [
   { id: "hrallowed", label: "HR Allowed", side: "pit", positions: ["SP", "RP"],
     stats: [["hr9", "HR/9"], ["hr", "HR"]] },
   { id: "teams", label: "Teams",
-    stats: [["rspg", "Runs/G"], ["rapg", "Runs Allowed/G"], ["diffpg", "Run Diff/G"], ["hr", "HR"], ["ops", "OPS"], ["avg", "AVG"], ["sb", "SB"], ["era", "ERA"], ["whip", "WHIP"], ["hr9", "HR/9 Allowed"]] },
+    stats: [["rs", "Runs"], ["ra", "Runs Allowed"], ["diff", "Run Diff"], ["hr", "HR"], ["ops", "OPS"], ["avg", "AVG"], ["sb", "SB"], ["era", "ERA"], ["whip", "WHIP"], ["hr9", "HR/9 Allowed"]] },
 ];
 const MLB_RATE = new Set(["avg", "obp", "slg", "ops", "iso", "hrPa", "era", "whip", "k9", "hr9"]);   // need a qualified sample
-const MLB_LOW_FIRST = { pitching: new Set(["era", "whip"]), teams: new Set(["era", "whip", "hr9", "rapg"]) }; // lower is better
+const MLB_LOW_FIRST = { pitching: new Set(["era", "whip"]), teams: new Set(["era", "whip", "hr9", "ra"]) }; // lower is better
 // Team value for a Stats › Teams key: the run tiles come from the standings (per game, so games in hand don't skew ranks), the rest from team stats.
 const teamStatVal = (t, key) => {
   const gp = t.games || (t.wins ?? 0) + (t.losses ?? 0);
-  if (key === "rspg") return t.rs != null && gp ? t.rs / gp : null;
-  if (key === "rapg") return t.ra != null && gp ? t.ra / gp : null;
-  if (key === "diffpg") return t.rs != null && t.ra != null && gp ? (t.rs - t.ra) / gp : null;
+  if (key === "rs") return t.rs != null ? t.rs : null;
+  if (key === "ra") return t.ra != null ? t.ra : null;
+  if (key === "diff") return t.rs != null && t.ra != null ? t.rs - t.ra : null;
   return t.stx ? t.stx[key] : null;
+};
+// the per-game line under a team's total on Stats › Teams
+const teamPerGame = (t, key) => {
+  const gp = t.games || (t.wins ?? 0) + (t.losses ?? 0);
+  if (!gp) return null;
+  const v = teamStatVal(t, key);
+  if (v == null) return null;
+  if (["rs", "ra", "diff", "hr", "sb"].includes(key)) return (key === "diff" && v > 0 ? "+" : "") + (v / gp).toFixed(2) + " / game";
+  return null;
 };
 const mlbFmtStat = (key, v) => {
   if (v == null) return "—";
   if (["avg", "obp", "slg", "ops", "iso"].includes(key)) return Number(v).toFixed(3).replace(/^0/, "");
   if (key === "hrPa") return (Number(v) * 100).toFixed(1) + "%";
   if (["era", "whip", "k9", "hr9", "rpg", "rspg", "rapg"].includes(key)) return Number(v).toFixed(2);
-  if (key === "diffpg") return (v > 0 ? "+" : "") + Number(v).toFixed(2);
+  if (key === "diff") return (v > 0 ? "+" : "") + Math.round(v);
   if (key === "outs") return Math.floor(v / 3) + "." + (v % 3);
   return String(v);
 };
@@ -3695,7 +3704,7 @@ function StatsTab({ players, onSelect, jump }) {
 
   const teamRows = useMemo(() => {
     if (cat.id !== "teams" || !teamStats) return [];
-    return (teamStats.teams || []).map((t) => ({ abbr: t.abbr, name: t.name, v: teamStatVal(t, key), gp: t.games || (t.wins ?? 0) + (t.losses ?? 0) })).filter((r) => r.v != null)
+    return (teamStats.teams || []).map((t) => ({ abbr: t.abbr, name: t.name, v: teamStatVal(t, key), gp: t.games || (t.wins ?? 0) + (t.losses ?? 0), pg: teamPerGame(t, key) })).filter((r) => r.v != null)
       .sort((a, b) => (lowFirst ? a.v - b.v : b.v - a.v));
   }, [teamStats, catId, key]);
 
@@ -3751,7 +3760,7 @@ function StatsTab({ players, onSelect, jump }) {
               </div>
               {teamRows.map((r, i) => {
                 const best = teamRows[0].v || 1, worst = teamRows[teamRows.length - 1].v || 0;
-                const w = key === "diffpg" ? ((r.v - worst) / ((best - worst) || 1)) * 100 : lowFirst ? (best / (r.v || 1)) * 100 : (r.v / best) * 100;
+                const w = key === "diff" ? ((r.v - worst) / ((best - worst) || 1)) * 100 : lowFirst ? (best / (r.v || 1)) * 100 : (r.v / best) * 100;
                 return (
                   <div key={r.abbr} id={"team-row-" + r.abbr} className={"px-3 py-2 flex items-center gap-2.5 transition-colors duration-700 " + (hl === r.abbr ? "bg-amber-50 dark:bg-amber-900/30 ring-2 ring-inset ring-amber-400" : "")}>
                     <div className={"w-6 text-center text-[13px] font-black tabular-nums " + (i < 3 ? "text-blue-600" : "text-slate-400")}>{i + 1}</div>
@@ -3764,7 +3773,7 @@ function StatsTab({ players, onSelect, jump }) {
                     </div>
                     <div className="text-right shrink-0">
                       <div className="text-lg font-black tabular-nums text-slate-900 dark:text-white leading-none">{mlbFmtStat(key, r.v)}</div>
-                      <div className="text-[9px] font-semibold tabular-nums text-slate-400 mt-0.5">{r.gp} GP</div>
+                      <div className="text-[9px] font-semibold tabular-nums text-slate-400 mt-0.5">{r.pg || r.gp + " GP"}</div>
                     </div>
                   </div>
                 );
@@ -4179,7 +4188,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v145";
+const HRB_VERSION = "v146";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
