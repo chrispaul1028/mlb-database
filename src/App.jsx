@@ -413,6 +413,98 @@ const BAT_PILLS = [["h", "Hits", "hits"], ["hr", "HR", "homeRuns"], ["rbi", "RBI
 const PIT_PILLS = [["so", "K", "strikeOuts"], ["ip", "IP", "inningsPitched"], ["er", "Earned Runs", "earnedRuns"], ["h", "Hits", "hits"], ["bb", "Walks", "baseOnBalls"], ["np", "Pitches", "numberOfPitches"], ["era", "ERA", null]];
 const ipNum = (ip) => { const f = parseFloat(ip || "0"); return Math.floor(f) + Math.round((f % 1) * 10) / 3; };
 
+// ═══════════════ PITCHER SCOUTING CARD ═══════════════════════════
+// Under a pitcher's season block: his arsenal (each pitch: how often, how hard,
+// how much spin), what he gives up, the platoon split, and his last 5 outings.
+// All from MLB's Stats API (pitchArsenal, statSplits vl/vr, season, gameLog).
+const SCOUT_CACHE = {};
+function PitcherScout({ id, tc, games, season }) {
+  const [d, setD] = useState(SCOUT_CACHE[id] || null);
+  useEffect(() => {
+    if (!id || SCOUT_CACHE[id]) return;
+    let alive = true;
+    (async () => {
+      const yr = parseInt(String(season || CURRENT_SEASON).slice(0, 4), 10);
+      const get = async (path) => { try { return await (await mlbFetch(path)).json(); } catch { return null; } };
+      const [ars, spl, sea] = await Promise.all([
+        get(`v1/people/${id}/stats?stats=pitchArsenal&group=pitching&season=${yr}`),
+        get(`v1/people/${id}/stats?stats=statSplits&group=pitching&sitCodes=vl,vr&season=${yr}`),
+        get(`v1/people/${id}/stats?stats=season&group=pitching&season=${yr}`),
+      ]);
+      const pitches = ((((ars || {}).stats || [])[0] || {}).splits || []).map((s) => { const x = s.stat || {}; const pct = Number(x.percentage ?? x.pitchPercentage ?? 0); return { name: (x.type && (x.type.description || x.type.code)) || "?", code: x.type && x.type.code, pct: pct > 1 ? pct / 100 : pct, mph: Number(x.averageSpeed ?? x.avgSpeed ?? 0) || null, spin: Number(x.averageSpin ?? x.avgSpin ?? 0) || null, n: x.count ?? x.totalPitches ?? null }; })
+        .filter((x) => x.pct > 0.01).sort((a, b) => b.pct - a.pct);
+      const splits = {};
+      for (const s of (((spl || {}).stats || [])[0] || {}).splits || []) { const code = s.split && s.split.code; if (code) splits[code] = s.stat || {}; }
+      const st = ((((sea || {}).stats || [])[0] || {}).splits || [])[0]; const sx = (st && st.stat) || {};
+      const out = { pitches, splits, sx };
+      SCOUT_CACHE[id] = out;
+      if (alive) setD(out);
+    })();
+    return () => { alive = false; };
+  }, [id]);
+  const last5 = (games || []).slice(-5).reverse();
+  const num = (v, dp = 3) => (v == null || v === "" || v === "-.--" ? "—" : Number(v).toFixed(dp).replace(/^0/, ""));
+  const Head = ({ children }) => <div className="text-[9px] font-extrabold tracking-widest uppercase text-black dark:text-white px-1 mb-1.5">{children}</div>;
+  const Card = ({ children, className = "" }) => <div className={"bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm " + className}>{children}</div>;
+  if (!d) return <div className="text-[11px] text-slate-400 text-center py-6">Loading scouting report…</div>;
+  const { pitches, splits, sx } = d;
+  const gives = [["Opp AVG", sx.avg != null ? num(sx.avg) : "—"], ["HR / 9", sx.homeRunsPer9 != null ? Number(sx.homeRunsPer9).toFixed(2) : "—"], ["GB / FB", sx.groundOutsToAirouts != null ? Number(sx.groundOutsToAirouts).toFixed(2) : "—"], ["Strike %", sx.strikePercentage != null ? Math.round(Number(sx.strikePercentage) * (Number(sx.strikePercentage) <= 1 ? 100 : 1)) + "%" : "—"]];
+  const row = (label, s) => (
+    <div className="grid grid-cols-[52px_repeat(4,1fr)] items-center px-3 py-2 border-t border-slate-100 dark:border-slate-800">
+      <span className="text-[11px] font-black text-slate-700 dark:text-slate-200">{label}</span>
+      {[num(s.avg), num(s.ops), s.homeRuns ?? "—", s.strikeOuts ?? "—"].map((v, i) => <span key={i} className="text-center text-[13px] font-extrabold tabular-nums text-slate-900 dark:text-white">{v}</span>)}
+    </div>
+  );
+  return (
+    <div className="mt-6">
+      <Head>Scouting report</Head>
+      <Card className="px-3 py-3">
+        <div className="text-[9px] font-bold tracking-widest uppercase text-slate-400 mb-2">Arsenal · usage · velocity · spin</div>
+        {pitches.length === 0 && <div className="text-[11px] text-slate-400 py-2">No pitch data for this season yet.</div>}
+        {pitches.map((p) => (
+          <div key={p.name} className="mb-2">
+            <div className="flex items-baseline justify-between text-[12px]">
+              <span className="font-bold text-slate-800 dark:text-slate-100">{p.name}</span>
+              <span className="tabular-nums text-slate-500 dark:text-slate-400"><span className="font-extrabold text-slate-900 dark:text-white">{Math.round(p.pct * 100)}%</span>{p.mph ? " · " + p.mph.toFixed(1) + " mph" : ""}{p.spin ? " · " + Math.round(p.spin) + " rpm" : ""}</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden mt-1"><div className="h-full rounded-full" style={{ width: Math.max(3, p.pct * 100) + "%", backgroundColor: tc }} /></div>
+          </div>
+        ))}
+      </Card>
+      <div className="grid grid-cols-4 gap-2 mt-3">
+        {gives.map(([k, v]) => (
+          <div key={k} className="rounded-xl border-2 bg-white dark:bg-slate-900 text-center overflow-hidden" style={{ borderColor: tc + "66" }}>
+            <div className="text-[7px] font-extrabold tracking-wider uppercase text-white truncate px-0.5 py-1" style={{ backgroundColor: tc }}>{k}</div>
+            <div className="text-[17px] leading-tight font-black tabular-nums text-slate-900 dark:text-white py-1.5">{v}</div>
+          </div>
+        ))}
+      </div>
+      <Card className="mt-3 overflow-hidden">
+        <div className="grid grid-cols-[52px_repeat(4,1fr)] px-3 py-1.5 text-[8px] font-extrabold uppercase tracking-wider text-white" style={{ backgroundColor: tc }}>
+          <span>Vs</span>{["AVG", "OPS", "HR", "K"].map((k) => <span key={k} className="text-center">{k}</span>)}
+        </div>
+        {row("LHB", splits.vl || {})}
+        {row("RHB", splits.vr || {})}
+      </Card>
+      {last5.length > 0 && (
+        <Card className="mt-3 overflow-hidden">
+          <div className="grid grid-cols-[44px_44px_repeat(5,1fr)] px-3 py-1.5 text-[8px] font-extrabold uppercase tracking-wider text-white" style={{ backgroundColor: tc }}>
+            <span>Date</span><span>Opp</span>{["IP", "H", "ER", "K", "P"].map((k) => <span key={k} className="text-center">{k}</span>)}
+          </div>
+          {last5.map((x, i) => { const s = x.stat || {}; const opp = x.opponent ? (toAbbr(x.opponent.name) || x.opponent.abbreviation || "") : ""; return (
+            <div key={i} className="grid grid-cols-[44px_44px_repeat(5,1fr)] items-center px-3 py-1.5 border-t border-slate-100 dark:border-slate-800 text-[12px] tabular-nums">
+              <span className="font-semibold text-slate-500">{String(x.date || "").slice(5).replace("-", "/")}</span>
+              <span className="font-bold text-slate-700 dark:text-slate-200">{x.isHome === false ? "@" : ""}{opp}</span>
+              {[s.inningsPitched ?? "—", s.hits ?? 0, s.earnedRuns ?? 0, s.strikeOuts ?? 0, s.numberOfPitches ?? s.pitchesThrown ?? "—"].map((v, j) => <span key={j} className={"text-center " + (j === 0 || j === 3 ? "font-black text-slate-900 dark:text-white" : "font-semibold text-slate-700 dark:text-slate-200")}>{v}</span>)}
+            </div>
+          ); })}
+        </Card>
+      )}
+      <div className="text-[9px] text-slate-400 mt-2 px-1">Usage and velocity from MLB's pitch tracking. GB/FB above 1.0 = ground-ball pitcher; a low number means fly balls, which is what home runs need.</div>
+    </div>
+  );
+}
+
 function SeasonPanel({ p, person, line, season }) {
   const pitcher = isPitcherP(p) ? !!(line && line.pit) || !(line && line.hit) : !(line && line.hit) && !!(line && line.pit);
   const S = line ? (pitcher ? line.pit : line.hit) : null;
@@ -525,6 +617,7 @@ function SeasonPanel({ p, person, line, season }) {
           {gl != null && games.length >= 2 && <div className="text-[9px] text-slate-400 text-center mt-1">{cur[1]} · {winLbl} over his last {games.length} {pitcher ? "outings" : "games"}</div>}
         </div>
       </div>
+      {pitcher && id && <PitcherScout id={id} tc={tc} games={games} season={season} />}
     </>
   );
 }
@@ -1402,9 +1495,9 @@ function MatchCard({ pk, g, sides, state }) {
             <span className="ml-auto text-[24px] leading-none font-black tabular-nums">{sc}</span>
           </span>
           <span className="block mt-1.5 text-[10px] font-extrabold uppercase tracking-wide leading-tight">
-            {w && dec.winner && <span className="flex items-baseline"><span className="text-emerald-300 shrink-0">Win </span><span className="truncate">{lastNameOf(dec.winner.fullName)}</span>{recs[dec.winner.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.winner.id].w}-{recs[dec.winner.id].l}</span>}</span>}
-            {w && dec.save && <span className="flex items-baseline"><span className="text-emerald-300 shrink-0">Save </span><span className="truncate">{lastNameOf(dec.save.fullName)}</span>{recs[dec.save.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.save.id].sv}</span>}</span>}
-            {!w && dec.loser && <span className="flex items-baseline"><span className="text-rose-300 shrink-0">Loss </span><span className="truncate">{lastNameOf(dec.loser.fullName)}</span>{recs[dec.loser.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.loser.id].w}-{recs[dec.loser.id].l}</span>}</span>}
+            {w && dec.winner && <span className="flex items-baseline"><span className="text-emerald-300 shrink-0">W </span><span className="truncate">{lastNameOf(dec.winner.fullName)}</span>{recs[dec.winner.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.winner.id].w}-{recs[dec.winner.id].l}</span>}</span>}
+            {w && dec.save && <span className="flex items-baseline"><span className="text-emerald-300 shrink-0">SV </span><span className="truncate">{lastNameOf(dec.save.fullName)}</span>{recs[dec.save.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.save.id].sv}</span>}</span>}
+            {!w && dec.loser && <span className="flex items-baseline"><span className="text-rose-300 shrink-0">L </span><span className="truncate">{lastNameOf(dec.loser.fullName)}</span>{recs[dec.loser.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.loser.id].w}-{recs[dec.loser.id].l}</span>}</span>}
           </span>
         </span>
       );
@@ -4054,7 +4147,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v140";
+const HRB_VERSION = "v141";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
