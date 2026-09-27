@@ -1331,8 +1331,30 @@ function useLiveBug(pk, on) {
 // The Matchups card, every state: away team on top, home below (logo · abbr/record · score),
 // the right block is the game time (upcoming), FINAL, or the live situation; the bottom
 // line is the probables (upcoming), W/L/SV (final), or pitcher + batter (live).
+const DEC_CACHE = {};
+function useDecisionRecords(pk, dec, on) {
+  const [rec, setRec] = useState(DEC_CACHE[pk] || null);
+  useEffect(() => {
+    if (!on || DEC_CACHE[pk]) return;
+    const ids = [dec.winner, dec.loser, dec.save].filter(Boolean).map((x) => x.id).filter(Boolean);
+    if (!ids.length) return;
+    let alive = true;
+    (async () => {
+      try {
+        const d = await (await mlbFetch(`v1/people?personIds=${ids.join(",")}&hydrate=stats(group=[pitching],type=[season])`)).json();
+        const out = {};
+        for (const p of d.people || []) { const st = ((((p.stats || [])[0] || {}).splits || [])[0] || {}).stat || {}; out[p.id] = { w: st.wins ?? 0, l: st.losses ?? 0, sv: st.saves ?? 0 }; }
+        DEC_CACHE[pk] = out;
+        if (alive) setRec(out);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [pk, on]);
+  return rec || {};
+}
 function MatchCard({ pk, g, sides, state }) {
   const isLive = state === "Live", isFinal = state === "Final";
+  const recs = useDecisionRecords(pk, g.decisions || {}, isFinal);
   const d = useLiveBug(pk, isLive);
   const sit = d && d.state === "in" ? d.situation : null;
   const ls = g.linescore || {};
@@ -1380,9 +1402,9 @@ function MatchCard({ pk, g, sides, state }) {
             <span className="ml-auto text-[24px] leading-none font-black tabular-nums">{sc}</span>
           </span>
           <span className="block mt-1.5 text-[10px] font-extrabold uppercase tracking-wide leading-tight">
-            {w && dec.winner && <span className="block truncate"><span className="text-emerald-300">Win </span>{lastNameOf(dec.winner.fullName)}</span>}
-            {w && dec.save && <span className="block truncate"><span className="text-emerald-300">Save </span>{lastNameOf(dec.save.fullName)}</span>}
-            {!w && dec.loser && <span className="block truncate"><span className="text-rose-300">Loss </span>{lastNameOf(dec.loser.fullName)}</span>}
+            {w && dec.winner && <span className="flex items-baseline"><span className="text-emerald-300 shrink-0">Win </span><span className="truncate">{lastNameOf(dec.winner.fullName)}</span>{recs[dec.winner.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.winner.id].w}-{recs[dec.winner.id].l}</span>}</span>}
+            {w && dec.save && <span className="flex items-baseline"><span className="text-emerald-300 shrink-0">Save </span><span className="truncate">{lastNameOf(dec.save.fullName)}</span>{recs[dec.save.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.save.id].sv}</span>}</span>}
+            {!w && dec.loser && <span className="flex items-baseline"><span className="text-rose-300 shrink-0">Loss </span><span className="truncate">{lastNameOf(dec.loser.fullName)}</span>{recs[dec.loser.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.loser.id].w}-{recs[dec.loser.id].l}</span>}</span>}
           </span>
         </span>
       );
@@ -2863,9 +2885,10 @@ function RosterRow({ p, abbr, chip, chipCls, chipText = false, nameSuffix, right
           <span className="block text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate">
             {cleanNo(p.no) && <span className="text-[13px] font-bold text-slate-400">#{cleanNo(p.no)} </span>}{p.name}{nameSuffix && <span className="text-[13px] font-bold text-slate-400"> {nameSuffix}</span>}
           </span>
-          <span className="flex gap-1 mt-1 justify-start">
-            {[...tiles, ...(rightChip ? [["Bats", rightChip]] : [])].map(([lbl, v], _i, all) => (
-              <span key={lbl} className={(all.length > 4 ? "w-[42px]" : all.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border-2 bg-white dark:bg-slate-900 text-center overflow-hidden"} style={{ borderColor: tc + "66" }}>
+          <span className="flex items-stretch gap-1 mt-1 justify-start">
+            {rightChip && <span className="order-last ml-auto w-[36px] rounded-lg border-2 flex items-center justify-center text-[12px] font-extrabold text-white" style={{ backgroundColor: bannerColor(abbr), borderColor: bannerColor(abbr) }}>{rightChip}</span>}
+            {tiles.map(([lbl, v], _i, all) => (
+              <span key={lbl} className={(all.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border-2 bg-white dark:bg-slate-900 text-center overflow-hidden"} style={{ borderColor: tc + "66" }}>
                 <span className="block text-[7px] font-extrabold uppercase tracking-wider text-white py-0.5" style={{ backgroundColor: tc }}>{lbl}</span>
                 <span className={"block leading-tight font-extrabold tabular-nums tracking-tight whitespace-nowrap text-slate-900 dark:text-white py-1 " + (String(v ?? "").length >= 5 ? "text-[11px]" : "text-[14px]")}>{v ?? "—"}</span>
               </span>
@@ -4031,7 +4054,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v139";
+const HRB_VERSION = "v140";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
