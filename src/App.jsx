@@ -1454,11 +1454,22 @@ function MatchCard({ pk, g, sides, state }) {
   const off = ls.offense || {};
   const on = (b) => (sit ? !!(sit.runners && sit.runners[b]) : !!off[b]);
   const balls = sit ? sit.balls : ls.balls, strikes = sit ? sit.strikes : ls.strikes, outs = sit ? sit.outs : ls.outs;
-  const inning = sit ? d.inning : ls.currentInning, half = (sit ? d.inningHalf : ls.inningHalf) === "Top" ? "▲" : "▼";
-  const battingAbbr = isLive ? (sit ? sit.battingTeam : (ls.inningHalf === "Top" ? sides.away.abbr : sides.home.abbr)) : null;
-  const batSide = battingAbbr === sides.home.abbr ? "home" : "away";
+  const inning = sit ? d.inning : ls.currentInning;
+  const halfRaw = (sit ? d.inningHalf : ls.inningHalf) === "Top" ? "▲" : "▼";
   const pitcher = sit ? sit.pitcher : (ls.defense && ls.defense.pitcher ? { id: ls.defense.pitcher.id, name: ls.defense.pitcher.fullName } : null);
   const batter = sit ? sit.batter : (off.batter ? { id: off.batter.id, name: off.batter.fullName } : null);
+  // Who is batting: MLB's own offense team first, else the side whose box score lists the batter,
+  // else the half-inning (which lags between innings — the offense flips before the label does)
+  const offTeamId = off.team && off.team.id;
+  const batSide = (() => {
+    if (offTeamId && g.teams.home.team && offTeamId === g.teams.home.team.id) return "home";
+    if (offTeamId && g.teams.away.team && offTeamId === g.teams.away.team.id) return "away";
+    if (d && batter) { for (const k of ["away", "home"]) if (((d.box[k] && d.box[k].batters) || []).some((x) => x.id === batter.id)) return k; }
+    if (sit && sit.battingTeam) return sit.battingTeam === sides.home.abbr ? "home" : "away";
+    return ls.inningHalf === "Top" ? "away" : "home";
+  })();
+  const battingAbbr = isLive ? sides[batSide].abbr : null;
+  const half = isLive ? (batSide === "away" ? "▲" : "▼") : halfRaw;   // the arrow follows who's actually up
   const bLine = d && batter ? ([...((d.box.away && d.box.away.batters) || []), ...((d.box.home && d.box.home.batters) || [])].find((x) => x.id === batter.id) || { h: 0, ab: 0, slot: null }) : null;
   const pitches = d && pitcher ? [...(d.box.away.pitchers || []), ...(d.box.home.pitchers || [])].find((x) => x.id === pitcher.id) : null;
   const base = (x, y, lit) => <rect x={x} y={y} width="8" height="8" rx="1.5" transform={`rotate(45 ${x + 4} ${y + 4})`} fill={lit ? "#f59e0b" : "transparent"} stroke={lit ? "#d97706" : "#94a3b8"} strokeWidth="1.3" />;
@@ -4195,7 +4206,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v147";
+const HRB_VERSION = "v148";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
