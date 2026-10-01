@@ -38,7 +38,7 @@ const CHIP = {
 const HR_ACCENT = "text-emerald-600 dark:text-emerald-400";
 
 const TEAM_COLORS = {
-  ARI: "#A71930", ATL: "#13274F", BAL: "#DF4601", BOS: "#BD3039",
+  ARI: "#A71930", ATL: "#13274F", BAL: "#DF4601", BOS: "#0C2340",
   CHC: "#0E3386", CWS: "#27251F", CHW: "#27251F", CIN: "#C6011F",
   CLE: "#00385D", COL: "#333366", DET: "#0C2340", HOU: "#002D62",
   KC: "#004687", LAA: "#BA0021", LAD: "#005A9C", MIA: "#00A3E0",
@@ -1580,10 +1580,10 @@ function MatchCard({ pk, g, sides, state }) {
         {block("home")}
         <span className="bg-slate-800 text-white w-[54px] py-2 flex flex-col items-center justify-center shrink-0">
           <svg width="34" height="24" viewBox="0 0 40 30" aria-label="bases">{[[16, 2, on("second")], [4, 14, on("third")], [28, 14, on("first")]].map(([x, y, lit], i) => <rect key={i} x={x} y={y} width="8" height="8" rx="1.5" transform={`rotate(45 ${x + 4} ${y + 4})`} fill={lit ? "#fbbf24" : "transparent"} stroke={lit ? "#f59e0b" : "rgba(255,255,255,0.8)"} strokeWidth="1.4" />)}</svg>
-          <span className="text-[12px] font-black tabular-nums leading-none mt-1">{half} {inning ?? "—"}</span>
+          <span className="text-[12px] font-black tabular-nums leading-none mt-1"><span className="text-amber-400">{half}</span> {inning ?? "—"}</span>
         </span>
         <span className="bg-black text-white w-[64px] py-2 flex flex-col items-center justify-center shrink-0">
-          <span className="text-[20px] font-black tabular-nums leading-none">{balls ?? 0}-{strikes ?? 0}</span>
+          <span className="text-[16px] font-black tabular-nums leading-none">{balls ?? 0}-{strikes ?? 0}</span>
           <span className="flex gap-1 mt-1.5">{[0, 1, 2].map((i) => <span key={i} className={"w-2 h-2 rounded-full " + (i < (outs ?? 0) ? "bg-white" : "border border-white/70")} />)}</span>
         </span>
       </span>
@@ -3024,7 +3024,6 @@ function RosterRow({ p, abbr, chip, chipCls, chipText = false, nameSuffix, right
             {cleanNo(p.no) && <span className="text-[13px] font-bold text-slate-400">#{cleanNo(p.no)} </span>}{p.name}{nameSuffix && <span className="text-[13px] font-bold text-slate-400"> {nameSuffix}</span>}
           </span>
           <span className="flex items-stretch gap-1 mt-1 justify-start">
-            {rightChip && <span className="order-last ml-auto w-[36px] rounded-lg border-2 flex items-center justify-center text-[12px] font-extrabold text-white" style={{ backgroundColor: bannerColor(abbr), borderColor: bannerColor(abbr) }}>{rightChip}</span>}
             {tiles.map(([lbl, v], _i, all) => (
               <span key={lbl} className={(all.length > 3 ? "w-[46px]" : "w-[50px]") + " rounded-lg border-2 bg-white dark:bg-slate-900 text-center overflow-hidden"} style={{ borderColor: tc + "66" }}>
                 <span className="block text-[7px] font-extrabold uppercase tracking-wider text-white py-0.5" style={{ backgroundColor: tc }}>{lbl}</span>
@@ -3033,7 +3032,7 @@ function RosterRow({ p, abbr, chip, chipCls, chipText = false, nameSuffix, right
             ))}
           </span>
         </span>
-
+        {rightChip && <span className="shrink-0 w-9 text-center self-center text-[15px] font-black tabular-nums leading-none text-[color:var(--tc)] dark:text-white" style={{ "--tc": bannerColor(abbr) }}>{rightChip}</span>}
       </span>
       {/* second row lines up with the columns above: tag under the picture, note + return date under the tiles */}
       {(tag || badge || under) && (
@@ -3082,7 +3081,7 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
     const era = x ? fmt2(x.era) : a.era != null ? fmt2(a.era) : null;
     const whip = x ? fmt2(x.whip) : a.whip != null ? fmt2(a.whip) : null;
     if (mode === "sp") return [["W-L", x ? x.w + "-" + x.l : a.w != null ? Math.round(a.w) + "-" + Math.round(a.l ?? 0) : null], ["ERA", era], ["K", x ? x.so : null], ["WHIP", whip]];
-    if (mode === "rp") return [["IP", x ? x.ip : null], ["ERA", era], [x && x.sv > 0 ? "SV" : "HLD", x ? (x.sv > 0 ? x.sv : x.hld) : null]];
+    if (mode === "rp") return [["IP", x ? x.ip : null], ["ERA", era], ["K", x ? x.so : null], [x && x.sv > 0 ? "SV" : "HLD", x ? (x.sv > 0 ? x.sv : x.hld) : null]];
     return [["ERA", era], ["WHIP", x ? fmt2(x.whip) : a.whip != null ? fmt2(a.whip) : null], ["K", x ? x.so : null]];
   };
   const big = roster.filter((p) => !isMinors(p, abbr));
@@ -4206,7 +4205,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v148";
+const HRB_VERSION = "v149";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
