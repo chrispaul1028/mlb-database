@@ -39,7 +39,7 @@ const HR_ACCENT = "text-emerald-600 dark:text-emerald-400";
 
 const TEAM_COLORS = {
   ARI: "#A71930", ATL: "#13274F", BAL: "#DF4601", BOS: "#0C2340",
-  CHC: "#0E3386", CWS: "#27251F", CHW: "#27251F", CIN: "#C6011F",
+  CHC: "#0E3386", CWS: "#0a0a0a", CHW: "#0a0a0a", CIN: "#C6011F",
   CLE: "#00385D", COL: "#333366", DET: "#0C2340", HOU: "#002D62",
   KC: "#004687", LAA: "#BA0021", LAD: "#005A9C", MIA: "#00A3E0",
   MIL: "#12284B", MIN: "#002B5C", NYM: "#002D72", NYY: "#0C2340",
@@ -2993,6 +2993,26 @@ function useTeamHands(abbr, on = true) {
   return hands || {};
 }
 
+// Rotation / bullpen ERA for every team (from the league season file): starters = pitchers who started
+// at least half their games. Returns { [abbr]: { sp: {era, rank}, rp: {era, rank} } }
+function staffEras(stats) {
+  if (!stats || !stats.players) return {};
+  const acc = {};
+  for (const P of Object.values(stats.players)) {
+    const x = P.pit; if (!x || !P.team || !x.outs) continue;
+    const role = x.gs * 2 >= x.g ? "sp" : "rp";
+    const a = (acc[P.team] = acc[P.team] || { sp: { er: 0, outs: 0 }, rp: { er: 0, outs: 0 } });
+    a[role].er += x.er || 0; a[role].outs += x.outs || 0;
+  }
+  const out = {};
+  for (const role of ["sp", "rp"]) {
+    const rows = Object.entries(acc).filter(([, a]) => a[role].outs > 0).map(([abbr, a]) => [abbr, (a[role].er * 27) / a[role].outs]).sort((p, q) => p[1] - q[1]);
+    rows.forEach(([abbr, era], i) => { (out[abbr] = out[abbr] || {})[role] = { era, rank: rows.findIndex(([, e]) => e === era) + 1, of: rows.length }; });
+  }
+  return out;
+}
+const StaffEra = ({ s }) => (s ? <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">ERA <span className="text-slate-900 dark:text-white font-extrabold tabular-nums">{s.era.toFixed(2)}</span> <span className={"font-extrabold " + rankCls(s.rank)}>({ordinal(s.rank)})</span></span> : null);
+
 // Header tile, football style: tinted border, team-colour label, big number, coloured rank line.
 function RankTile({ label, value, sub, subCls, tc, valueCls, onClick }) {
   const Tag = onClick ? "button" : "div";
@@ -3125,11 +3145,11 @@ function TeamRoster({ roster, abbr, teamName, view, onSelectPlayer }) {
     const startBadge = (p) => { const n = starts[hrbNrm(p.name)]; return n ? <span className={"inline-block rounded px-1.5 py-px text-[9px] font-extrabold uppercase tracking-wide " + (n.today ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300")}>{n.today ? "Starts " : "Next: "}{n.text}</span> : null; };
     return (
       <>
-        <Section title="Starting Rotation" note="Sort Priority 1–5">
+        <Section title="Starting Rotation" note={<StaffEra s={(staffEras(stats)[abbr] || {}).sp} />}>
           {rotation.length ? rotation.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={throwsOf(p)} tiles={pitTiles(p, "sp")} under={(() => { const s = line(p); return s && s.pit ? s.pit.gs + " start" + (s.pit.gs === 1 ? "" : "s") : null; })()} badge={startBadge(p)} onSelect={onSelectPlayer} />)
             : empty("No rotation set. Give your five starters Sort Priority 1–5 in Airtable.")}
         </Section>
-        <Section title={"Bullpen (" + (closers.length + pen.length) + ")"} note="closer first · then most innings">
+        <Section title={"Bullpen (" + (closers.length + pen.length) + ")"} note={<StaffEra s={(staffEras(stats)[abbr] || {}).rp} />}>
           {closers.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={throwsOf(p)} tiles={pitTiles(p, "rp")} under={(() => { const s = line(p); return s && s.pit ? s.pit.g + " game" + (s.pit.g === 1 ? "" : "s") : null; })()} badge={<span className="inline-block rounded px-1.5 py-px text-[9px] font-extrabold uppercase tracking-wide text-white" style={{ backgroundColor: bannerColor(abbr) }}>Closer</span>} onSelect={onSelectPlayer} />)}
           {pen.map((p) => <RosterRow key={p.id} p={p} abbr={abbr} chip={throwsOf(p)} tiles={pitTiles(p, "rp")} under={(() => { const s = line(p); return s && s.pit ? s.pit.g + " game" + (s.pit.g === 1 ? "" : "s") : null; })()} badge={startBadge(p)} onSelect={onSelectPlayer} />)}
           {closers.length + pen.length === 0 && empty("No relievers on the roster.")}
@@ -3230,15 +3250,16 @@ function TeamStatsPanel({ abbr, view, players, onSelectPlayer }) {
   );
 }
 
-function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat }) {
+const STAT_VIEW_FOR = { hr: "power", slg: "power", soBat: "power", era: "pitching", whip: "pitching", hr9: "pitching", ra: "pitching" };
+function TeamDetail({ team, teams, players, onBack, onSelectPlayer, onJumpStat, open }) {
   useEffect(() => { window.scrollTo(0, 0); }, []);
   useBackSwipe(onBack);
   const { teams: leagueTeams } = useLeagueData();
   useInjuries();                                   // roster groups re-sort when the live report lands
   const abbr = team.abbr || toAbbr(team.name);
-  const [seg, setSeg] = useState("roster");
+  const [seg, setSeg] = useState(open && open.seg ? open.seg : "roster");
   const [rosterView, setRosterView] = useState(null);      // null = full roster · order · pitching · field
-  const [statView, setStatView] = useState("hitting");     // hitting · power · pitching
+  const [statView, setStatView] = useState(open && open.statView ? open.statView : "hitting");     // hitting · power · pitching
   const [chartMode, setChartMode] = useState("form");
   const [capSeason, setCapSeason] = useState(null);
   const roster = players.filter((p) => {
@@ -3667,7 +3688,7 @@ const mlbPosGroup = (P) => {
 const MLB_HEAD = (id) => "https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/" + id + "/headshot/silo/current";
 const LEADERS_CACHE = { stats: null, teams: null, at: 0 };   // survives tab switches — the page opens instantly the second time
 
-function StatsTab({ players, onSelect, jump }) {
+function StatsTab({ players, onSelect, jump, onSelectTeam }) {
   // jump = { catId, key, hl } from a team-page tile: open that board and highlight the team's row
   const [catId, setCatId] = useState(jump ? jump.catId : "hitting");
   const [statKey, setStatKey] = useState(jump ? jump.key : null);
@@ -3779,7 +3800,7 @@ function StatsTab({ players, onSelect, jump }) {
                 const best = teamRows[0].v || 1, worst = teamRows[teamRows.length - 1].v || 0;
                 const w = key === "diff" ? ((r.v - worst) / ((best - worst) || 1)) * 100 : lowFirst ? (best / (r.v || 1)) * 100 : (r.v / best) * 100;
                 return (
-                  <div key={r.abbr} id={"team-row-" + r.abbr} className={"px-3 py-2 flex items-center gap-2.5 transition-colors duration-700 " + (hl === r.abbr ? "bg-amber-50 dark:bg-amber-900/30 ring-2 ring-inset ring-amber-400" : "")}>
+                  <button key={r.abbr} id={"team-row-" + r.abbr} onClick={onSelectTeam ? () => onSelectTeam(r.abbr, key) : undefined} className={"w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors duration-700 active:bg-slate-50 dark:active:bg-slate-800 " + (hl === r.abbr ? "bg-amber-50 dark:bg-amber-900/30 ring-2 ring-inset ring-amber-400" : "")}>
                     <div className={"w-6 text-center text-[13px] font-black tabular-nums " + (i < 3 ? "text-blue-600" : "text-slate-400")}>{i + 1}</div>
                     {TEAM_LOGOS[r.abbr] && <img src={TEAM_LOGOS[r.abbr]} alt="" className="w-8 h-8 rounded-full object-contain p-0.5 bg-white shrink-0" />}
                     <div className="min-w-0 flex-1">
@@ -3792,7 +3813,7 @@ function StatsTab({ players, onSelect, jump }) {
                       <div className="text-lg font-black tabular-nums text-slate-900 dark:text-white leading-none">{mlbFmtStat(key, r.v)}</div>
                       <div className="text-[9px] font-semibold tabular-nums text-slate-400 mt-0.5">{r.pg || r.gp + " GP"}</div>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -4205,7 +4226,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v149";
+const HRB_VERSION = "v150";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -5543,6 +5564,7 @@ export default function App() {
   const [tab, setTab] = useState("hrboard");
   const [navTap, setNavTap] = useState(0);   // bumps on every tab-bar press so the tab can return to its main page
   const [statsJump, setStatsJump] = useState(null);   // team-page tile → Stats › Teams with that team highlighted
+  const [teamOpen, setTeamOpen] = useState(null);     // Stats › Teams row → that team's Stats pill (and swipe back returns to Stats)
   const txListApp = useTransactions();
   const txNewApp = txUnseenCount(txListApp);
   useEffect(() => {                          // live injury report: now, every 10 min, and when the app is reopened
@@ -5612,13 +5634,14 @@ export default function App() {
       {!players && !error && <BallLoader />}
 
       {players && tab === "teams" && !selTeam && (
-        <TeamsTab teams={teams} players={players} onSelect={setSelTeam} onSelectPlayer={openPlayer} />
+        <TeamsTab teams={teams} players={players} onSelect={(t) => { setTeamOpen(null); setSelTeam(t); }} onSelectPlayer={openPlayer} />
       )}
       {players && tab === "teams" && selTeam && (
         <TeamDetail
           team={selTeam} teams={teams}
           players={players}
-          onBack={() => setSelTeam(null)}
+          open={teamOpen}
+          onBack={() => { if (teamOpen && teamOpen.from === "stats") { setSelTeam(null); setTeamOpen(null); setTab("stats"); window.scrollTo(0, 0); } else setSelTeam(null); }}
           onSelectPlayer={openPlayer}
           onJumpStat={(key) => { setStatsJump({ catId: "teams", key, hl: selTeam.abbr || toAbbr(selTeam.name), team: selTeam }); setSel(null); setSelTeam(null); setTab("stats"); setNavTap((n) => n + 1); window.scrollTo(0, 0); }}
         />
@@ -5629,16 +5652,17 @@ export default function App() {
           <button className="block mt-1 underline" onClick={() => setFatal(null)}>dismiss</button>
         </div>
       )}
-      {players && tab === "hrboard" && <HRBoardTab players={players} onSelectPlayer={openPlayer} resetSignal={navTap} onSelectTeam={(t) => { const tm = (teams || []).find((x) => (x.abbr || toAbbr(x.name)) === t.abbr); if (tm) { setTab("teams"); setSelTeam(tm); window.scrollTo(0, 0); } }} />}
+      {players && tab === "hrboard" && <HRBoardTab players={players} onSelectPlayer={openPlayer} resetSignal={navTap} onSelectTeam={(t) => { const tm = (teams || []).find((x) => (x.abbr || toAbbr(x.name)) === t.abbr); if (tm) { setTeamOpen(null); setTab("teams"); setSelTeam(tm); window.scrollTo(0, 0); } }} />}
       {players && tab === "players" && <PlayersTab players={players} onSelect={openPlayer} />}
-      {players && tab === "stats" && <StatsTab players={players} onSelect={openPlayer} jump={statsJump} key={"st" + navTap} />}
+      {players && tab === "stats" && <StatsTab players={players} onSelect={openPlayer} jump={statsJump} key={"st" + navTap}
+        onSelectTeam={(ab, key) => { const tm = (teams || []).find((x) => (x.abbr || toAbbr(x.name)) === ab); if (!tm) return; setTeamOpen({ from: "stats", seg: "stats", statView: STAT_VIEW_FOR[key] || "hitting" }); setSelTeam(tm); setTab("teams"); window.scrollTo(0, 0); }} />}
       </div>
 
       <div className="fixed bottom-0 inset-x-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex pb-[env(safe-area-inset-bottom)] z-20">
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => { setTab(t.id); setSel(null); setSelTeam(null); setStatsJump(null); setNavTap((n) => n + 1); window.scrollTo(0, 0); }}
+            onClick={() => { setTab(t.id); setSel(null); setSelTeam(null); setStatsJump(null); setTeamOpen(null); setNavTap((n) => n + 1); window.scrollTo(0, 0); }}
             className={"flex-1 py-2.5 text-center " + (tab === t.id ? "text-blue-600" : "text-slate-400")}
           >
             <div className="relative inline-block text-lg leading-none">{t.icon}
