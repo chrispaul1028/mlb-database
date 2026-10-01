@@ -170,7 +170,8 @@ export default async function handler(req, res) {
         balls: ls.balls ?? null, strikes: ls.strikes ?? null, outs: ls.outs ?? null,
         runners: { first: person(off.first), second: person(off.second), third: person(off.third) },
         batter: person(off.batter), onDeck: person(off.onDeck), pitcher: person(def.pitcher),
-        battingTeam: ls.inningHalf ? (ls.inningHalf === "Top" ? teams.away.abbr : teams.home.abbr) : null,
+        battingTeam: off.team && off.team.id === teams.home.id ? teams.home.abbr : off.team && off.team.id === teams.away.id ? teams.away.abbr
+          : ls.inningHalf ? (ls.inningHalf === "Top" ? teams.away.abbr : teams.home.abbr) : null,
         lastPlay: last ? last.text : null,
         last,                                                       // full record: event, batter, EV / distance
       },
