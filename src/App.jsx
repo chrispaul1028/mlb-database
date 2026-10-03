@@ -635,7 +635,8 @@ function PlayerDetail({ p, onBack, backLabel, mode = "full" }) {
   const hw = [fmtHeight(M.height || p.height), fmtWeight(M.weight || p.weight)].filter(Boolean).join(", ");
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 pb-24">
-      <div className="px-5 pb-6 text-white" style={{ backgroundColor: playerHeaderColor(p), paddingTop: "calc(env(safe-area-inset-top) + 1.25rem)" }}>
+      <div className="relative overflow-hidden px-5 pb-6 text-white" style={{ backgroundColor: playerHeaderColor(p), paddingTop: "calc(env(safe-area-inset-top) + 1.25rem)" }}>
+        {(() => { const ab = teamOfPlayer(p); const src = TEAM_LOGOS[ab] || (MLB_TEAM_ID[ab] ? "https://www.mlbstatic.com/team-logos/" + MLB_TEAM_ID[ab] + ".svg" : null); return src ? <img src={src} alt="" aria-hidden="true" className="absolute -top-4 -right-6 w-44 h-44 object-contain opacity-[0.12] brightness-0 invert pointer-events-none select-none" /> : null; })()}
         <button onClick={onBack} className="text-sm font-semibold opacity-80 mb-4">‹ {backLabel}</button>
         <div className="flex items-center gap-4">
           <Avatar p={p} size="lg" />
@@ -2269,7 +2270,7 @@ function StatusBadge({ status, lg = false }) {
   if (lg && (s.includes("active") || s.includes("available")) && !s.includes("inactive")) return <span className="shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wide bg-emerald-500 text-white shadow-sm">{String(status)}</span>;
   const raw = String(status);
   const dayMatch = raw.match(/(\d+)\s*-?\s*day/i) || raw.match(/^il-?(\d+)$/i);
-  const isMin = /minor|option/.test(s);
+  const isMin = /minor|option|40|forty/.test(s);
   const label = isMin ? "MIN" : dayMatch && /(il|injur)/i.test(raw) ? "IL" + dayMatch[1] : raw;
   let cls = "bg-slate-100 text-slate-500 dark:text-slate-400";
   if (isMin) return <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide bg-orange-500 text-white">MINORS</span>;
@@ -2348,7 +2349,7 @@ const injReturn = (r) => {
   const d = new Date(r.returnDate);
   return isNaN(d) ? "" : "Estimated Return Date: " + new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(d);
 };
-const ReturnLine = ({ r, className = "" }) => { const t = injReturn(r); return t ? <span className={"block text-[11px] font-bold text-slate-900 dark:text-white " + className}>{t}</span> : null; };
+const ReturnLine = ({ r, className = "", color = "text-slate-900 dark:text-white" }) => { const t = injReturn(r); return t ? <span className={"block text-[11px] font-bold " + color + " " + className}>{t}</span> : null; };
 // ONE answer to "what tag does this player wear?", used by the field view, the
 // bench and the roster so they can never disagree:
 //   live report (ESPN + MLB's official roster status) → Airtable Status →
@@ -2369,7 +2370,7 @@ function statusTag(p, team) {
     if (c) return { label: c === "INJ" ? "INJ" : c.slice(0, 4), kind: c === "INJ" ? "dtd" : "off" };
   }
   const raw = String(p.status || "").trim(), low = raw.toLowerCase();
-  if (/minor|option/.test(low)) return { label: "MINORS", kind: "min" };
+  if (/minor|option|40|forty/.test(low)) return { label: "MINORS", kind: "min" };   // "40 man" = on the 40-man, not the active 26
   const note = String(p.injuryNotes || "").trim();
   if (raw && low !== "active" && !/available/.test(low)) {
     const stale = INJ.map && STALE_INJ.test(raw) && !note;      // live report loaded and doesn't back it up
@@ -2420,7 +2421,7 @@ function InjuryLine({ p }) {
   useInjuries();
   const r = injFor(p.name, teamOfPlayer(p));
   const text = r ? injText(r) : "";
-  if (text || (r && r.returnDate)) return <div className="mt-1 text-[12px] font-semibold text-rose-500 leading-snug">{text ? "(" + text + ")" : ""}<ReturnLine r={r} className="text-white mt-0.5" /></div>;
+  if (text || (r && r.returnDate)) return <div className="mt-1 text-[12px] font-semibold text-rose-500 leading-snug">{text ? "(" + text + ")" : ""}<ReturnLine r={r} color="text-white" className="mt-0.5" /></div>;
   if (!r && p.injuryNotes) return <div className="mt-1 text-[12px] font-semibold text-rose-500 leading-snug">({String(p.injuryNotes).toLowerCase()})</div>;
   return null;
 }
@@ -2524,14 +2525,15 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
       try {
         const c = await (await mlbFetch(`v1/teams/${tid}/coaches`)).json();
         const roles = {};
+        const JOB_CODES = { MNGR: "manager", BNCH: "bench coach", PTCH: "pitching coach", PITC: "pitching coach", HITC: "hitting coach", HTCO: "hitting coach" };
         for (const r of c.roster || []) {
-          const job = String((r.job || r.jobId || "")).toLowerCase();
+          const job = String(r.job || r.title || JOB_CODES[String(r.jobId || "").toUpperCase()] || r.jobId || "").toLowerCase();
           const nm = r.person && r.person.fullName;
           if (!nm) continue;
-          if (job === "manager") roles.manager = nm;
-          else if (job.includes("bench")) roles.bench = nm;
-          else if (job.includes("pitching") && !job.includes("assistant") && !job.includes("bullpen")) roles.pitching = nm;
-          else if (job.includes("hitting") && !job.includes("assistant")) roles.hitting = nm;
+          if (job === "manager" || job === "interim manager") roles.manager = roles.manager || nm;
+          else if (job.includes("bench")) roles.bench = roles.bench || nm;
+          else if (job.includes("pitching") && !job.includes("assistant") && !job.includes("bullpen")) roles.pitching = roles.pitching || nm;
+          else if (job.includes("hitting") && !job.includes("assistant")) roles.hitting = roles.hitting || nm;
         }
         if (alive) setCoaches(roles);
         // Tenure: walk back season by season while the same person holds the job
@@ -2590,7 +2592,7 @@ function FieldView({ roster, abbr, teamName, onSelectPlayer }) {
     { lbl: "3B", x: 15, y: 68, aliases: ["3B"] },
     { lbl: "1B", x: 85, y: 68, aliases: ["1B"] },
     { lbl: "P",  x: 50, y: 70, aliases: ["SP", "P", "RHP", "LHP"] },    // today's starter, between the mound and 2B
-    { lbl: "C",  x: 50, y: 116, aliases: ["C"] },
+    { lbl: "C",  x: 50, y: 118.5, aliases: ["C"] },
   ];
   // ── Assign ONE player per spot, computed once (no side effects) ──
   const used = new Set();
@@ -4226,7 +4228,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v150";
+const HRB_VERSION = "v151";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
@@ -5587,7 +5589,14 @@ export default function App() {
     window.addEventListener("unhandledrejection", onRej);
     return () => { window.removeEventListener("error", onErr); window.removeEventListener("unhandledrejection", onRej); };
   }, []);
-  const [teams, setTeams] = useState([]);
+  const [teamsRaw, setTeams] = useState([]);
+  const { teams: standLive } = useLeagueData();
+  // Airtable's Teams table + MLB's live standings: wins/losses/runs always current, back to 0-0 on Opening Day
+  const teams = useMemo(() => {
+    const st = standLive && standLive.teams;
+    if (!st) return teamsRaw;
+    return teamsRaw.map((t) => { const m = st.find((x) => x.abbr === (t.abbr || toAbbr(t.name))); return m && m.wins != null ? { ...t, wins: m.wins, losses: m.losses, rs: m.rs ?? t.rs, ra: m.ra ?? t.ra, division: t.division || m.division } : t; });
+  }, [teamsRaw, standLive]);
   const [selTeam, setSelTeam] = useState(null);
   useBackSwipe(() => { if (tab === "stats" && statsJump && statsJump.team) { setTab("teams"); setSelTeam(statsJump.team); setStatsJump(null); window.scrollTo(0, 0); } });
   const [error, setError] = useState(null);
