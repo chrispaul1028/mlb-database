@@ -1486,7 +1486,6 @@ const WinBar = ({ pct, lit }) => (pct == null ? null : (
 ));
 function MatchCard({ pk, g, sides, state }) {
   const isLive = state === "Live", isFinal = state === "Final";
-  const wp = useWinProb(pk, state, sides);
   const recs = useDecisionRecords(pk, g.decisions || {}, isFinal);
   const d = useLiveBug(pk, isLive);
   const sit = d && d.state === "in" ? d.situation : null;
@@ -1549,7 +1548,6 @@ function MatchCard({ pk, g, sides, state }) {
                   <span className="block text-white/75 normal-case tabular-nums">{era(sd) ? era(sd) + " ERA" : ""}</span></>
               : <span className="text-white/70">Pitcher TBD</span>}
           </span>
-          {wp && <WinBar pct={wp[k]} lit={wp[k] >= 50} />}
         </span>
       );
     };
@@ -1612,7 +1610,6 @@ function MatchCard({ pk, g, sides, state }) {
               ? <><span className="text-white/80">{bLine && bLine.slot ? bLine.slot + "." : ""}</span><span className="truncate">{batter ? lastNameOf(batter.name) : "—"}</span><span className="ml-auto pl-1 tabular-nums text-white/90">{bLine ? bLine.h + "-" + bLine.ab : ""}</span></>
               : <><span className="truncate">{pitcher ? lastNameOf(pitcher.name) : "—"}</span><span className="ml-auto pl-1 tabular-nums text-white/90">{pitches && pitches.pitches != null ? "P: " + pitches.pitches : ""}</span></>}
           </span>
-          {wp && <WinBar pct={wp[k]} lit={wp[k] >= 50} />}
         </span>
       );
     };
@@ -1846,6 +1843,8 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
   };
   // Live feed wins when it has loaded; the schedule snapshot from the board is the fallback.
   const state = live ? { pre: "Preview", in: "Live", post: "Final" }[live.state] : g.status && g.status.abstractGameState;
+  const recOf = (k) => (g.teams[k].leagueRecord ? g.teams[k].leagueRecord.wins + "-" + g.teams[k].leagueRecord.losses : "");
+  const wp = useWinProb(g.gamePk, state, { away: { rec: recOf("away") }, home: { rec: recOf("home") } });
   const sit = live && live.state === "in" ? live.situation : null;
   const scoreOf = (k) => (live && live.state !== "pre" && live[k].score != null ? live[k].score : g.teams[k].score);
   const inningNow = live && live.state === "in" && live.inning ? { half: live.inningHalf === "Top" ? "TOP" : "BOT", num: live.inning } : inning;
@@ -1925,6 +1924,19 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
             );
           })}
         </div>
+        {wp && (
+          <div className="mt-3 px-1">
+            <div className="flex items-center justify-between text-[11px] font-extrabold tabular-nums text-white">
+              <span className={wp.away >= 50 ? "" : "text-white/60"}>{wp.away}%</span>
+              <span className="text-[8px] font-bold tracking-widest uppercase text-white/60">{wp.src === "live" ? "Win probability · live" : "Win probability · projected"}</span>
+              <span className={wp.home >= 50 ? "" : "text-white/60"}>{wp.home}%</span>
+            </div>
+            <div className="flex h-1.5 rounded-full overflow-hidden mt-1 bg-white/20">
+              <span className="h-full bg-white" style={{ width: wp.away + "%" }} />
+              <span className="h-full bg-white/45" style={{ width: wp.home + "%" }} />
+            </div>
+          </div>
+        )}
         {wx && (
           <div className="text-center text-[11px] font-bold text-white/70 mt-1">
             {wxEmoji(wx.condition)} {wx.temp}° · {wx.condition}
@@ -4269,7 +4281,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v152";
+const HRB_VERSION = "v153";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
