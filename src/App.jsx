@@ -1446,8 +1446,47 @@ function useDecisionRecords(pk, dec, on) {
   }, [pk, on]);
   return rec || {};
 }
+// Win probability: live games from MLB's own play-by-play model; upcoming games from the two
+// records (log5) with home-field advantage. { away, home } as whole percentages.
+const WP_CACHE = {};
+function useWinProb(pk, state, sides) {
+  const [live, setLive] = useState(WP_CACHE[pk] ?? null);
+  useEffect(() => {
+    if (state !== "Live") return;
+    let alive = true, timer = null;
+    const load = async () => {
+      try {
+        const d = await (await mlbFetch(`v1/game/${pk}/winProbability`)).json();
+        const arr = Array.isArray(d) ? d : (d && d.winProbability) || [];
+        const last = arr.length ? arr[arr.length - 1] : null;
+        const hp = last && last.homeTeamWinProbability != null ? Number(last.homeTeamWinProbability) : null;
+        if (alive && hp != null) { WP_CACHE[pk] = hp; setLive(hp); }
+      } catch {}
+      if (alive) timer = setTimeout(load, 30000);
+    };
+    load();
+    return () => { alive = false; clearTimeout(timer); };
+  }, [pk, state]);
+  if (state === "Live" && live != null) return { home: Math.round(live), away: Math.round(100 - live), src: "live" };
+  if (state === "Preview") {
+    const pct = (rec) => { const m = /(\d+)-(\d+)/.exec(String(rec || "")); if (!m) return null; const w = +m[1], l = +m[2]; return w + l ? w / (w + l) : null; };
+    const pa = pct(sides.away.rec), ph0 = pct(sides.home.rec);
+    if (pa == null || ph0 == null) return null;
+    const ph = Math.min(0.95, ph0 + 0.035);                               // home-field edge
+    const h = (ph - ph * pa) / (ph + pa - 2 * ph * pa);                    // log5
+    return { home: Math.round(h * 100), away: Math.round((1 - h) * 100), src: "model" };
+  }
+  return null;
+}
+const WinBar = ({ pct, lit }) => (pct == null ? null : (
+  <span className="flex items-center gap-1.5 mt-2">
+    <span className="flex-1 h-1 rounded-full bg-white/25 overflow-hidden"><span className={"block h-full rounded-full " + (lit ? "bg-white" : "bg-white/60")} style={{ width: pct + "%" }} /></span>
+    <span className={"text-[10px] font-extrabold tabular-nums " + (lit ? "text-white" : "text-white/70")}>{pct}%</span>
+  </span>
+));
 function MatchCard({ pk, g, sides, state }) {
   const isLive = state === "Live", isFinal = state === "Final";
+  const wp = useWinProb(pk, state, sides);
   const recs = useDecisionRecords(pk, g.decisions || {}, isFinal);
   const d = useLiveBug(pk, isLive);
   const sit = d && d.state === "in" ? d.situation : null;
@@ -1498,10 +1537,10 @@ function MatchCard({ pk, g, sides, state }) {
     const block = (k) => {
       const sd = sides[k]; const pp = sd.pitcher;
       return (
-        <span className="flex-1 basis-0 min-w-0 px-2.5 py-2 text-white flex flex-col justify-between" style={{ backgroundColor: bannerColor(sd.abbr) }}>
+        <span className="flex-1 basis-0 min-w-0 px-2.5 py-3 text-white flex flex-col justify-between" style={{ backgroundColor: bannerColor(sd.abbr) }}>
           <span className="flex items-center gap-1.5">
-            {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-7 h-7 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : null}
-            <span className="text-[14px] font-black tracking-wide">{sd.abbr}</span>
+            {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-9 h-9 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : null}
+            <span className="text-[16px] font-black tracking-wide">{sd.abbr}</span>
             <span className="ml-auto text-[10px] font-semibold tabular-nums text-white/75">{sd.rec}</span>
           </span>
           <span className="block mt-1.5 text-[10px] font-extrabold uppercase tracking-wide leading-tight">
@@ -1510,6 +1549,7 @@ function MatchCard({ pk, g, sides, state }) {
                   <span className="block text-white/75 normal-case tabular-nums">{era(sd) ? era(sd) + " ERA" : ""}</span></>
               : <span className="text-white/70">Pitcher TBD</span>}
           </span>
+          {wp && <WinBar pct={wp[k]} lit={wp[k] >= 50} />}
         </span>
       );
     };
@@ -1531,11 +1571,11 @@ function MatchCard({ pk, g, sides, state }) {
     const block = (k) => {
       const sd = sides[k]; const sc = g.teams[k].score ?? 0; const w = won(k);
       return (
-        <span className={"flex-1 basis-0 min-w-0 px-2.5 py-2 text-white flex flex-col justify-between " + (w ? "" : "opacity-80")} style={{ backgroundColor: bannerColor(sd.abbr) }}>
+        <span className={"flex-1 basis-0 min-w-0 px-2.5 py-3 text-white flex flex-col justify-between " + (w ? "" : "opacity-80")} style={{ backgroundColor: bannerColor(sd.abbr) }}>
           <span className="flex items-center gap-1.5">
-            {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-7 h-7 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : null}
-            <span className="text-[14px] font-black tracking-wide">{sd.abbr}</span>
-            <span className="ml-auto text-[24px] leading-none font-black tabular-nums">{sc}</span>
+            {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-9 h-9 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : null}
+            <span className="text-[16px] font-black tracking-wide">{sd.abbr}</span>
+            <span className="ml-auto text-[28px] leading-none font-black tabular-nums">{sc}</span>
           </span>
           <span className="block mt-1.5 text-[10px] font-extrabold uppercase tracking-wide leading-tight">
             {w && dec.winner && <span className="flex items-baseline"><span className="text-emerald-300 shrink-0 mr-1">W</span><span className="truncate">{lastNameOf(dec.winner.fullName)}</span>{recs[dec.winner.id] && <span className="ml-auto pl-1 shrink-0 tabular-nums text-white/85">{recs[dec.winner.id].w}-{recs[dec.winner.id].l}</span>}</span>}
@@ -1561,17 +1601,18 @@ function MatchCard({ pk, g, sides, state }) {
     const block = (k) => {
       const sd = sides[k]; const sc = g.teams[k].score ?? 0; const bat = k === batting;
       return (
-        <span className="flex-1 basis-0 min-w-0 px-2.5 py-2 text-white flex flex-col justify-between" style={{ backgroundColor: bannerColor(sd.abbr) }}>
+        <span className="flex-1 basis-0 min-w-0 px-2.5 py-3 text-white flex flex-col justify-between" style={{ backgroundColor: bannerColor(sd.abbr) }}>
           <span className="flex items-center gap-1.5">
-            {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-7 h-7 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : null}
-            <span className="text-[14px] font-black tracking-wide">{sd.abbr}</span>
-            <span className="ml-auto text-[24px] leading-none font-black tabular-nums">{sc}</span>
+            {TEAM_LOGOS[sd.abbr] ? <img src={TEAM_LOGOS[sd.abbr]} alt="" className={"w-9 h-9 object-contain shrink-0 drop-shadow" + logoFx(sd.abbr)} /> : null}
+            <span className="text-[16px] font-black tracking-wide">{sd.abbr}</span>
+            <span className="ml-auto text-[28px] leading-none font-black tabular-nums">{sc}</span>
           </span>
           <span className="flex items-baseline gap-1 mt-1.5 text-[10px] font-extrabold uppercase tracking-wide truncate">
             {bat
               ? <><span className="text-white/80">{bLine && bLine.slot ? bLine.slot + "." : ""}</span><span className="truncate">{batter ? lastNameOf(batter.name) : "—"}</span><span className="ml-auto pl-1 tabular-nums text-white/90">{bLine ? bLine.h + "-" + bLine.ab : ""}</span></>
               : <><span className="truncate">{pitcher ? lastNameOf(pitcher.name) : "—"}</span><span className="ml-auto pl-1 tabular-nums text-white/90">{pitches && pitches.pitches != null ? "P: " + pitches.pitches : ""}</span></>}
           </span>
+          {wp && <WinBar pct={wp[k]} lit={wp[k] >= 50} />}
         </span>
       );
     };
@@ -4228,7 +4269,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v151";
+const HRB_VERSION = "v152";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
