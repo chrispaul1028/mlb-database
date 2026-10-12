@@ -1900,13 +1900,11 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
             const rec = g.teams[k].leagueRecord ? g.teams[k].leagueRecord.wins + "-" + g.teams[k].leagueRecord.losses : "";
             const on = side === k;
             const col = (
-              <button key={k} onClick={() => setSide(k)} aria-label={"Show " + ab + " box score"}
-                className="flex flex-col items-center px-2 py-1.5 w-[104px]">
+              <div key={k} className="flex flex-col items-center px-2 py-1.5 w-[104px]">
                 {logo ? <img src={logo} alt="" className={"w-[76px] h-[76px] object-contain drop-shadow-xl" + logoFx(ab)} /> : <span className="w-[76px] h-[76px] rounded-full" style={{ backgroundColor: teamColor(ab) }} />}
                 <span className="text-white font-extrabold text-lg leading-tight mt-1">{ab}</span>
                 <span className="text-white/70 text-[11px] font-bold">{rec}</span>
-                <span className={"mt-1.5 h-[3px] w-10 rounded-full " + (on ? "bg-white" : "bg-white/20")} />
-              </button>
+              </div>
             );
             if (k === "away") return col;
             return (
@@ -2013,7 +2011,20 @@ function GameDetail({ g, players, onSelectPlayer, onBack, onPrev, onNext, index,
             </div>
           </>
         )}
-        <div className="mt-4 text-[10px] font-extrabold tracking-widest uppercase text-black dark:text-white px-1">Box score · tap a team up top to switch</div>
+        <div className="mt-5 text-[11px] font-extrabold tracking-widest uppercase text-black dark:text-white px-1">Box score · tap a team to switch</div>
+        <div className="flex gap-3 mt-2">
+          {["away", "home"].map((k) => {
+            const ab = abbrOf(k); const on = side === k;
+            return (
+              <button key={k} onClick={() => setSide(k)}
+                className={"flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full text-[15px] font-extrabold transition-colors " + (on ? "text-white" : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-800")}
+                style={on ? { backgroundColor: bannerColor(ab) } : undefined}>
+                {TEAM_LOGOS[ab] && <img src={TEAM_LOGOS[ab]} alt="" className={"w-7 h-7 object-contain" + (on ? logoFx(ab) : logoFxNeutral(ab))} />}
+                {ab}
+              </button>
+            );
+          })}
+        </div>
         {!inGame && <div className="text-[11px] font-bold tracking-widest uppercase mt-6 mb-2 px-1" style={{ color: teamColor(abbrOf(oppKey)) }}>Pitcher</div>}
         {!inGame && <button onClick={myPP && onSelectPlayer ? () => onSelectPlayer(myPP.player) : undefined}
           className="w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm px-4 py-3"
@@ -4281,7 +4292,7 @@ function SkeletonCards({ cards = 3, rows = 3 }) {
     </div>
   );
 }
-const HRB_VERSION = "v153";
+const HRB_VERSION = "v154";
 // Crash reporter that survives React unmounting: writes straight to the DOM.
 if (typeof window !== "undefined" && !window.__hrbTrap) {
   window.__hrbTrap = true;
